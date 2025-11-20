@@ -148,7 +148,7 @@ pub fn VoiceSelectorCard(
                                     <i class="fa fa-spinner fa-spin mr-2"></i>
                                     "加载声线库..."
                                 </div>
-                            }.into_view(),
+                            }.into_any(),
                             Some(Err(e)) =>
                                 view! {
                                 <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
@@ -156,7 +156,7 @@ pub fn VoiceSelectorCard(
                                     {move || debug_log!("加载声线库失败: {}", e)}
                                     "加载声线库失败"
                                 </div>
-                            }.into_view(),
+                            }.into_any(),
                             Some(Ok(voices)) => view! {
                             <div class="grid grid-cols-1 gap-3">
                                 <For
@@ -204,7 +204,7 @@ pub fn VoiceSelectorCard(
                                     }
                                 />
                             </div>
-                        }.into_view(),
+                        }.into_any(),
                     } // 正常情况继续往下
 
                         }
@@ -298,7 +298,7 @@ pub fn AudioResultCard(
                             <div class="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4"></div>
                             <p class="text-gray-500">"AI 正在合成您的声音..."</p>
                         </div>
-                    }.into_view(),
+                    }.into_any(),
 
                     // 2. 加载完成，成功获取 URL
                     (false, Some(Ok(url))) => view! {
@@ -325,7 +325,7 @@ pub fn AudioResultCard(
                                 </div>
                             </div>
                         </div>
-                    }.into_view(),
+                    }.into_any(),
 
                     // 3. 失败 (可选处理)
                     (false, Some(Err(e))) => view! {
@@ -334,7 +334,7 @@ pub fn AudioResultCard(
                             <p>"生成失败: "</p>
                             {move || debug_warn!("生成音频失败: {:?}", e)}
                         </div>
-                    }.into_view(),
+                    }.into_any(),
 
                     // 4. 初始状态 / 空闲 (None)
                     _ => view! {
@@ -342,7 +342,7 @@ pub fn AudioResultCard(
                             <i class="fa fa-headphones text-4xl mb-3 opacity-30"></i>
                             <p class="text-sm">"输入文本后点击生成按钮"</p>
                         </div>
-                    }.into_view()
+                    }.into_any(),
                 }}
             </div>
         </section>
