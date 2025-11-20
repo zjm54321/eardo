@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+@plugin "@tailwindcss/typography";
+
+@source "./src/**/*.rs";
+
+/* @plugin "daisyui" {
+  themes: light --default, dark --prefersdark, cupcake;
+} */
+
+@theme {
+  --color-primary: #FBBF24;
+  --color-secondary: #84CC16;
+  --color-accent: #EC4899;
+  --color-light: #FEFCE8;
+  --color-dark: #4B5563;
+
+  --font-sans: "Inter", "system-ui", "sans-serif";
+
+  --shadow-soft: 0 4px 20px rgba(0,0,0,.05);
+  --shadow-hover: 0 8px 30px rgba(0,0,0,.1);
+}
+
+@layer utilities {
+  .bg-gradient-summer {
+    background: linear-gradient(135deg, #FEFCE8 0%, #FDF7C3 100%);
+  }
+  
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+  
+  .min-h-screen {
+    min-height: 100vh;
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-dark);
+}
