@@ -1,6 +1,5 @@
-#[allow(unused_variables)]
 use crate::api;
-use leptos::logging::debug_log;
+use leptos::logging::{debug_log, debug_warn};
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -120,18 +119,13 @@ pub fn TextInputCard(
     }
 }
 
-#[server]
-pub async fn get_voices() -> Result<Vec<api::VoiceOption>, ServerFnError> {
-    api::simulate_fetch().await
-}
-
 #[component]
 pub fn VoiceSelectorCard(
     /// 当前选中的声线 ID (双向绑定)
     selected_voice: RwSignal<String>,
 ) -> impl IntoView {
     // Resource 用于异步获取数据
-    let voices_resource = Resource::new(|| (), |_| get_voices());
+    let voices_resource = Resource::new(|| (), |_| api::get_voices());
 
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
@@ -223,6 +217,7 @@ pub fn VoiceSelectorCard(
 
 #[component]
 fn ParameterControlCard(selected_param: RwSignal<VoiceParams>) -> impl IntoView {
+    let _ = selected_param;
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover relative overflow-hidden group">
             // 标题
@@ -336,7 +331,8 @@ pub fn AudioResultCard(
                     (false, Some(Err(e))) => view! {
                         <div class="text-center py-8 text-red-500 bg-red-50 rounded-xl border border-red-200">
                             <i class="fa fa-exclamation-triangle text-4xl mb-3 opacity-50"></i>
-                            <p>"生成失败: " {e.to_string()}</p>
+                            <p>"生成失败: "</p>
+                            {move || debug_warn!("生成音频失败: {:?}", e)}
                         </div>
                     }.into_view(),
 

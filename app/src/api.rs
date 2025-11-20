@@ -1,7 +1,10 @@
 use crate::pages::homepage::GenerateParams;
+#[cfg(not(target_arch = "wasm32"))]
 use base64::{engine::general_purpose, Engine as _};
+#[cfg(not(target_arch = "wasm32"))]
 use leptos::logging::debug_log;
 use leptos::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +14,8 @@ pub struct VoiceOption {
     pub name: String,
     pub desc: String,
 }
-
-pub async fn simulate_fetch() -> Result<Vec<VoiceOption>, ServerFnError> {
+#[server]
+pub async fn get_voices() -> Result<Vec<VoiceOption>, ServerFnError> {
     // 这里是服务器端代码
     // 模拟数据库查询，返回硬编码数据
     let voices = vec![
@@ -36,6 +39,7 @@ pub async fn simulate_fetch() -> Result<Vec<VoiceOption>, ServerFnError> {
     Ok(voices)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Serialize)]
 struct DashScopeRequest {
     model: String,
@@ -43,6 +47,7 @@ struct DashScopeRequest {
     parameters: DashScopeParameters,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Serialize)]
 struct DashScopeInput {
     text: String,
@@ -51,26 +56,30 @@ struct DashScopeInput {
     language_type: Option<String>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Serialize)]
 struct DashScopeParameters {
     // 这里的参数根据模型不同而不同，qwen3-tts-flash 文档主要强调 input
     // 我们可以预留 sample_rate 或 format，但在文档示例中未强制要求
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Deserialize, Debug)]
 struct DashScopeResponse {
     // status_code 在 HTTP 层处理，这里解析 body 里的字段
     code: Option<String>,
     message: Option<String>,
-    request_id: Option<String>,
+    _request_id: Option<String>,
     output: Option<DashScopeOutput>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Deserialize, Debug)]
 struct DashScopeOutput {
     audio: Option<DashScopeAudio>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Deserialize, Debug)]
 struct DashScopeAudio {
     url: Option<String>,
