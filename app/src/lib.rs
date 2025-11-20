@@ -5,18 +5,25 @@ use leptos_router::{
     StaticSegment,
 };
 
+mod pages;
+
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="zh-CN">
             <head>
                 <meta charset="utf-8"/>
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
                 <AutoReload options=options.clone()/>
                 <HydrationScripts options/>
+
+                <Stylesheet id="leptos" href="/pkg/eardo.css"/>
+                <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet" />
+
+
                 <MetaTags/>
             </head>
-            <body>
+            <body class="bg-gradient-summer min-h-screen font-sans text-dark">
                 <App/>
             </body>
         </html>
@@ -29,31 +36,31 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/eardo.css"/>
+
 
         // sets the document title
-        <Title text="Welcome to Leptos"/>
+        <Title text="耳朵 - 白昼聆夏"/>
 
         // content for this welcome page
         <Router>
             <main>
                 <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=HomePage/>
+                    <Route path=StaticSegment("") view=pages::homepage::HomePage/>
+                    <Route path=StaticSegment("playground") view=Playground/>
+                    <Route path=StaticSegment("voicefilter") view=Voicefilter/>
+
                 </Routes>
             </main>
         </Router>
     }
 }
 
-/// Renders the home page of your application.
 #[component]
-fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
-    let count = RwSignal::new(0);
-    let on_click = move |_| *count.write() += 1;
+fn Playground () -> impl IntoView {
+    todo!()
+}
 
-    view! {
-        <h1>"Welcome to Leptos!"</h1>
-        <button on:click=on_click>"Click Me: " {count}</button>
-    }
+#[component]
+fn Voicefilter() -> impl IntoView {
+    todo!()
 }
