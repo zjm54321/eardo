@@ -129,32 +129,94 @@ pub fn TextInputCard(
     /// 用于存储输入文本的信号，由父组件传入
     text: RwSignal<String>,
 ) -> impl IntoView {
+    // 内部状态：控制是否全屏
+    let is_fullscreen = RwSignal::new(false);
+
     view! {
-        // 卡片容器：白色背景、圆角、阴影
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
+        // 卡片容器
+        <section
+            class="bg-white shadow-soft transition-all duration-300 ease-in-out rounded-xl"
+            // 普通模式样式
+            class:p-6=move || !is_fullscreen.get()
+            class:hover:shadow-hover=move || !is_fullscreen.get()
+            class:relative=move || !is_fullscreen.get()
+
+            // 全屏模式样式 (固定定位，覆盖全屏，高层级)
+            class:fixed=move || is_fullscreen.get()
+            class:inset-20=move || is_fullscreen.get()
+            class:z-50=move || is_fullscreen.get()
+            // 全屏时稍微增加 padding，并使用 flex 布局让 textarea 居中或占满
+            class:p-12=move || is_fullscreen.get()
+            class:flex=move || is_fullscreen.get()
+            class:flex-col=move || is_fullscreen.get()
+        >
             // 标题区域
-            <h3 class="text-lg font-semibold mb-4 flex items-center">
-                <i class="fa fa-comment text-primary mr-2"></i>
-                "文本输入"
+            <h3 class="text-lg font-semibold mb-4 flex items-center shrink-0 justify-between">
+                <div class="flex items-center">
+                    <i class="fa fa-comment text-primary mr-2"></i>
+                    "文本输入"
+                </div>
+
+                // 全屏模式下的右上角关闭按钮 (作为备用退出方式)
+                <Show when=move || is_fullscreen.get()>
+                    <button
+                        class="text-gray-400 hover:text-dark transition-colors p-2 hover:bg-gray-100 rounded-full"
+                        on:click=move |_| is_fullscreen.set(false)
+                        title="退出全屏"
+                    >
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </Show>
             </h3>
-            // 输入区域
-            <textarea
-                id="text-input"
-                // Tailwind 样式复刻原版设计
-                class="w-full p-4 border border-gray-200 rounded-lg \
-                focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
-                transition-all duration-300 resize-none h-32 font-sans text-gray-700 placeholder-gray-400"
-                placeholder="请输入你想转换的文字...\n例如：你好，欢迎使用白昼聆夏"
-                // --- 核心逻辑：绑定信号 ---
-                // 1. 当信号改变时，更新 textarea 的值
-                prop:value=move || text.get()
-                // 2. 当用户输入时，更新信号的值
-                on:input=move |ev| text.set(event_target_value(&ev))
-            ></textarea>
-            // 底部提示
-            <p class="text-xs text-gray-500 mt-2">
-                "输入文本将通过后端 TTS 转换为音频"
-            </p>
+
+            // 输入区域容器 (相对定位用于放置右下角按钮)
+            <div class="relative w-full transition-all duration-300 bg-white rounded-lg shadow-sm"
+                 // 全屏时占满剩余空间，但可以留一点边距
+                 class:flex-grow=move || is_fullscreen.get()
+                 class:h-auto=move || is_fullscreen.get()
+                 // 全屏时给容器加一个最大宽度，防止在大屏上太宽难以阅读
+                 class:mx-auto=move || is_fullscreen.get()
+            >
+                <textarea
+                    id="text-input"
+                    class="w-full p-4 border border-gray-200 rounded-lg \
+                           focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
+                           transition-all duration-300 resize-none font-sans text-gray-700 placeholder-gray-400"
+                    // 动态高度
+                    class:h-32=move || !is_fullscreen.get()
+                    class:h-full=move || is_fullscreen.get() // 全屏时占满父容器高度
+
+                    // 全屏时字体和行高优化
+                    class:text-lg=move || is_fullscreen.get()
+                    class:leading-loose=move || is_fullscreen.get()
+                    class:p-5=move || is_fullscreen.get() // 全屏时增加内边距
+
+                    placeholder="请输入你想转换的文字...\n例如：你好，欢迎使用白昼聆夏"
+
+                    prop:value=move || text.get()
+                    on:input=move |ev| text.set(event_target_value(&ev))
+                ></textarea>
+
+                // 全屏切换按钮 (悬浮在 Textarea 右下角内部)
+                // 修改：调小尺寸，调整位置，增加透明度避免太抢眼
+                <button
+                    class="absolute bottom-3 right-3 p-2 bg-white/80 hover:bg-white backdrop-blur-sm rounded-md text-gray-400 hover:text-primary hover:border-primary transition-all shadow-sm group z-10"
+                    on:click=move |_| is_fullscreen.update(|v| *v = !*v)
+                    title=move || if is_fullscreen.get() { "退出全屏" } else { "全屏编辑" }
+                >
+                    <i class="fa transition-transform duration-300 group-hover:scale-110 text-sm"
+                       class:fa-expand=move || !is_fullscreen.get()
+                       class:fa-compress=move || is_fullscreen.get()
+                    ></i>
+                </button>
+            </div>
+
+            // 底部提示 (仅在非全屏时显示，全屏时专注于写作)
+            <Show when=move || !is_fullscreen.get()>
+                <p class="text-xs text-gray-500 mt-2 shrink-0">
+                    "输入文本将通过后端 TTS 转换为音频"
+                </p>
+            </Show>
         </section>
     }
 }
