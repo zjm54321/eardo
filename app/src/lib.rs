@@ -5,6 +5,7 @@ use leptos_router::{
     StaticSegment,
 };
 
+mod api;
 mod pages;
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -20,9 +21,9 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <Stylesheet id="leptos" href="/pkg/eardo.css"/>
                 <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet" />
 
-
                 <MetaTags/>
             </head>
+
             <body class="bg-gradient-summer min-h-screen font-sans text-dark">
                 <App/>
             </body>
@@ -36,31 +37,20 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-
-
         // sets the document title
         <Title text="耳朵 - 白昼聆夏"/>
 
         // content for this welcome page
         <Router>
             <main>
+                <pages::Header/>
                 <Routes fallback=|| "Page not found.".into_view()>
                     <Route path=StaticSegment("") view=pages::homepage::HomePage/>
-                    <Route path=StaticSegment("playground") view=Playground/>
-                    <Route path=StaticSegment("voicefilter") view=Voicefilter/>
+                    //<Route path=StaticSegment("playground") view=Playground/>
+                    //<Route path=StaticSegment("voicefilter") view=Voicefilter/>
 
                 </Routes>
             </main>
         </Router>
     }
-}
-
-#[component]
-fn Playground () -> impl IntoView {
-    todo!()
-}
-
-#[component]
-fn Voicefilter() -> impl IntoView {
-    todo!()
 }
