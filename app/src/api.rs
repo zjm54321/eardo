@@ -14,6 +14,7 @@ pub struct VoiceOption {
     pub name: String,
     pub desc: String,
 }
+
 #[server]
 pub async fn get_voices() -> Result<Vec<VoiceOption>, ServerFnError> {
     // 这里是服务器端代码
@@ -30,9 +31,79 @@ pub async fn get_voices() -> Result<Vec<VoiceOption>, ServerFnError> {
             desc: "标准普通话，带部分北方口音。阳光、温暖、活力、朝气。".to_string(),
         },
         VoiceOption {
+            id: "Nofish".to_string(),
+            name: "不吃鱼".to_string(),
+            desc: "不会翘舌音的设计师。".to_string(),
+        },
+        VoiceOption {
+            id: "Jennifer".to_string(),
+            name: "詹妮弗".to_string(),
+            desc: "品牌级、电影质感般美语女声。".to_string(),
+        },
+        VoiceOption {
+            id: "Ryan".to_string(),
+            name: "甜茶".to_string(),
+            desc: "节奏拉满，戏感炸裂，真实与张力共舞。".to_string(),
+        },
+        VoiceOption {
+            id: "Katerina".to_string(),
+            name: "卡捷琳娜".to_string(),
+            desc: "御姐音色，韵律回味十足。".to_string(),
+        },
+        VoiceOption {
             id: "Elias".to_string(),
             name: "墨讲师".to_string(),
             desc: "既保持学科严谨性，又通过叙事技巧将复杂知识转化为可消化的认知模块。".to_string(),
+        },
+        VoiceOption {
+            id: "Jada".to_string(),
+            name: "上海-阿珍".to_string(),
+            desc: "风风火火的沪上阿姐。".to_string(),
+        },
+        VoiceOption {
+            id: "Dylan".to_string(),
+            name: "北京-晓东".to_string(),
+            desc: "北京胡同里长大的少年。".to_string(),
+        },
+        VoiceOption {
+            id: "Sunny".to_string(),
+            name: "四川-晴儿".to_string(),
+            desc: "甜到你心里的川妹子。".to_string(),
+        },
+        VoiceOption {
+            id: "Li".to_string(),
+            name: "南京-老李".to_string(),
+            desc: "耐心的瑜伽老师".to_string(),
+        },
+        VoiceOption {
+            id: "Marcus".to_string(),
+            name: "陕西-秦川".to_string(),
+            desc: "面宽话短，心实声沉——老陕的味道。".to_string(),
+        },
+        VoiceOption {
+            id: "Roy".to_string(),
+            name: "闽南-阿杰".to_string(),
+            desc: "诙谐直爽、市井活泼的台湾哥仔形象。".to_string(),
+        },
+        VoiceOption {
+            id: "Peter".to_string(),
+            name: "天津-李彼得".to_string(),
+            desc: "天津相声，专业捧人。".to_string(),
+        },
+        VoiceOption {
+            id: "Rocky".to_string(),
+            name: "粤语-阿强".to_string(),
+            desc: "幽默风趣的阿强，在线陪聊。".to_string(),
+        },
+        VoiceOption {
+            id: "Kiki".to_string(),
+            name: "粤语-阿清".to_string(),
+            desc: "甜美的港妹闺蜜。".to_string(),
+        },
+        VoiceOption {
+            id: "Eric".to_string(),
+            name: "四川-程川".to_string(),
+            desc: "一个跳脱市井的四川成都男子。".to_string(),
         },
     ];
 

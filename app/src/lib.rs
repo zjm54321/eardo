@@ -53,6 +53,12 @@ pub fn App() -> impl IntoView {
                 // <Route path=StaticSegment("voicefilter") view=Voicefilter/>
                 </Routes>
             </main>
+            <footer class="mt-auto py-6 px-4 bg-white/70 backdrop-blur-sm border-t border-gray-100">
+                <div class="container mx-auto text-center text-gray-500 text-sm">
+                    // 更新版权信息
+                    <p>"© 2025 白昼聆夏 - 耳朵项目 | 声音转换技术展示平台"</p>
+                </div>
+            </footer>
         </Router>
     }
 }
