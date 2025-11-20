@@ -102,8 +102,8 @@ pub fn TextInputCard(
                 id="text-input"
                 // Tailwind 样式复刻原版设计
                 class="w-full p-4 border border-gray-200 rounded-lg \
-                       focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
-                       transition-all duration-300 resize-none h-32 font-sans text-gray-700 placeholder-gray-400"
+                 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
+                 transition-all duration-300 resize-none h-32 font-sans text-gray-700 placeholder-gray-400"
                 placeholder="请输入你想转换的文字...\n例如：你好，欢迎使用白昼聆夏"
                 // --- 核心逻辑：绑定信号 ---
                 // 1. 当信号改变时，更新 textarea 的值
@@ -135,80 +135,87 @@ pub fn VoiceSelectorCard(
             </h3>
 
             <div id="voice-selector" class="grid grid-cols-1 gap-3">
-                <Suspense fallback=move || view! {
-                    <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
-                        <i class="fa fa-spinner fa-spin mr-2"></i>
-                        "加载声线库..."
-                    </div>
+                <Suspense fallback=move || {
+                    view! {
+                        <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
+                            <i class="fa fa-spinner fa-spin mr-2"></i>
+                            "加载声线库..."
+                        </div>
+                    }
                 }>
                     {move || {
                         match voices_resource.get() {
-                            None => view! {
-                                <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
-                                    <i class="fa fa-spinner fa-spin mr-2"></i>
-                                    "加载声线库..."
-                                </div>
-                            }.into_any(),
-                            Some(Err(e)) =>
+                            None => {
                                 view! {
-                                <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
-                                    <i class="fa fa-spinner fa-spin mr-2"></i>
-                                    {move || debug_log!("加载声线库失败: {}", e)}
-                                    "加载声线库失败"
-                                </div>
-                            }.into_any(),
-                            Some(Ok(voices)) => view! {
-                            <div class="grid grid-cols-1 gap-3">
-                                <For
-                                    each=move || voices.clone()
-                                    key=|voice| voice.id.clone()
-                                    children=move |voice| {
-                                        let voice_id = voice.id.clone();
-                                        // is_active 是一个闭包：Fn() -> bool
-                                        let is_active = move || selected_voice.get() == voice_id;
+                                    <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
+                                        <i class="fa fa-spinner fa-spin mr-2"></i>
+                                        "加载声线库..."
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            Some(Err(e)) => {
+                                view! {
+                                    <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
+                                        <i class="fa fa-spinner fa-spin mr-2"></i>
+                                        {move || debug_log!("加载声线库失败: {}", e)}
+                                        "加载声线库失败"
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            Some(Ok(voices)) => {
+                                view! {
+                                    <div class="grid grid-cols-1 gap-3">
+                                        <For
+                                            each=move || voices.clone()
+                                            key=|voice| voice.id.clone()
+                                            children=move |voice| {
+                                                let voice_id = voice.id.clone();
+                                                let is_active = move || selected_voice.get() == voice_id;
+                                                // is_active 是一个闭包：Fn() -> bool
 
-                                        view! {
-                                            <div
-                                                class="voice-option p-4 border rounded-lg cursor-pointer transition-all duration-200 flex justify-between items-center group"
-                                                // 1. 选中状态: 边框变黄
-                                                //class:border-primary=is_active
-                                                // 2. 选中状态: 背景变淡黄 (使用 opacity 语法，因为 primary 是单色)
-                                                //class:bg-primary\/10=is_active
+                                                view! {
+                                                    <div
+                                                        class="voice-option p-4 border rounded-lg cursor-pointer transition-all duration-200 flex justify-between items-center group"
+                                                        // 1. 选中状态: 边框变黄
+                                                        // class:border-primary=is_active
+                                                        // 2. 选中状态: 背景变淡黄 (使用 opacity 语法，因为 primary 是单色)
+                                                        // class:bg-primary\/10=is_active
 
-                                                // --- 修复点在这里 ---
-                                                // 错误写法: !is_active
-                                                // 正确写法: move || !is_active()
-                                                //class:border-gray-200=move || !is_active()
+                                                        // --- 修复点在这里 ---
+                                                        // 错误写法: !is_active
+                                                        // 正确写法: move || !is_active()
+                                                        // class:border-gray-200=move || !is_active()
 
-                                                class:hover:border-primary=true
-                                                on:click=move |_| selected_voice.set(voice.id.clone())
-                                            >
-                                                <div>
-                                                    <div class="font-medium group-hover:text-primary transition-colors">
-                                                        {voice.name}
+                                                        class:hover:border-primary=true
+                                                        on:click=move |_| selected_voice.set(voice.id.clone())
+                                                    >
+                                                        <div>
+                                                            <div class="font-medium group-hover:text-primary transition-colors">
+                                                                {voice.name}
+                                                            </div>
+                                                            <div class="text-sm text-gray-500">{voice.desc}</div>
+                                                        </div>
+
+                                                        // 选中时的图标
+                                                        <div
+                                                            class="text-primary transition-opacity duration-200"
+                                                            // 这里也是同样的逻辑：需要调用闭包并取反
+                                                            class:hidden=move || !is_active()
+                                                        >
+                                                            <i class="fa fa-check-circle text-xl"></i>
+                                                        </div>
                                                     </div>
-                                                    <div class="text-sm text-gray-500">
-                                                        {voice.desc}
-                                                    </div>
-                                                </div>
-
-                                                // 选中时的图标
-                                                <div class="text-primary transition-opacity duration-200"
-                                                     // 这里也是同样的逻辑：需要调用闭包并取反
-                                                     class:hidden=move || !is_active()
-                                                >
-                                                    <i class="fa fa-check-circle text-xl"></i>
-                                                </div>
-                                            </div>
-                                        }
-                                    }
-                                />
-                            </div>
-                        }.into_any(),
-                    } // 正常情况继续往下
-
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                }
+                                    .into_any()
+                            }
                         }
-                    }
+                    }}
                 </Suspense>
             </div>
         </section>
@@ -281,10 +288,24 @@ pub fn AudioResultCard(
                     }
                     disabled=move || is_pending.get()
                 >
-                    {move || if is_pending.get() {
-                        view! { <> <i class="fa fa-circle-o-notch fa-spin mr-2"></i> "正在生成..." </> }.into_view()
-                    } else {
-                        view! { <> <i class="fa fa-magic mr-2"></i> "生成音频" </> }.into_view()
+                    {move || {
+                        if is_pending.get() {
+                            view! {
+                                <>
+                                    <i class="fa fa-circle-o-notch fa-spin mr-2"></i>
+                                    "正在生成..."
+                                </>
+                            }
+                                .into_view()
+                        } else {
+                            view! {
+                                <>
+                                    <i class="fa fa-magic mr-2"></i>
+                                    "生成音频"
+                                </>
+                            }
+                                .into_view()
+                        }
                     }}
                 </button>
             </div>
@@ -292,57 +313,76 @@ pub fn AudioResultCard(
             // --- 状态展示区域 (使用 match 替代 if-else) ---
             <div>
                 {move || match (is_pending.get(), value.get()) {
-                    // 1. 正在加载
-                    (true, _) => view! {
-                        <div class="flex flex-col items-center justify-center py-8 animate-fade-in">
-                            <div class="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4"></div>
-                            <p class="text-gray-500">"AI 正在合成您的声音..."</p>
-                        </div>
-                    }.into_any(),
-
-                    // 2. 加载完成，成功获取 URL
-                    (false, Some(Ok(url))) => view! {
-                        <div class="border border-green-200 bg-green-50 rounded-xl p-6 animate-slide-up">
-                            <div class="flex items-center mb-4">
-                                <div class="bg-green-100 p-2 rounded-full mr-3">
-                                    <i class="fa fa-check text-green-600"></i>
-                                </div>
-                                <h4 class="font-semibold text-green-800">"生成完成！"</h4>
+                    (true, _) => {
+                        // 1. 正在加载
+                        view! {
+                            <div class="flex flex-col items-center justify-center py-8 animate-fade-in">
+                                <div class="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4"></div>
+                                <p class="text-gray-500">"AI 正在合成您的声音..."</p>
                             </div>
-                            <div class="mb-4">
-                                <p class="text-sm text-gray-600 mb-2">"处理后的音频："</p>
-                                <div class="flex flex-col gap-3">
-                                    <audio controls autoplay class="w-full" src=url.clone()></audio>
-                                    <a
-                                        href=url
-                                        download="tts_audio.mp3"
-                                        target="_blank"
-                                        class="bg-white border border-green-200 text-green-700 hover:bg-green-100 px-4 py-2 rounded-lg text-sm flex items-center justify-center transition-colors"
-                                    >
-                                        <i class="fa fa-download mr-2"></i>
-                                        "下载音频"
-                                    </a>
+                        }
+                            .into_any()
+                    }
+                    (false, Some(Ok(url))) => {
+
+                        // 2. 加载完成，成功获取 URL
+                        view! {
+                            <div class="border border-green-200 bg-green-50 rounded-xl p-6 animate-slide-up">
+                                <div class="flex items-center mb-4">
+                                    <div class="bg-green-100 p-2 rounded-full mr-3">
+                                        <i class="fa fa-check text-green-600"></i>
+                                    </div>
+                                    <h4 class="font-semibold text-green-800">"生成完成！"</h4>
+                                </div>
+                                <div class="mb-4">
+                                    <p class="text-sm text-gray-600 mb-2">
+                                        "处理后的音频："
+                                    </p>
+                                    <div class="flex flex-col gap-3">
+                                        <audio
+                                            controls
+                                            autoplay
+                                            class="w-full"
+                                            src=url.clone()
+                                        ></audio>
+                                        <a
+                                            href=url
+                                            download="tts_audio.mp3"
+                                            target="_blank"
+                                            class="bg-white border border-green-200 text-green-700 hover:bg-green-100 px-4 py-2 rounded-lg text-sm flex items-center justify-center transition-colors"
+                                        >
+                                            <i class="fa fa-download mr-2"></i>
+                                            "下载音频"
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    }.into_any(),
+                        }
+                            .into_any()
+                    }
+                    (false, Some(Err(e))) => {
 
-                    // 3. 失败 (可选处理)
-                    (false, Some(Err(e))) => view! {
-                        <div class="text-center py-8 text-red-500 bg-red-50 rounded-xl border border-red-200">
-                            <i class="fa fa-exclamation-triangle text-4xl mb-3 opacity-50"></i>
-                            <p>"生成失败: "</p>
-                            {move || debug_warn!("生成音频失败: {:?}", e)}
-                        </div>
-                    }.into_any(),
+                        // 3. 失败 (可选处理)
+                        view! {
+                            <div class="text-center py-8 text-red-500 bg-red-50 rounded-xl border border-red-200">
+                                <i class="fa fa-exclamation-triangle text-4xl mb-3 opacity-50"></i>
+                                <p>"生成失败: "</p>
+                                {move || debug_warn!("生成音频失败: {:?}", e)}
+                            </div>
+                        }
+                            .into_any()
+                    }
+                    _ => {
 
-                    // 4. 初始状态 / 空闲 (None)
-                    _ => view! {
-                        <div class="text-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                            <i class="fa fa-headphones text-4xl mb-3 opacity-30"></i>
-                            <p class="text-sm">"输入文本后点击生成按钮"</p>
-                        </div>
-                    }.into_any(),
+                        // 4. 初始状态 / 空闲 (None)
+                        view! {
+                            <div class="text-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                <i class="fa fa-headphones text-4xl mb-3 opacity-30"></i>
+                                <p class="text-sm">"输入文本后点击生成按钮"</p>
+                            </div>
+                        }
+                            .into_any()
+                    }
                 }}
             </div>
         </section>

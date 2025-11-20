@@ -13,19 +13,22 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
         <!DOCTYPE html>
         <html lang="zh-CN">
             <head>
-                <meta charset="utf-8"/>
-                <meta name="viewport" content="width=device-width, initial-scale=1"/>
-                <AutoReload options=options.clone()/>
-                <HydrationScripts options/>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <AutoReload options=options.clone() />
+                <HydrationScripts options />
 
-                <Stylesheet id="leptos" href="/pkg/eardo.css"/>
-                <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet" />
+                <Stylesheet id="leptos" href="/pkg/eardo.css" />
+                <link
+                    href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css"
+                    rel="stylesheet"
+                />
 
-                <MetaTags/>
+                <MetaTags />
             </head>
 
             <body class="bg-gradient-summer min-h-screen font-sans text-dark">
-                <App/>
+                <App />
             </body>
         </html>
     }
@@ -38,17 +41,16 @@ pub fn App() -> impl IntoView {
 
     view! {
         // sets the document title
-        <Title text="耳朵 - 白昼聆夏"/>
+        <Title text="耳朵 - 白昼聆夏" />
 
         // content for this welcome page
         <Router>
             <main>
-                <pages::Header/>
-                <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=pages::homepage::HomePage/>
-                    //<Route path=StaticSegment("playground") view=Playground/>
-                    //<Route path=StaticSegment("voicefilter") view=Voicefilter/>
-
+                <pages::Header />
+                <Routes fallback=|| pages::NotFound()>
+                    <Route path=StaticSegment("") view=pages::homepage::HomePage />
+                // <Route path=StaticSegment("playground") view=Playground/>
+                // <Route path=StaticSegment("voicefilter") view=Voicefilter/>
                 </Routes>
             </main>
         </Router>

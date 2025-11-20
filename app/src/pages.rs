@@ -14,8 +14,11 @@ pub fn Header() -> impl IntoView {
             <div class="container mx-auto flex justify-between items-center">
 
                 // --- 左侧：Logo ---
-                // 使用 <A> 组件包裹以便点击 Logo 返回首页
-                <A href="/" attr:class="flex items-center space-x-2 group text-decoration-none cursor-pointer">
+                // 点击 Logo 返回首页
+                <A
+                    href="/"
+                    attr:class="flex items-center space-x-2 group text-decoration-none cursor-pointer"
+                >
                     // 旋转动画效果
                     <i class="fa fa-headphones text-primary text-2xl group-hover:rotate-12 transition-transform duration-300"></i>
                     <h1 class="text-xl md:text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
@@ -23,14 +26,41 @@ pub fn Header() -> impl IntoView {
                     </h1>
                 </A>
 
-                // --- 中间：页面跳转 (声音广场) ---
-                <nav class="absolute left-1/2 transform -translate-x-1/2">
+                // --- 中间：导航菜单 ---
+                // 使用 flex 和 gap 来排列多个链接
+                // hidden md:flex: 在移动端隐藏，桌面端显示 (移动端通常需要汉堡菜单，这里暂略)
+                <nav class="absolute left-1/2 transform -translate-x-1/2 hidden md:flex items-center space-x-1">
+                    // 1. 首页
+                    <A
+                        href="/"
+                        attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                    >
+                        <i class="fa fa-home text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
+                            "首页"
+                        </span>
+                    </A>
+
+                    // 2. 声音广场
                     <A
                         href="/voice"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
                     >
                         <i class="fa fa-music text-gray-400 group-hover:text-primary transition-colors"></i>
-                        <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">"声音广场"</span>
+                        <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
+                            "声音广场"
+                        </span>
+                    </A>
+
+                    // 3. 声音滤镜
+                    <A
+                        href="/filters"
+                        attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                    >
+                        <i class="fa fa-sliders text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
+                            "声音滤镜"
+                        </span>
                     </A>
                 </nav>
 
@@ -45,13 +75,86 @@ pub fn Header() -> impl IntoView {
                     </button>
 
                     // Todo Tooltip (Hover 时显示)
-                    <div class="absolute right-0 top-full mt-2 w-32 bg-dark text-xs rounded-lg py-2 px-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform translate-y-2 group-hover:translate-y-0 text-center shadow-lg z-50">
-                        "登录功能开发中..."
+                    <div class="absolute right-0 top-full mt-2 w-32 bg-dark text-white text-xs rounded-lg py-2 px-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform translate-y-2 group-hover:translate-y-0 text-center shadow-lg z-50">
                         // 小三角
+                        "登录功能开发中..."
                         <div class="absolute -top-1 right-3 w-2 h-2 bg-dark transform rotate-45"></div>
                     </div>
                 </div>
             </div>
         </header>
+    }
+}
+
+#[component]
+pub fn NotFound() -> impl IntoView {
+    view! {
+        // 容器：flex 居中，使用稍微深一点的背景色突出卡片
+        <div class="min-h-[80vh] flex flex-col items-center justify-center text-center px-4">
+
+            // 错误信息卡片 (前景)
+            // shadow-2xl: 更深的阴影
+            // max-w-3xl: 稍微加宽一点
+            <div class="relative z-10 bg-white p-12 md:p-20 rounded-3xl shadow-2xl border border-gray-100 max-w-3xl w-full mx-auto overflow-visible">
+
+                // 图标区域
+                <div class="mb-8  relative inline-block">
+                    // 背景光晕 (调小模糊半径 blur-2xl)
+                    <div class="absolute inset-0 bg-primary/20 rounded-full blur-2xl transform scale-110"></div>
+
+                    // 图标本身：SVG
+                    // text-primary: 保持主题色
+                    // w-32 h-32 md:w-40 md:h-40: 调小尺寸 (128px - 160px)，更精致
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        // 稍微加粗线条，因为图标变小了
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="w-32 h-32 md:w-40 md:h-40 text-primary relative z-10 animate-bounce-slow"
+                    >
+                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                        <path d="M12 9v4" />
+                        <path d="M12 17h.01" />
+                    </svg>
+                </div>
+
+                <h2 class="text-4xl md:text-5xl font-black text-dark mb-6 tracking-tight relative z-20">
+                    "哎呀！页面走丢了"
+                </h2>
+
+                <div class="text-gray-500 text-lg md:text-xl mb-10 leading-relaxed space-y-2 relative z-20">
+                    <p>"你寻找的声音似乎不在这里..."</p>
+                    <p>"但不要灰心，也许它藏在别的地方。"</p>
+                </div>
+
+                // 返回首页按钮
+                <a
+                    href="/"
+                    class="relative z-20 inline-flex items-center px-8 py-4 bg-primary hover:bg-primary/90 text-white text-lg font-bold rounded-2xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-1 active:translate-y-0 active:shadow-md group"
+                >
+                    // Home icon SVG
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="mr-2 w-5 h-5 group-hover:scale-110 transition-transform"
+                    >
+                        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                        <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    "返回首页"
+                </a>
+            </div>
+        </div>
     }
 }
