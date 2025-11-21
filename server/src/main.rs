@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use app::*;
 use axum::Router;
 use dotenv::dotenv;
