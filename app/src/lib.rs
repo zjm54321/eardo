@@ -6,6 +6,7 @@ use leptos_router::{
 };
 
 mod api;
+mod data;
 mod pages;
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -50,7 +51,7 @@ pub fn App() -> impl IntoView {
                 <Routes fallback=|| pages::NotFound()>
                     <Route path=StaticSegment("") view=pages::homepage::HomePage />
                 // <Route path=StaticSegment("playground") view=Playground/>
-                // <Route path=StaticSegment("voicefilter") view=Voicefilter/>
+                    <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
                 </Routes>
             </main>
             <footer class="mt-auto py-6 px-4 bg-white/70 backdrop-blur-sm border-t border-gray-100">

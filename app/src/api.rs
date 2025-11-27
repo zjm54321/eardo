@@ -1,3 +1,4 @@
+use crate::data;
 use crate::pages::homepage::GenerateParams;
 #[cfg(not(target_arch = "wasm32"))]
 use base64::{engine::general_purpose, Engine as _};
@@ -8,99 +9,92 @@ use leptos::prelude::*;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct VoiceOption {
-    pub id: String,
-    pub name: String,
-    pub desc: String,
-}
-
 #[server]
-pub async fn get_voices() -> Result<Vec<VoiceOption>, ServerFnError> {
+pub async fn get_voices() -> Result<Vec<data::VoiceOption>, ServerFnError> {
     // 这里是服务器端代码
     // 模拟数据库查询，返回硬编码数据
     let voices = vec![
-        VoiceOption {
+        data::VoiceOption {
             id: "Cherry".to_string(),
             name: "芊悦".to_string(),
             desc: "阳光积极、亲切自然小姐姐。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Ethan".to_string(),
             name: "晨煦".to_string(),
             desc: "标准普通话，带部分北方口音。阳光、温暖、活力、朝气。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Nofish".to_string(),
             name: "不吃鱼".to_string(),
             desc: "不会翘舌音的设计师。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Jennifer".to_string(),
             name: "詹妮弗".to_string(),
             desc: "品牌级、电影质感般美语女声。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Ryan".to_string(),
             name: "甜茶".to_string(),
             desc: "节奏拉满，戏感炸裂，真实与张力共舞。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Katerina".to_string(),
             name: "卡捷琳娜".to_string(),
             desc: "御姐音色，韵律回味十足。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Elias".to_string(),
             name: "墨讲师".to_string(),
             desc: "既保持学科严谨性，又通过叙事技巧将复杂知识转化为可消化的认知模块。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Jada".to_string(),
             name: "上海-阿珍".to_string(),
             desc: "风风火火的沪上阿姐。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Dylan".to_string(),
             name: "北京-晓东".to_string(),
             desc: "北京胡同里长大的少年。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Sunny".to_string(),
             name: "四川-晴儿".to_string(),
             desc: "甜到你心里的川妹子。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Li".to_string(),
             name: "南京-老李".to_string(),
             desc: "耐心的瑜伽老师".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Marcus".to_string(),
             name: "陕西-秦川".to_string(),
             desc: "面宽话短，心实声沉——老陕的味道。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Roy".to_string(),
             name: "闽南-阿杰".to_string(),
             desc: "诙谐直爽、市井活泼的台湾哥仔形象。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Peter".to_string(),
             name: "天津-李彼得".to_string(),
             desc: "天津相声，专业捧人。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Rocky".to_string(),
             name: "粤语-阿强".to_string(),
             desc: "幽默风趣的阿强，在线陪聊。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Kiki".to_string(),
             name: "粤语-阿清".to_string(),
             desc: "甜美的港妹闺蜜。".to_string(),
         },
-        VoiceOption {
+        data::VoiceOption {
             id: "Eric".to_string(),
             name: "四川-程川".to_string(),
             desc: "一个跳脱市井的四川成都男子。".to_string(),
@@ -255,4 +249,103 @@ pub async fn generate_audio(params: GenerateParams) -> Result<String, ServerFnEr
     Err(ServerFnError::ServerError(
         "No audio URL found in response".to_string(),
     ))
+}
+
+// --- 新增：获取滤镜列表 API ---
+#[server]
+pub async fn get_voice_filters() -> Result<Vec<data::VoiceFilter>, ServerFnError> {
+    // 模拟数据
+    let filters = vec![
+        // --- 官方推荐 ---
+        data::VoiceFilter {
+            id: 1,
+            name: "清澈高音".to_string(),
+            desc: "提升音调，适合欢快的场景".to_string(),
+            voice_data: data::VoiceData {
+                voice_id: "Cherry".to_string(),
+                voice_params: data::VoiceParams {
+                    pitch: 1.8,
+                    speed: 1.1,
+                    emotion: data::Emotion::Happy,
+                },
+            },
+            tags: vec!["明亮".to_string(), "高音".to_string()],
+            usage_count: 1205,
+            author: "官方".to_string(),
+            state: data::DisplayState::Official,
+        },
+        data::VoiceFilter {
+            id: 2,
+            name: "低沉叙述".to_string(),
+            desc: "压低声线，适合讲故事".to_string(),
+            voice_data: data::VoiceData {
+                voice_id: "Ethan".to_string(),
+                voice_params: data::VoiceParams {
+                    pitch: -2.0,
+                    speed: 0.9,
+                    emotion: data::Emotion::Calm,
+                },
+            },
+
+            tags: vec!["低沉".to_string(), "磁性".to_string()],
+            usage_count: 890,
+            author: "官方".to_string(),
+            state: data::DisplayState::Official,
+        },
+        // --- 用户推荐 ---
+        data::VoiceFilter {
+            id: 3,
+            name: "悲伤独白".to_string(),
+            desc: "慢速低沉，充满忧伤".to_string(),
+            voice_data: data::VoiceData {
+                voice_id: "Nofish".to_string(),
+                voice_params: data::VoiceParams {
+                    pitch: -1.5,
+                    speed: 0.8,
+                    emotion: data::Emotion::Sad,
+                },
+            },
+
+            tags: vec!["悲伤".to_string(), "慢速".to_string()],
+            usage_count: 342,
+            author: "林间鹿".to_string(),
+            state: data::DisplayState::Recommended,
+        },
+        data::VoiceFilter {
+            id: 4,
+            name: "激昂演讲".to_string(),
+            desc: "快速有力，充满激情".to_string(),
+            voice_data: data::VoiceData {
+                voice_id: "Ryan".to_string(),
+                voice_params: data::VoiceParams {
+                    pitch: 1.0,
+                    speed: 1.3,
+                    emotion: data::Emotion::Excited,
+                },
+            },
+            tags: vec!["激昂".to_string(), "演讲".to_string()],
+            usage_count: 567,
+            author: "雨夜听风".to_string(),
+            state: data::DisplayState::Recommended,
+        },
+        data::VoiceFilter {
+            id: 5,
+            name: "温柔晚安".to_string(),
+            desc: "轻柔舒缓，助眠专用".to_string(),
+            voice_data: data::VoiceData {
+                voice_id: "Sunny".to_string(),
+                voice_params: data::VoiceParams {
+                    pitch: -0.5,
+                    speed: 0.75,
+                    emotion: data::Emotion::Peaceful,
+                },
+            },
+            tags: vec!["治愈".to_string(), "晚安".to_string()],
+            usage_count: 128,
+            author: "星辰大海".to_string(),
+            state: data::DisplayState::Recommended,
+        },
+    ];
+
+    Ok(filters)
 }

@@ -1,68 +1,9 @@
 use crate::api;
+use crate::data::{Emotion, VoiceParams};
 use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
+use leptos_router::hooks::use_query_map;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum Emotion {
-    Normal,
-    Angry,
-    Calm,
-    Excited,
-    Happy,
-    Peaceful,
-    Sad,
-    Suprised,
-}
-
-impl fmt::Display for Emotion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Emotion::Normal => "正常",
-            Emotion::Angry => "生气",
-            Emotion::Calm => "冷静",
-            Emotion::Excited => "激动",
-            Emotion::Happy => "开心",
-            Emotion::Peaceful => "平静",
-            Emotion::Sad => "悲伤",
-            Emotion::Suprised => "惊讶",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-impl Emotion {
-    pub fn all() -> Vec<Emotion> {
-        vec![
-            Emotion::Normal,
-            Emotion::Angry,
-            Emotion::Calm,
-            Emotion::Excited,
-            Emotion::Happy,
-            Emotion::Peaceful,
-            Emotion::Sad,
-            Emotion::Suprised,
-        ]
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct VoiceParams {
-    pub pitch: f32,
-    pub speed: f32,
-    pub emotion: Emotion,
-}
-
-impl Default for VoiceParams {
-    fn default() -> Self {
-        VoiceParams {
-            pitch: 0.0,
-            speed: 1.0,
-            emotion: Emotion::Normal,
-        }
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenerateParams {
@@ -74,9 +15,52 @@ pub struct GenerateParams {
 #[component]
 pub fn HomePage() -> impl IntoView {
     // 状态
+    // 1. 获取 URL 查询参数
+    let query = use_query_map();
+
+    // 2. 初始化信号 (优先从 URL 参数读取，否则用默认值)
+    let get_f32_param = |key: &str, default: f32| {
+        query.with(|q| {
+            q.get(key)
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(default)
+        })
+    };
+    let get_str_param = |key: &str, default: &str| {
+        query.with(|q| {
+            q.get(key)
+                .map(|arg0: std::string::String| ToString::to_string(&arg0))
+                .unwrap_or(default.to_string())
+        })
+    };
+
     let text_signal = RwSignal::new(String::new());
-    let voice_signal = RwSignal::new(String::new());
-    let param_signal = RwSignal::new(VoiceParams::default());
+
+    // 初始化声线 ID
+    let initial_voice_id = get_str_param("voice_id", "longxiaoxia");
+    let voice_signal = RwSignal::new(initial_voice_id);
+
+    // 初始化参数
+    let initial_pitch = get_f32_param("pitch", 0.0);
+    let initial_speed = get_f32_param("speed", 1.0);
+    let emotion_str = get_str_param("emotion", "normal");
+
+    let initial_emotion = match emotion_str.as_str() {
+        "生气" => Emotion::Angry,
+        "冷静" => Emotion::Calm,
+        "激动" => Emotion::Excited,
+        "开心" => Emotion::Happy,
+        "平静" => Emotion::Peaceful,
+        "悲伤" => Emotion::Sad,
+        "惊讶" => Emotion::Suprised,
+        _ => Emotion::Normal,
+    };
+
+    let param_signal = RwSignal::new(VoiceParams {
+        pitch: initial_pitch,
+        speed: initial_speed,
+        emotion: initial_emotion,
+    });
 
     // 创建 Action 处理生成请求
     // Action 自动管理 pending (加载中) 和 value (返回值) 状态
