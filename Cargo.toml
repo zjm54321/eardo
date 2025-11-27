@@ -26,6 +26,8 @@ tokio = { version = "1.45.0", features = ["full"] }
 tower = { version = "0.5.2", features = ["full"] }
 tower-http = { version = "0.6.4", features = ["full"] }
 wasm-bindgen = "=0.2.105"
+# 修改: 显式添加 macros feature
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros"] }
 
 # See https://github.com/leptos-rs/cargo-leptos for documentation of all the parameters.
 
