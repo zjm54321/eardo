@@ -20,14 +20,16 @@ pub fn HomePage() -> impl IntoView {
 
     // 2. 初始化信号 (优先从 URL 参数读取，否则用默认值)
     let get_f32_param = |key: &str, default: f32| {
-        query.with(|q| {
+        // 修改：使用 with_untracked 避免在初始化时建立不必要的响应式追踪
+        query.with_untracked(|q| {
             q.get(key)
                 .and_then(|v| v.parse::<f32>().ok())
                 .unwrap_or(default)
         })
     };
     let get_str_param = |key: &str, default: &str| {
-        query.with(|q| {
+        // 修改：使用 with_untracked
+        query.with_untracked(|q| {
             q.get(key)
                 .map(|arg0: std::string::String| ToString::to_string(&arg0))
                 .unwrap_or(default.to_string())
