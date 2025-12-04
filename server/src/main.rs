@@ -4,9 +4,10 @@ use app::*;
 use axum::{
     Router,
     body::Body,
-    extract::{FromRef, Request, State},
-    response::IntoResponse,
-    routing::post,
+    extract::{FromRef, Path, Request, State}, // 引入 Path 用于提取 URL 参数
+    http::{StatusCode, header},               // 引入 HTTP 响应相关类型
+    response::IntoResponse,                   // 用于返回响应
+    routing::{get, post},                     // 引入 get 路由
 };
 use dotenv::dotenv;
 use leptos::logging::log;
@@ -38,6 +39,34 @@ async fn server_fn_handler(
     .await
 }
 
+// --- 新增：音频文件下载/播放 处理函数 ---
+async fn get_audio_handler(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    // 从数据库查询 BLOB 数据
+    let result: Result<(Vec<u8>,), sqlx::Error> =
+        sqlx::query_as("SELECT data FROM audio_files WHERE id = ?")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await;
+
+    match result {
+        Ok((data,)) => {
+            // 返回音频流，设置正确的 Content-Type
+            (
+                [
+                    (header::CONTENT_TYPE, "audio/mp3"),
+                    (header::CACHE_CONTROL, "public, max-age=3600"), // 允许缓存 1 小时
+                ],
+                data,
+            )
+                .into_response()
+        }
+        Err(_) => (StatusCode::NOT_FOUND, "Audio not found").into_response(),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -67,6 +96,7 @@ async fn main() {
     // 关键点：显式指定 Router 的状态类型为 <AppState>，帮助编译器推断
     let app = Router::<AppState>::new()
         .route("/api/{*fn_name}", post(server_fn_handler))
+        .route("/api/audio/{id}", get(get_audio_handler))
         .leptos_routes_with_context(
             &app_state,
             routes,

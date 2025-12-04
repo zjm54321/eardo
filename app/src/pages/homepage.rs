@@ -350,7 +350,7 @@ pub fn ParameterControlCard(
                         <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"-2.0"</span>
                         <input
                             type="range"
-                            min="-2.0"
+                            min="0.5"
                             max="2.0"
                             step="0.01"
                             class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"

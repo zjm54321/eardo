@@ -28,6 +28,8 @@ chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
 dotenv = "0.15.0"
 uuid = "1.18.1"
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+futures-util = "0.3"
 
 [features]
 default = []
