@@ -1,0 +1,167 @@
+name: Package Application
+
+on:
+  workflow_dispatch: # 允许手动触发
+    inputs:
+      build_linux:
+        description: 'Build for Linux'
+        required: false
+        default: true
+        type: boolean
+      build_windows:
+        description: 'Build for Windows'
+        required: false
+        default: true
+        type: boolean
+      build_macos:
+        description: 'Build for macOS'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  LEPTOS_OUTPUT_NAME: eardo # 确保这与 Cargo.toml 中的 [[workspace.metadata.leptos]] name 一致
+
+jobs:
+  package-linux:
+    if: ${{ inputs.build_linux }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # 1. 安装系统依赖
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      # 2. 安装 Rust 工具链
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+
+      # 3. 安装 cargo-leptos
+      - name: Install cargo-leptos
+        run: |
+          wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
+          tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz
+          sudo mv cargo-binstall /usr/local/cargo/bin/
+          cargo binstall cargo-leptos -y
+
+      # 4. 构建应用
+      - name: Build App
+        run: cargo leptos build --release
+
+      # 5. 打包输出文件夹
+      - name: Create Distribution Package
+        run: |
+          mkdir -p dist
+          cp target/release/${{ env.LEPTOS_OUTPUT_NAME }} dist/
+          cp -r target/site dist/site
+          cp Cargo.toml dist/
+          if [ -d "migrations" ]; then
+            cp -r migrations dist/migrations
+          fi
+          chmod +x dist/${{ env.LEPTOS_OUTPUT_NAME }}
+
+      # 6. 上传 Artifact
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.LEPTOS_OUTPUT_NAME }}-linux-package
+          path: dist/
+          if-no-files-found: error
+
+  package-windows:
+    if: ${{ inputs.build_windows }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # 1. 安装 Rust 工具链
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+
+      # 2. 安装 cargo-leptos (Windows 下使用 cargo install 或者下载预编译二进制)
+      # 这里使用 cargo binstall 更快
+      - name: Install cargo-binstall
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip" -OutFile "cargo-binstall.zip"
+          Expand-Archive -Path "cargo-binstall.zip" -DestinationPath "."
+          Move-Item -Path "cargo-binstall.exe" -Destination "C:\ProgramData\Chocolatey\bin\" -Force -ErrorAction SilentlyContinue
+          # 如果上面移动失败，尝试添加到 PATH 或者直接调用
+          ./cargo-binstall.exe cargo-leptos -y
+
+      # 3. 构建应用
+      - name: Build App
+        run: cargo leptos build --release
+
+      # 4. 打包输出文件夹 (使用 PowerShell)
+      - name: Create Distribution Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item -Path "target\release\${{ env.LEPTOS_OUTPUT_NAME }}.exe" -Destination dist\
+          Copy-Item -Recurse -Path "target\site" -Destination dist\site
+          Copy-Item -Path "Cargo.toml" -Destination dist\
+          if (Test-Path "migrations") {
+            Copy-Item -Recurse -Path "migrations" -Destination dist\migrations
+          }
+
+      # 5. 上传 Artifact
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.LEPTOS_OUTPUT_NAME }}-windows-package
+          path: dist/
+          if-no-files-found: error
+
+  package-macos:
+    if: ${{ inputs.build_macos }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # 1. 安装 Rust 工具链
+      # 注意：默认构建的是 x86_64 (Intel) 或 aarch64 (Apple Silicon) 取决于 runner。
+      # GitHub hosted macos-latest 目前通常是 M1/M2 (ARM64) 或 Intel。
+      # 这里我们简单构建当前架构版本。如果需要通用二进制比较复杂。
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+
+      # 2. 安装 cargo-leptos
+      - name: Install cargo-leptos
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall cargo-leptos -y
+
+      # 3. 构建应用
+      - name: Build App
+        run: cargo leptos build --release
+
+      # 4. 打包输出文件夹
+      - name: Create Distribution Package
+        run: |
+          mkdir -p dist
+          # macOS 二进制文件也是没有后缀的
+          cp target/release/${{ env.LEPTOS_OUTPUT_NAME }} dist/
+          cp -r target/site dist/site
+          cp Cargo.toml dist/
+          if [ -d "migrations" ]; then
+            cp -r migrations dist/migrations
+          fi
+          chmod +x dist/${{ env.LEPTOS_OUTPUT_NAME }}
+
+      # 5. 上传 Artifact
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.LEPTOS_OUTPUT_NAME }}-macos-package
+          path: dist/
+          if-no-files-found: error
