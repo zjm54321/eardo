@@ -55,13 +55,13 @@ jobs:
       - name: Create Distribution Package
         run: |
           mkdir -p dist
-          cp target/release/${{ env.LEPTOS_OUTPUT_NAME }} dist/
+          cp target/release/server dist/
           cp -r target/site dist/site
           cp Cargo.toml dist/
           if [ -d "migrations" ]; then
             cp -r migrations dist/migrations
           fi
-          chmod +x dist/${{ env.LEPTOS_OUTPUT_NAME }}
+          chmod +x dist/server
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
@@ -112,7 +112,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist
           # Windows 二进制有 .exe 后缀
-          Copy-Item -Path "target\release\${{ env.LEPTOS_OUTPUT_NAME }}.exe" -Destination dist\
+          Copy-Item -Path "target\release\server.exe" -Destination dist\
           Copy-Item -Recurse -Path "target\site" -Destination dist\site
           Copy-Item -Path "Cargo.toml" -Destination dist\
           if (Test-Path "migrations") {
@@ -154,13 +154,13 @@ jobs:
       - name: Create Distribution Package
         run: |
           mkdir -p dist
-          cp target/release/${{ env.LEPTOS_OUTPUT_NAME }} dist/
+          cp target/release/server dist/
           cp -r target/site dist/site
           cp Cargo.toml dist/
           if [ -d "migrations" ]; then
             cp -r migrations dist/migrations
           fi
-          chmod +x dist/${{ env.LEPTOS_OUTPUT_NAME }}
+          chmod +x dist/server
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
