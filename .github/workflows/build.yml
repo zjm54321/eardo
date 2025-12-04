@@ -21,7 +21,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  LEPTOS_OUTPUT_NAME: eardo # 确保这与 Cargo.toml 中的 [[workspace.metadata.leptos]] name 一致
+  LEPTOS_OUTPUT_NAME: eardo
 
 jobs:
   package-linux:
@@ -30,31 +30,28 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # 1. 安装系统依赖
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config
 
-      # 2. 安装 Rust 工具链
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
 
-      # 3. 安装 cargo-leptos
+      # 使用官方推荐的 install-from-binstall-release.sh 脚本安装 cargo-binstall
+      # 然后使用 cargo binstall 安装 cargo-leptos，并传入 GITHUB_TOKEN
       - name: Install cargo-leptos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
-          tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz
-          sudo mv cargo-binstall /usr/local/cargo/bin/
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
           cargo binstall cargo-leptos -y
 
-      # 4. 构建应用
       - name: Build App
         run: cargo leptos build --release
 
-      # 5. 打包输出文件夹
       - name: Create Distribution Package
         run: |
           mkdir -p dist
@@ -66,7 +63,6 @@ jobs:
           fi
           chmod +x dist/${{ env.LEPTOS_OUTPUT_NAME }}
 
-      # 6. 上传 Artifact
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -80,31 +76,42 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # 1. 安装 Rust 工具链
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
 
-      # 2. 安装 cargo-leptos (Windows 下使用 cargo install 或者下载预编译二进制)
-      # 这里使用 cargo binstall 更快
-      - name: Install cargo-binstall
+      # Windows 上安装 cargo-binstall 的更稳健方法：
+      # 使用 PowerShell 下载并将其放入 Cargo 的 bin 目录（该目录通常在 PATH 中）
+      - name: Install cargo-leptos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          Invoke-WebRequest -Uri "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip" -OutFile "cargo-binstall.zip"
+          $url = "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile "cargo-binstall.zip"
           Expand-Archive -Path "cargo-binstall.zip" -DestinationPath "."
-          Move-Item -Path "cargo-binstall.exe" -Destination "C:\ProgramData\Chocolatey\bin\" -Force -ErrorAction SilentlyContinue
-          # 如果上面移动失败，尝试添加到 PATH 或者直接调用
-          ./cargo-binstall.exe cargo-leptos -y
+          
+          # 获取 cargo bin 目录
+          $cargoBin = "${env:USERPROFILE}\.cargo\bin"
+          if (-not (Test-Path $cargoBin)) { New-Item -ItemType Directory -Force -Path $cargoBin }
+          
+          # 移动并覆盖
+          Move-Item -Path "cargo-binstall.exe" -Destination "$cargoBin\" -Force
+          
+          # 验证安装
+          cargo binstall --version
+          
+          # 使用 binstall 安装 leptos
+          cargo binstall cargo-leptos -y
 
-      # 3. 构建应用
       - name: Build App
         run: cargo leptos build --release
 
-      # 4. 打包输出文件夹 (使用 PowerShell)
       - name: Create Distribution Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
+          # Windows 二进制有 .exe 后缀
           Copy-Item -Path "target\release\${{ env.LEPTOS_OUTPUT_NAME }}.exe" -Destination dist\
           Copy-Item -Recurse -Path "target\site" -Destination dist\site
           Copy-Item -Path "Cargo.toml" -Destination dist\
@@ -112,7 +119,6 @@ jobs:
             Copy-Item -Recurse -Path "migrations" -Destination dist\migrations
           }
 
-      # 5. 上传 Artifact
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -126,30 +132,28 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # 1. 安装 Rust 工具链
-      # 注意：默认构建的是 x86_64 (Intel) 或 aarch64 (Apple Silicon) 取决于 runner。
-      # GitHub hosted macos-latest 目前通常是 M1/M2 (ARM64) 或 Intel。
-      # 这里我们简单构建当前架构版本。如果需要通用二进制比较复杂。
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
 
-      # 2. 安装 cargo-leptos
+      # macOS 修复：使用 GITHUB_TOKEN
       - name: Install cargo-leptos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # 安装 cargo-binstall
           curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          
+          # 使用 binstall 安装 cargo-leptos，此时有了 Token 就不会 403 了
           cargo binstall cargo-leptos -y
 
-      # 3. 构建应用
       - name: Build App
         run: cargo leptos build --release
 
-      # 4. 打包输出文件夹
       - name: Create Distribution Package
         run: |
           mkdir -p dist
-          # macOS 二进制文件也是没有后缀的
           cp target/release/${{ env.LEPTOS_OUTPUT_NAME }} dist/
           cp -r target/site dist/site
           cp Cargo.toml dist/
@@ -158,7 +162,6 @@ jobs:
           fi
           chmod +x dist/${{ env.LEPTOS_OUTPUT_NAME }}
 
-      # 5. 上传 Artifact
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
