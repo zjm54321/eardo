@@ -18,6 +18,17 @@ pub fn Playground() -> impl IntoView {
     // 这里演示使用 Action 来手动加载更多并追加到信号中
     let (works_list, set_works_list) = signal(Vec::<VoiceWork>::new());
 
+    // 初始化：加载第一页
+    let load_initial_works = Resource::new(
+        || (),
+        move |_| async move {
+            match get_latest_works(1, 6).await {
+                Ok(works) => set_works_list.set(works),
+                Err(_) => {}
+            }
+        },
+    );
+
     // Action: 加载更多
     let load_more_action = Action::new(move |_| {
         let current_p = page.get() + 1;

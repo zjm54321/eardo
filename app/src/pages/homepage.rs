@@ -4,6 +4,8 @@ use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::JsCast;
+use web_sys::{AudioContext, HtmlAudioElement, HtmlCanvasElement};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenerateParams {
@@ -19,8 +21,8 @@ pub fn HomePage() -> impl IntoView {
     let query = use_query_map();
 
     // 2. 初始化信号 (优先从 URL 参数读取，否则用默认值)
+    // 使用 with_untracked 避免初始化时的响应式追踪警告
     let get_f32_param = |key: &str, default: f32| {
-        // 修改：使用 with_untracked 避免在初始化时建立不必要的响应式追踪
         query.with_untracked(|q| {
             q.get(key)
                 .and_then(|v| v.parse::<f32>().ok())
@@ -28,7 +30,6 @@ pub fn HomePage() -> impl IntoView {
         })
     };
     let get_str_param = |key: &str, default: &str| {
-        // 修改：使用 with_untracked
         query.with_untracked(|q| {
             q.get(key)
                 .map(|arg0: std::string::String| ToString::to_string(&arg0))
@@ -43,7 +44,7 @@ pub fn HomePage() -> impl IntoView {
     let voice_signal = RwSignal::new(initial_voice_id);
 
     // 初始化参数
-    let initial_pitch = get_f32_param("pitch", 0.0);
+    let initial_pitch = get_f32_param("pitch", 1.0);
     let initial_speed = get_f32_param("speed", 1.0);
     let emotion_str = get_str_param("emotion", "normal");
 
@@ -347,7 +348,7 @@ pub fn ParameterControlCard(
                         </span>
                     </div>
                     <div class="relative flex items-center">
-                        <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"-2.0"</span>
+                        <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0.5"</span>
                         <input
                             type="range"
                             min="0.5"
@@ -471,9 +472,134 @@ pub fn AudioResultCard(
     let is_pending = generate_action.pending();
     let value = generate_action.value();
 
+    // 绑定 audio 元素和 canvas 元素
+    let audio_ref = NodeRef::<leptos::html::Audio>::new();
+    let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
+
+    // 视觉效果状态
+    let is_playing = RwSignal::new(false);
+
+    // 可视化逻辑
+    let setup_visualizer = move || {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::closure::Closure;
+            use web_sys::{AnalyserNode, AudioContext, CanvasRenderingContext2d};
+
+            let audio_el = audio_ref.get();
+            let canvas_el = canvas_ref.get();
+
+            if let (Some(audio), Some(canvas)) = (audio_el, canvas_el) {
+                // Leptos 的 NodeRef deref 得到的是 HtmlElement<Audio>
+                // 我们需要将其转换为 web_sys::HtmlAudioElement
+                // 由于 Leptos 的元素类型通常可以直接转换，我们尝试直接使用或者通过 JsCast
+                use wasm_bindgen::JsCast;
+                let audio: web_sys::HtmlAudioElement = audio.unchecked_into();
+                let canvas: web_sys::HtmlCanvasElement = canvas.unchecked_into();
+
+                // 1. 设置 Canvas 尺寸
+                let parent = canvas.parent_element().unwrap();
+                let width = parent.client_width() as u32;
+                let height = 300; // 固定高度
+                canvas.set_width(width);
+                canvas.set_height(height);
+
+                // 2. 初始化 Audio Context
+                audio.set_cross_origin(Some("anonymous"));
+
+                let ctx =
+                    AudioContext::new().unwrap_or_else(|_| panic!("Failed to create AudioContext"));
+                let analyser = ctx.create_analyser().unwrap();
+                analyser.set_fft_size(256); // 256 -> 128 个数据点
+
+                // 创建源并连接
+                let source = match ctx.create_media_element_source(&audio) {
+                    Ok(src) => src,
+                    Err(_) => return, // 可能已经连接过
+                };
+
+                source.connect_with_audio_node(&analyser).unwrap();
+                analyser
+                    .connect_with_audio_node(&ctx.destination())
+                    .unwrap();
+
+                let buffer_length = analyser.frequency_bin_count();
+                let mut data_array = vec![0u8; buffer_length as usize];
+
+                let ctx_2d: CanvasRenderingContext2d =
+                    canvas.get_context("2d").unwrap().unwrap().unchecked_into();
+
+                // 渲染一帧
+                let f = std::rc::Rc::new(std::cell::RefCell::new(None));
+                let g = f.clone();
+
+                let canvas_width = width as f64;
+                let canvas_height = height as f64;
+                let center_x = canvas_width / 2.0;
+                let center_y = canvas_height / 2.0;
+                // 稍微减小圆环半径，给波形留出更多空间
+                let radius = 60.0;
+
+                *g.borrow_mut() = Some(Closure::new(move || {
+                    analyser.get_byte_frequency_data(&mut data_array);
+
+                    ctx_2d.clear_rect(0.0, 0.0, canvas_width, canvas_height);
+
+                    // 绘制圆形背景边框 (灰色 -> 浅暖色)
+                    ctx_2d.begin_path();
+                    ctx_2d
+                        .arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI)
+                        .unwrap();
+                    ctx_2d.set_stroke_style_str("rgba(75, 85, 99, 0.2)"); // 浅灰色，适配白色背景
+                    ctx_2d.set_line_width(2.0);
+                    ctx_2d.stroke();
+
+                    // 绘制可视化
+                    let bars = buffer_length;
+                    // 使用暖黄色 (#FBBF24) 作为柱状图颜色
+                    let bar_color = "#FBBF24";
+                    ctx_2d.set_fill_style_str(bar_color);
+
+                    for i in 0..bars {
+                        let value = data_array[i as usize] as f64;
+                        let bar_height = (value / 255.0) * 80.0; // 调整波形最大高度
+
+                        let rad = (i as f64 / bars as f64) * 2.0 * std::f64::consts::PI;
+
+                        ctx_2d.save();
+                        ctx_2d.translate(center_x, center_y).unwrap();
+                        ctx_2d.rotate(rad).unwrap();
+
+                        let bar_width = 3.0;
+                        if bar_height > 0.0 {
+                            ctx_2d.fill_rect(-bar_width / 2.0, radius, bar_width, bar_height);
+                        }
+
+                        ctx_2d.restore();
+                    }
+
+                    request_animation_frame(f.borrow().as_ref().unwrap());
+                }));
+
+                request_animation_frame(g.borrow().as_ref().unwrap());
+            }
+        }
+    };
+
+    Effect::new(move |_| {
+        if let Some(Ok(_)) = value.get() {
+            set_timeout(
+                move || {
+                    setup_visualizer();
+                },
+                std::time::Duration::from_millis(100),
+            );
+        }
+    });
+
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
-            <h3 class="text-lg font-semibold mb-4 flex items-center">
+        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover text-dark border border-gray-100">
+            <h3 class="text-lg font-semibold mb-4 flex items-center text-dark">
                 <i class="fa fa-volume-up text-primary mr-2"></i>
                 "输出结果"
             </h3>
@@ -510,13 +636,12 @@ pub fn AudioResultCard(
                 </button>
             </div>
 
-            // --- 状态展示区域 (使用 match 替代 if-else) ---
-            <div>
+            // --- 状态展示区域 ---
+            <div class="min-h-[300px] flex items-center justify-center relative bg-light/50 rounded-xl">
                 {move || match (is_pending.get(), value.get()) {
                     (true, _) => {
-                        // 1. 正在加载
                         view! {
-                            <div class="flex flex-col items-center justify-center py-8 animate-fade-in">
+                            <div class="flex flex-col items-center justify-center py-8 animate-fade-in text-gray-500">
                                 <div class="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4"></div>
                                 <p class="text-gray-500">"AI 正在合成您的声音..."</p>
                             </div>
@@ -524,37 +649,48 @@ pub fn AudioResultCard(
                             .into_any()
                     }
                     (false, Some(Ok(url))) => {
-
-                        // 2. 加载完成，成功获取 URL
                         view! {
-                            <div class="border border-green-200 bg-green-50 rounded-xl p-6 animate-slide-up">
-                                <div class="flex items-center mb-4">
-                                    <div class="bg-green-100 p-2 rounded-full mr-3">
-                                        <i class="fa fa-check text-green-600"></i>
-                                    </div>
-                                    <h4 class="font-semibold text-green-800">"生成完成！"</h4>
+                            // 修改：使用 Flex 布局垂直排列 Canvas 和 Controls
+                            // 移除 absolute 定位，避免遮挡
+                            <div class="w-full animate-slide-up flex flex-col">
+
+                                // 2.1 可视化画布 (占据主要区域)
+                                <div class="w-full h-[300px] bg-light/30 rounded-t-xl flex items-center justify-center overflow-hidden relative border-b border-gray-200">
+                                    // 背景装饰 (移除深色渐变，保留透明或极浅色)
+                                    // <div class="absolute inset-0 bg-gradient-to-b from-slate-800/20 to-slate-900/80 pointer-events-none"></div>
+
+                                    <canvas
+                                        node_ref=canvas_ref
+                                        class="z-10"
+                                        // 初始大小，会被 JS 覆盖
+                                        width="600"
+                                        height="300"
+                                    ></canvas>
                                 </div>
-                                <div class="mb-4">
-                                    <p class="text-sm text-gray-600 mb-2">
-                                        "处理后的音频："
-                                    </p>
-                                    <div class="flex flex-col gap-3">
-                                        <audio
-                                            controls
-                                            autoplay
-                                            class="w-full"
-                                            src=url.clone()
-                                        ></audio>
+
+                                // 2.2 播放器控制栏 (作为普通块级元素放在底部)
+                                <div class="w-full p-4 bg-white/80 rounded-b-xl flex flex-col gap-3">
+                                    <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+                                        <span>"生成完成"</span>
                                         <a
-                                            href=url
+                                            href=url.clone()
                                             download="tts_audio.mp3"
                                             target="_blank"
-                                            class="bg-white border border-green-200 text-green-700 hover:bg-green-100 px-4 py-2 rounded-lg text-sm flex items-center justify-center transition-colors"
+                                            class="text-primary hover:text-secondary hover:underline flex items-center"
                                         >
-                                            <i class="fa fa-download mr-2"></i>
-                                            "下载音频"
+                                            <i class="fa fa-download mr-1"></i> "下载"
                                         </a>
                                     </div>
+                                    <audio
+                                        node_ref=audio_ref
+                                        controls
+                                        autoplay
+                                        class="w-full h-8 custom-audio-player"
+                                        src=url.clone()
+                                        on:play=move |_| is_playing.set(true)
+                                        on:pause=move |_| is_playing.set(false)
+                                        crossorigin="anonymous"
+                                    ></audio>
                                 </div>
                             </div>
                         }
@@ -562,22 +698,21 @@ pub fn AudioResultCard(
                     }
                     (false, Some(Err(e))) => {
                         debug_error!("生成音频失败: {:?}", e);
-                        // 3. 失败 (可选处理)
                         view! {
                             <div class="text-center py-8 text-red-500 bg-red-50 rounded-xl border border-red-200">
                                 <i class="fa fa-exclamation-triangle text-4xl mb-3 opacity-50"></i>
                                 <p>"生成失败"</p>
+                                <p class="text-sm opacity-70">{e.to_string()}</p>
                             </div>
                         }
                             .into_any()
                     }
                     _ => {
-
-                        // 4. 初始状态 / 空闲 (None)
                         view! {
-                            <div class="text-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                <i class="fa fa-headphones text-4xl mb-3 opacity-30"></i>
-                                <p class="text-sm">"输入文本后点击生成按钮"</p>
+                            <div class="w-full h-full min-h-[300px] flex flex-col items-center justify-center text-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200 p-8">
+                                <i class="fa fa-headphones text-6xl mb-4 opacity-30"></i>
+                                <p class="text-base font-medium">"等待生成"</p>
+                                <p class="text-sm mt-2 opacity-70">"在上方输入文本并点击生成按钮"</p>
                             </div>
                         }
                             .into_any()
@@ -587,3 +722,16 @@ pub fn AudioResultCard(
         </section>
     }
 }
+
+// 辅助函数：requestAnimationFrame
+#[cfg(target_arch = "wasm32")]
+fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
+    use wasm_bindgen::JsCast;
+    web_sys::window()
+        .unwrap()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn request_animation_frame(_f: &impl std::any::Any) {} // SSR 空实现
