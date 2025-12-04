@@ -1,8 +1,8 @@
 use leptos::prelude::*;
-use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
+use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
 use leptos_router::{
-    components::{Route, Router, Routes},
     StaticSegment,
+    components::{Route, Router, Routes},
 };
 
 mod api;
@@ -50,7 +50,7 @@ pub fn App() -> impl IntoView {
                 <pages::Header />
                 <Routes fallback=|| pages::NotFound()>
                     <Route path=StaticSegment("") view=pages::homepage::HomePage />
-                // <Route path=StaticSegment("playground") view=Playground/>
+                    <Route path=StaticSegment("voice") view=pages::playground::Playground/>
                     <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
                 </Routes>
             </main>

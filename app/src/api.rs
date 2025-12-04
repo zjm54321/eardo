@@ -1,7 +1,7 @@
 use crate::data;
 use crate::pages::homepage::GenerateParams;
 #[cfg(not(target_arch = "wasm32"))]
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 #[cfg(not(target_arch = "wasm32"))]
 use leptos::logging::debug_log;
 use leptos::prelude::*;
@@ -191,4 +191,58 @@ pub async fn get_voice_filters() -> Result<Vec<data::VoiceFilter>, ServerFnError
     let filters = filters_db.into_iter().map(|f| f.to_domain()).collect();
 
     Ok(filters)
+}
+
+// --- 获取精选作品 API (轮播图) - 真实 SQL 实现 ---
+#[server]
+pub async fn get_featured_works() -> Result<Vec<data::VoiceWork>, ServerFnError> {
+    // 1. 获取数据库连接池
+    let pool =
+        use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Database pool missing"))?;
+
+    // 2. 执行查询：筛选 is_featured = 1 (true)
+    // 注意：这里不需要选择 time_desc 字段了，因为 DB 结构体已经移除了它
+    // SELECT * 会自动匹配 VoiceWorkDb 的字段 (包括 created_at)
+    let works_db = sqlx::query_as::<_, data::VoiceWorkDb>(
+        "SELECT * FROM voice_works WHERE is_featured = 1 ORDER BY created_at DESC",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Featured works DB query failed: {}", e)))?;
+
+    // 3. 转换为 Domain 模型 (这里会执行时间计算逻辑)
+    let works = works_db.into_iter().map(|w| w.to_domain()).collect();
+
+    Ok(works)
+}
+
+// --- 获取最新作品 API (瀑布流) - 真实 SQL 实现 ---
+#[server]
+pub async fn get_latest_works(
+    page: usize,
+    page_size: usize,
+) -> Result<Vec<data::VoiceWork>, ServerFnError> {
+    // 1. 获取数据库连接池
+    let pool =
+        use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Database pool missing"))?;
+
+    // 2. 计算分页 OFFSET
+    // page 从 1 开始
+    let limit = page_size as i64;
+    let offset = ((page - 1) * page_size) as i64;
+
+    // 3. 执行查询
+    let works_db = sqlx::query_as::<_, data::VoiceWorkDb>(
+        "SELECT * FROM voice_works WHERE is_featured = 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Latest works DB query failed: {}", e)))?;
+
+    // 4. 转换为 Domain 模型
+    let works = works_db.into_iter().map(|w| w.to_domain()).collect();
+
+    Ok(works)
 }

@@ -1,3 +1,5 @@
+#[cfg(feature = "ssr")]
+use chrono::{DateTime, Utc}; // 引入 chrono 处理时间
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssr")]
 use sqlx::prelude::FromRow;
@@ -27,7 +29,7 @@ impl Default for VoiceParams {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "ssr", derive(sqlx::Type))] // 允许 sqlx 自动处理枚举映射（存储为文本时）
+#[cfg_attr(feature = "ssr", derive(sqlx::Type))]
 #[cfg_attr(feature = "ssr", sqlx(type_name = "TEXT", rename_all = "snake_case"))]
 pub enum Emotion {
     Normal,
@@ -40,7 +42,6 @@ pub enum Emotion {
     Suprised,
 }
 
-// 手动实现 From<String> 以便从数据库文本转换（如果 sqlx::Type 不起作用的备选方案）
 impl From<String> for Emotion {
     fn from(s: String) -> Self {
         match s.as_str() {
@@ -90,12 +91,12 @@ impl Emotion {
 // --- 应用层模型 ---
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VoiceFilter {
-    pub id: i64, // 数据库 ID 通常是 i64
+    pub id: i64,
     pub name: String,
     pub desc: String,
     pub voice_data: VoiceData,
     pub tags: Vec<String>,
-    pub usage_count: i32, // 数据库 Integer
+    pub usage_count: i32,
     pub author: String,
     pub state: DisplayState,
 }
@@ -119,27 +120,23 @@ pub enum DisplayState {
     Recommended,
 }
 
-// --- 数据库模型 (用于从扁平化的 SQL 表读取) ---
-// 因为 SQL 不方便直接存嵌套结构体，我们定义一个 DB 专用的结构体
+// --- 数据库模型 ---
 #[cfg(feature = "ssr")]
 #[derive(FromRow, Debug)]
 pub struct VoiceFilterDb {
     pub id: i64,
     pub name: String,
     pub description: String,
-    // 扁平化的 VoiceData
     pub voice_id: String,
     pub pitch: f32,
     pub speed: f32,
-    pub emotion: String, // 存文本
-    // 扁平化的 Tags (JSON 字符串或逗号分隔)
+    pub emotion: String,
     pub tags: String,
     pub usage_count: i32,
     pub author: String,
-    pub state: String, // 存文本
+    pub state: String,
 }
 
-// 提供转换方法
 #[cfg(feature = "ssr")]
 impl VoiceFilterDb {
     pub fn to_domain(&self) -> VoiceFilter {
@@ -155,7 +152,6 @@ impl VoiceFilterDb {
                     emotion: Emotion::from(self.emotion.clone()),
                 },
             },
-            // 假设 tags 用逗号分隔
             tags: self
                 .tags
                 .split(',')
@@ -169,6 +165,78 @@ impl VoiceFilterDb {
                 "recommended" => DisplayState::Recommended,
                 _ => DisplayState::Visible,
             },
+        }
+    }
+}
+
+// --- 声音作品模型 (Voice Plaza) ---
+
+// 前端使用的模型 (保持不变，time 字段接收格式化后的字符串)
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct VoiceWork {
+    pub id: i64,
+    pub author: String,
+    pub avatar: String,
+    pub time: String, // 这里存的是 "2小时前" 这样的展示字符串
+    pub title: String,
+    pub description: String,
+    pub likes: i32,
+    pub comments: i32,
+    pub voice_type: String,
+    pub audio_url: String,
+}
+
+// 后端数据库模型
+#[cfg(feature = "ssr")]
+#[derive(FromRow, Debug)]
+pub struct VoiceWorkDb {
+    pub id: i64,
+    pub author: String,
+    pub avatar: String,
+    // 使用 chrono 类型直接映射数据库的 DATETIME
+    pub created_at: DateTime<Utc>,
+    pub title: String,
+    pub description: String,
+    pub likes: i32,
+    pub comments: i32,
+    pub voice_type: String,
+    pub audio_url: String,
+    pub is_featured: bool,
+}
+
+#[cfg(feature = "ssr")]
+impl VoiceWorkDb {
+    pub fn to_domain(&self) -> VoiceWork {
+        // 计算相对时间
+        let now = Utc::now();
+        let diff = now.signed_duration_since(self.created_at);
+
+        let time_desc = if diff.num_seconds() < 60 {
+            "刚刚".to_string()
+        } else if diff.num_minutes() < 60 {
+            format!("{}分钟前", diff.num_minutes())
+        } else if diff.num_hours() < 24 {
+            format!("{}小时前", diff.num_hours())
+        } else if diff.num_days() < 7 {
+            format!("{}天前", diff.num_days())
+        } else if diff.num_days() < 30 {
+            format!("{}周前", diff.num_days() / 7)
+        } else {
+            // 超过一个月显示具体日期 (YYYY-MM-DD)
+            self.created_at.format("%Y-%m-%d").to_string()
+        };
+
+        VoiceWork {
+            id: self.id,
+            author: self.author.clone(),
+            avatar: self.avatar.clone(),
+            time: time_desc, // 使用计算出的时间描述
+            title: self.title.clone(),
+            description: self.description.clone(),
+            likes: self.likes,
+            comments: self.comments,
+            voice_type: self.voice_type.clone(),
+            audio_url: self.audio_url.clone(),
         }
     }
 }

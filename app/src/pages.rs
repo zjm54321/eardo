@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 pub mod homepage;
+pub mod playground;
 pub mod voicefilter;
 
 #[component]
