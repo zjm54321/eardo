@@ -48,6 +48,9 @@ dotenv = "0.15.0"
 uuid = "1.18.1"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
+bcrypt = "0.15"
+# 新增：处理 Cookie
+axum-extra = { version = "0.9", features = ["cookie"] }
 
 [features]
 default = []

@@ -240,3 +240,22 @@ impl VoiceWorkDb {
         }
     }
 }
+
+// --- 新增：用户相关模型 ---
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub avatar: Option<String>,
+}
+
+#[cfg(feature = "ssr")]
+#[derive(FromRow, Debug)]
+pub struct UserDb {
+    pub id: String,
+    pub username: String,
+    pub password_hash: String,
+    pub avatar: Option<String>,
+    pub created_at: DateTime<Utc>,
+}

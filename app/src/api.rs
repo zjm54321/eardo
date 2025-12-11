@@ -2,11 +2,18 @@ use crate::data;
 use crate::pages::homepage::GenerateParams;
 #[cfg(not(target_arch = "wasm32"))]
 use base64::{Engine as _, engine::general_purpose};
+use chrono::DateTime;
+#[cfg(not(target_arch = "wasm32"))]
+use chrono::{Duration, Utc};
 #[cfg(not(target_arch = "wasm32"))]
 use futures_util::{SinkExt, StreamExt};
 #[cfg(not(target_arch = "wasm32"))]
+use http::{HeaderMap, HeaderValue, header::SET_COOKIE};
+#[cfg(not(target_arch = "wasm32"))]
 use leptos::logging::{debug_log, error};
 use leptos::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use sqlx::SqlitePool;
@@ -366,4 +373,185 @@ pub async fn generate_audio(params: GenerateParams) -> Result<String, ServerFnEr
     // 返回本地访问 URL
     let audio_url = format!("/api/audio/{}", audio_id);
     Ok(audio_url)
+}
+
+// --- Auth APIs ---
+
+#[server]
+pub async fn register(username: String, password: String) -> Result<(), ServerFnError> {
+    let pool = use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Pool missing"))?;
+
+    // 1. 检查用户名是否存在
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
+        .bind(&username)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("DB Check failed: {}", e)))?;
+
+    if exists {
+        return Err(ServerFnError::new("Username already taken"));
+    }
+
+    // 2. 哈希密码
+    let password_hash = bcrypt::hash(password, bcrypt::DEFAULT_COST)
+        .map_err(|e| ServerFnError::new(format!("Hashing failed: {}", e)))?;
+
+    // 3. 插入用户
+    let user_id = Uuid::new_v4().to_string();
+    sqlx::query("INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)")
+        .bind(&user_id)
+        .bind(&username)
+        .bind(&password_hash)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Insert user failed: {}", e)))?;
+
+    Ok(())
+}
+
+#[server]
+pub async fn login(username: String, password: String) -> Result<data::User, ServerFnError> {
+    let pool = use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Pool missing"))?;
+
+    // 1. 查询用户
+    let user_db = sqlx::query_as::<_, data::UserDb>("SELECT * FROM users WHERE username = ?")
+        .bind(&username)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("DB query failed: {}", e)))?;
+
+    let user_db = match user_db {
+        Some(u) => u,
+        None => return Err(ServerFnError::new("User not found")),
+    };
+
+    // 2. 验证密码
+    let valid = bcrypt::verify(password, &user_db.password_hash)
+        .map_err(|_| ServerFnError::new("Password verify error"))?;
+
+    if !valid {
+        return Err(ServerFnError::new("Invalid password"));
+    }
+
+    // 3. 创建 Session
+    let session_id = Uuid::new_v4().to_string();
+    let expires_at = Utc::now() + Duration::days(7); // 7天过期
+
+    sqlx::query("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
+        .bind(&session_id)
+        .bind(&user_db.id)
+        .bind(expires_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Session creation failed: {}", e)))?;
+
+    // 4. 设置 Cookie
+    // 注意：在 Server Fn 中操作 header 需要使用 expect_context 或 ResponseOptions
+    // 这里我们简单地构建 Set-Cookie 字符串
+    let cookie_val = format!(
+        "auth_token={}; Path=/; HttpOnly; Max-Age={}",
+        session_id,
+        60 * 60 * 24 * 7
+    );
+
+    // 使用 leptos_axum 提供的帮助函数设置 header (如果有) 或者直接操作
+    // Leptos 0.6+ 推荐使用 ResponseOptions
+    if let Some(res_options) = use_context::<leptos_axum::ResponseOptions>() {
+        res_options.insert_header(SET_COOKIE, HeaderValue::from_str(&cookie_val).unwrap());
+    }
+
+    Ok(data::User {
+        id: user_db.id,
+        username: user_db.username,
+        avatar: user_db.avatar,
+    })
+}
+
+#[server]
+pub async fn get_current_user() -> Result<Option<data::User>, ServerFnError> {
+    let pool = use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Pool missing"))?;
+
+    // 1. 获取 Cookie
+    // 在 Axum 中，我们可以从 HeaderMap 获取
+    let headers =
+        use_context::<HeaderMap>().ok_or_else(|| ServerFnError::new("Headers missing"))?;
+
+    let cookie_header = match headers.get(http::header::COOKIE) {
+        Some(h) => h.to_str().unwrap_or(""),
+        None => return Ok(None),
+    };
+
+    // 简单解析 auth_token
+    let session_id = cookie_header.split(';').find_map(|s| {
+        let s = s.trim();
+        if s.starts_with("auth_token=") {
+            Some(s.trim_start_matches("auth_token="))
+        } else {
+            None
+        }
+    });
+
+    let session_id = match session_id {
+        Some(sid) => sid,
+        None => return Ok(None),
+    };
+
+    // 2. 查询 Session 和 User
+    let result = sqlx::query_as::<_, (String, String, Option<String>, DateTime<Utc>)>(
+        r#"
+        SELECT u.id, u.username, u.avatar, s.expires_at
+        FROM sessions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.id = ? AND s.expires_at > ?
+        "#,
+    )
+    .bind(session_id)
+    .bind(Utc::now())
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Session query failed: {}", e)))?;
+
+    match result {
+        Some((id, username, avatar, _)) => Ok(Some(data::User {
+            id,
+            username,
+            avatar,
+        })),
+        None => Ok(None),
+    }
+}
+
+#[server]
+pub async fn logout() -> Result<(), ServerFnError> {
+    let pool = use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Pool missing"))?;
+    let headers =
+        use_context::<HeaderMap>().ok_or_else(|| ServerFnError::new("Headers missing"))?;
+
+    // 1. 获取 Session ID (为了从 DB 删除)
+    if let Some(cookie_header) = headers.get(http::header::COOKIE) {
+        if let Ok(cookie_str) = cookie_header.to_str() {
+            if let Some(session_id) = cookie_str.split(';').find_map(|s| {
+                let s = s.trim();
+                if s.starts_with("auth_token=") {
+                    Some(s.trim_start_matches("auth_token="))
+                } else {
+                    None
+                }
+            }) {
+                // 删除 session
+                let _ = sqlx::query("DELETE FROM sessions WHERE id = ?")
+                    .bind(session_id)
+                    .execute(&pool)
+                    .await;
+            }
+        }
+    }
+
+    // 2. 清除 Cookie
+    let cookie_val = "auth_token=; Path=/; HttpOnly; Max-Age=0";
+    if let Some(res_options) = use_context::<leptos_axum::ResponseOptions>() {
+        res_options.insert_header(SET_COOKIE, HeaderValue::from_str(cookie_val).unwrap());
+    }
+
+    Ok(())
 }

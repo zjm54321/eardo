@@ -4,47 +4,48 @@ use app::*;
 use axum::{
     Router,
     body::Body,
-    extract::{FromRef, Path, Request, State}, // 引入 Path 用于提取 URL 参数
-    http::{StatusCode, header},               // 引入 HTTP 响应相关类型
-    response::IntoResponse,                   // 用于返回响应
-    routing::{get, post},                     // 引入 get 路由
+    extract::{FromRef, Path, Request, State},
+    http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::{get, post},
 };
 use dotenv::dotenv;
 use leptos::logging::log;
 use leptos::prelude::*;
-use leptos_axum::{LeptosRoutes, generate_route_list, handle_server_fns_with_context};
+use leptos_axum::{generate_route_list, handle_server_fns_with_context};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::env;
 
-// 1. 定义 AppState 并派生 FromRef
-// 这会自动生成 impl FromRef<AppState> for LeptosOptions 和 for SqlitePool
 #[derive(Clone, FromRef)]
 struct AppState {
     leptos_options: LeptosOptions,
     pool: SqlitePool,
 }
 
-// 2. 独立的 API 处理函数
+// 1. API 路由处理函数 (用于 CSR / Server Functions)
+// 这里已经正确注入了 Headers
 async fn server_fn_handler(
     State(app_state): State<AppState>,
     req: Request<Body>,
 ) -> impl IntoResponse {
+    let headers = req.headers().clone();
+
     handle_server_fns_with_context(
         move || {
             provide_context(app_state.pool.clone());
             provide_context(app_state.leptos_options.clone());
+            provide_context(headers.clone());
         },
         req,
     )
     .await
 }
 
-// --- 新增：音频文件下载/播放 处理函数 ---
+// 2. 音频流处理函数
 async fn get_audio_handler(
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    // 从数据库查询 BLOB 数据
     let result: Result<(Vec<u8>,), sqlx::Error> =
         sqlx::query_as("SELECT data FROM audio_files WHERE id = ?")
             .bind(id)
@@ -52,19 +53,36 @@ async fn get_audio_handler(
             .await;
 
     match result {
-        Ok((data,)) => {
-            // 返回音频流，设置正确的 Content-Type
-            (
-                [
-                    (header::CONTENT_TYPE, "audio/mp3"),
-                    (header::CACHE_CONTROL, "public, max-age=3600"), // 允许缓存 1 小时
-                ],
-                data,
-            )
-                .into_response()
-        }
+        Ok((data,)) => (
+            [
+                (header::CONTENT_TYPE, "audio/mp3"),
+                (header::CACHE_CONTROL, "public, max-age=3600"),
+            ],
+            data,
+        )
+            .into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "Audio not found").into_response(),
     }
+}
+
+// 3. 新增：SSR 页面渲染处理函数
+// 专门用于处理页面请求，确保在服务端渲染时也能获取到 Headers (Cookie)
+async fn ssr_handler(
+    State(app_state): State<AppState>,
+    headers: HeaderMap, // 提取请求头
+    req: Request<Body>,
+) -> Response {
+    let options = app_state.leptos_options.clone();
+    let handler = leptos_axum::render_app_to_stream_with_context(
+        move || {
+            provide_context(app_state.pool.clone());
+            provide_context(app_state.leptos_options.clone());
+            // 关键：在 SSR 上下文中注入 Headers，解决刷新页面报错问题
+            provide_context(headers.clone());
+        },
+        move || shell(options.clone()), // 修改：将 shell 包装在无参闭包中
+    );
+    handler(req).await.into_response()
 }
 
 #[tokio::main]
@@ -73,7 +91,6 @@ async fn main() {
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
-    // Generate the list of routes in your Leptos App
     let routes = generate_route_list(App);
 
     let db_url =
@@ -86,33 +103,26 @@ async fn main() {
         .await
         .expect("Failed to create pool.");
 
-    // 3. 初始化 AppState
     let app_state = AppState {
         leptos_options: leptos_options.clone(),
         pool: pool.clone(),
     };
 
-    // 4. 构建 Router
-    // 关键点：显式指定 Router 的状态类型为 <AppState>，帮助编译器推断
-    let app = Router::<AppState>::new()
+    // 构建 Router
+    let mut app = Router::<AppState>::new()
         .route("/api/{*fn_name}", post(server_fn_handler))
-        .route("/api/audio/{id}", get(get_audio_handler))
-        .leptos_routes_with_context(
-            &app_state,
-            routes,
-            {
-                let app_state = app_state.clone();
-                move || {
-                    provide_context(app_state.pool.clone());
-                    provide_context(app_state.leptos_options.clone());
-                }
-            },
-            {
-                let leptos_options = leptos_options.clone();
-                move || shell(leptos_options.clone())
-            },
-        )
-        // 关键点：显式指定泛型 <AppState, _>，消除 FromRef 的歧义
+        .route("/api/audio/{id}", get(get_audio_handler));
+
+    // 为每个 Leptos 路由注册我们自定义的 ssr_handler
+    // 替代之前的 .leptos_routes_with_context()
+    for listing in routes {
+        let path = listing.path();
+        app = app.route(path, get(ssr_handler));
+    }
+
+    // 处理 404 和静态文件 fallback
+    // 注意：这里使用 let app shadowing 之前的 app，因为 with_state 改变了 Router 的类型 (从 Router<AppState> 变为 Router<()>)
+    let app = app
         .fallback(leptos_axum::file_and_error_handler::<AppState, _>(shell))
         .with_state(app_state);
 

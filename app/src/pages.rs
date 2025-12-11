@@ -1,12 +1,17 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
+pub mod auth;
 pub mod homepage;
 pub mod playground;
 pub mod voicefilter;
 
 #[component]
 pub fn Header() -> impl IntoView {
+    // 检查用户登录状态的资源
+    // 这是一个简单的做法，实际上可能需要一个全局 Context 来存储 User
+    let user_resource = Resource::new(|| (), |_| crate::api::get_current_user());
+
     view! {
         // 顶部导航栏容器
         // sticky top-0: 吸顶
@@ -66,22 +71,31 @@ pub fn Header() -> impl IntoView {
                     </A>
                 </nav>
 
-                // --- 右侧：头像框 (Todo) ---
+                // --- 右侧：头像框 ---
                 <div class="relative group">
-                    // 头像容器：带渐变边框
-                    <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300">
-                        <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden">
-                            // 默认用户图标
-                            <i class="fa fa-user text-gray-400 text-lg"></i>
-                        </div>
-                    </button>
-
-                    // Todo Tooltip (Hover 时显示)
-                    <div class="absolute right-0 top-full mt-2 w-32 bg-dark text-white text-xs rounded-lg py-2 px-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform translate-y-2 group-hover:translate-y-0 text-center shadow-lg z-50">
-                        // 小三角
-                        "登录功能开发中..."
-                        <div class="absolute -top-1 right-3 w-2 h-2 bg-dark transform rotate-45"></div>
-                    </div>
+                    <Suspense fallback=move || view!{ <div class="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div> }>
+                        {move || {
+                            match user_resource.get() {
+                                Some(Ok(Some(user))) => view! {
+                                    <A href="/profile">
+                                        <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300">
+                                            <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden font-bold text-primary">
+                                                // 显示用户名首字母
+                                                {user.username.chars().next().unwrap_or('U').to_string().to_uppercase()}
+                                            </div>
+                                        </button>
+                                    </A>
+                                }.into_any(),
+                                _ => view! {
+                                    <A href="/login">
+                                        <button class="px-4 py-2 rounded-full bg-dark text-white text-sm hover:bg-gray-700 transition-colors shadow-sm">
+                                            "登录"
+                                        </button>
+                                    </A>
+                                }.into_any()
+                            }
+                        }}
+                    </Suspense>
                 </div>
             </div>
         </header>

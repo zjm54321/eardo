@@ -52,6 +52,11 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("") view=pages::homepage::HomePage />
                     <Route path=StaticSegment("voice") view=pages::playground::Playground/>
                     <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
+
+                    // 新增 Auth 路由
+                    <Route path=StaticSegment("login") view=pages::auth::LoginPage/>
+                    <Route path=StaticSegment("register") view=pages::auth::RegisterPage/>
+                    <Route path=StaticSegment("profile") view=pages::auth::ProfilePage/>
                 </Routes>
             </main>
             <footer class="mt-auto py-6 px-4 bg-white/70 backdrop-blur-sm border-t border-gray-100">
