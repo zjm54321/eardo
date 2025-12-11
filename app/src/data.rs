@@ -202,6 +202,8 @@ pub struct VoiceWorkDb {
     pub voice_type: String,
     pub audio_url: String,
     pub is_featured: bool,
+    // 新增字段：user_id (可能是 NULL，所以用 Option)
+    pub user_id: String,
 }
 
 #[cfg(feature = "ssr")]

@@ -244,7 +244,6 @@ pub async fn generate_audio(params: GenerateParams) -> Result<String, ServerFnEr
                         continue;
                     }
                 };
-
                 if let Some(event_type) = event.header.event {
                     match event_type.as_str() {
                         "task-started" => {
@@ -552,6 +551,59 @@ pub async fn logout() -> Result<(), ServerFnError> {
     if let Some(res_options) = use_context::<leptos_axum::ResponseOptions>() {
         res_options.insert_header(SET_COOKIE, HeaderValue::from_str(cookie_val).unwrap());
     }
-
     Ok(())
+}
+
+// --- 新增：获取我的作品 ---
+#[server]
+pub async fn get_my_works() -> Result<Vec<data::VoiceWork>, ServerFnError> {
+    // 1. 获取当前用户（复用 get_current_user 的逻辑，但这里我们直接在内部重写一部分以避免 ServerFn 嵌套调用的复杂性）
+    // 为了性能和代码复用，最好将 session 验证逻辑提取为公共辅助函数，这里简化处理，直接复制验证逻辑
+
+    let pool = use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Pool missing"))?;
+    let headers =
+        use_context::<HeaderMap>().ok_or_else(|| ServerFnError::new("Headers missing"))?;
+
+    let cookie_header = match headers.get(http::header::COOKIE) {
+        Some(h) => h.to_str().unwrap_or(""),
+        None => return Ok(vec![]), // 未登录返回空列表
+    };
+
+    let session_id = match cookie_header.split(';').find_map(|s| {
+        let s = s.trim();
+        if s.starts_with("auth_token=") {
+            Some(s.trim_start_matches("auth_token="))
+        } else {
+            None
+        }
+    }) {
+        Some(sid) => sid,
+        None => return Ok(vec![]),
+    };
+
+    // 2. 验证 Session 并获取 user_id
+    let user_res: Option<(String,)> =
+        sqlx::query_as("SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?")
+            .bind(session_id)
+            .bind(Utc::now())
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Session check failed: {}", e)))?;
+
+    let user_id = match user_res {
+        Some((uid,)) => uid,
+        None => return Ok(vec![]), // Session 无效
+    };
+
+    // 3. 根据 user_id 查询 works
+    let works_db = sqlx::query_as::<_, data::VoiceWorkDb>(
+        "SELECT * FROM voice_works WHERE user_id = ? ORDER BY created_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Fetch works failed: {}", e)))?;
+
+    let works = works_db.into_iter().map(|w| w.to_domain()).collect();
+    Ok(works)
 }

@@ -1,7 +1,11 @@
-use crate::api::{get_current_user, login, logout, register};
+use crate::api::{get_current_user, get_my_works, login, logout, register};
+use crate::data::VoiceWork;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
+
+// ... LoginPage 和 RegisterPage 保持不变，请保留原文件内容 ...
+// 为节省篇幅，这里只展示 ProfilePage 的更新代码。
 
 #[component]
 pub fn LoginPage() -> impl IntoView {
@@ -177,7 +181,12 @@ pub fn RegisterPage() -> impl IntoView {
 #[component]
 pub fn ProfilePage() -> impl IntoView {
     let navigate = use_navigate();
+    // 1. 获取当前用户
     let user_resource = Resource::new(|| (), |_| get_current_user());
+
+    // 2. 获取作品列表 (暂时复用 get_latest_works 模拟 "我的作品")
+    // 实际项目中应调用 get_my_works()
+    let works_resource = Resource::new(|| (), |_| get_my_works());
 
     let logout_action = Action::new(move |_| {
         let value = navigate.clone();
@@ -206,11 +215,9 @@ pub fn ProfilePage() -> impl IntoView {
 
                                     // 2. 个人信息卡片
                                     <div class="bg-white rounded-3xl p-8 md:p-10 shadow-soft w-full flex flex-col md:flex-row items-center md:items-start gap-8 md:gap-12 border border-gray-100 relative overflow-hidden group">
-                                        // 装饰背景
                                         <div class="absolute -top-24 -right-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-500"></div>
                                         <div class="absolute top-1/2 -left-24 w-48 h-48 bg-secondary/5 rounded-full blur-3xl group-hover:bg-secondary/10 transition-colors duration-500"></div>
 
-                                        // 头像
                                         <div class="relative flex-shrink-0">
                                             <div class="w-32 h-32 md:w-40 md:h-40 rounded-full p-1.5 bg-gradient-to-tr from-primary to-secondary shadow-lg">
                                                 <div class="w-full h-full rounded-full bg-white overflow-hidden relative border-4 border-white">
@@ -230,14 +237,13 @@ pub fn ProfilePage() -> impl IntoView {
                                             </button>
                                         </div>
 
-                                        // 信息内容
                                         <div class="flex-grow text-center md:text-left space-y-5 z-10 w-full">
                                             <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
                                                 <div>
                                                     <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">{user.username.clone()}</h2>
                                                     <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
                                                         <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">"UID: " {user.id.clone()}</span>
-                                                        <span class="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded font-medium">"Pro Member"</span>
+                                                        <span class="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded font-medium">"Creator"</span>
                                                     </div>
                                                 </div>
 
@@ -255,105 +261,116 @@ pub fn ProfilePage() -> impl IntoView {
                                                 "热爱声音，热爱创作。这是我的声音工坊，存放着我所有的灵感与作品。探索无限可能，用声音连接世界。"
                                                 <button class="ml-2 text-primary text-xs hover:underline font-medium">"编辑简介"</button>
                                             </div>
-
-                                            <div class="flex flex-wrap gap-4 justify-center md:justify-start pt-1">
-                                                <div class="flex flex-col items-center md:items-start px-2">
-                                                    <span class="text-xl font-bold text-dark">"12"</span>
-                                                    <span class="text-xs text-gray-400 uppercase tracking-wide">"Works"</span>
-                                                </div>
-                                                <div class="w-px h-8 bg-gray-200 my-auto"></div>
-                                                <div class="flex flex-col items-center md:items-start px-2">
-                                                    <span class="text-xl font-bold text-dark">"48"</span>
-                                                    <span class="text-xs text-gray-400 uppercase tracking-wide">"Audios"</span>
-                                                </div>
-                                                <div class="w-px h-8 bg-gray-200 my-auto"></div>
-                                                <div class="flex flex-col items-center md:items-start px-2">
-                                                    <span class="text-xl font-bold text-dark">"1.2k"</span>
-                                                    <span class="text-xs text-gray-400 uppercase tracking-wide">"Likes"</span>
-                                                </div>
-                                            </div>
                                         </div>
                                     </div>
 
                                     // 3. 三栏列表区域
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full items-start">
 
-                                        // 栏目 1: 我的作品
+                                        // 栏目 1: 我的作品 (接入后端数据)
                                         <div class="space-y-4">
                                             <div class="flex items-center justify-between px-1">
                                                 <h3 class="text-lg font-bold text-dark flex items-center">
                                                     <span class="w-1.5 h-6 bg-secondary rounded-full mr-2"></span>
                                                     "我的作品"
                                                 </h3>
-                                                <button class="text-xs text-gray-400 hover:text-secondary"><i class="fa fa-arrow-right"></i></button>
+                                                <A href="/voice" attr:class="text-xs text-gray-400 hover:text-secondary"><i class="fa fa-arrow-right"></i></A>
                                             </div>
 
                                             <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden min-h-[320px]">
-                                                <ul class="divide-y divide-gray-50">
-                                                    {(1..=4).map(|i| view! {
-                                                        <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
-                                                            <div class="flex items-center justify-between mb-1">
-                                                                <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors">"配音作品 #" {i}</span>
-                                                                <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">"公开"</span>
-                                                            </div>
-                                                            <p class="text-xs text-gray-500 line-clamp-2 mt-1">"这是一个很棒的配音作品，使用了多种音效..."</p>
-                                                            <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                                                                <span><i class="fa fa-play-circle mr-1"></i>"128"</span>
-                                                                <span><i class="fa fa-heart mr-1"></i>"32"</span>
-                                                                <span class="ml-auto">"2天前"</span>
-                                                            </div>
-                                                        </li>
-                                                    }).collect::<Vec<_>>()}
-                                                </ul>
+                                                <Suspense fallback=move || view! { <div class="p-4 text-center text-sm text-gray-400">"加载作品..."</div> }>
+                                                    {move || {
+                                                        match works_resource.get() {
+                                                            Some(Ok(works)) if !works.is_empty() => view! {
+                                                                <ul class="divide-y divide-gray-50">
+                                                                    <For
+                                                                        each=move || works.clone()
+                                                                        key=|w| w.id
+                                                                        children=move |work| view! {
+                                                                            <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
+                                                                                <div class="flex items-center justify-between mb-1">
+                                                                                    <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors truncate pr-2">
+                                                                                        {work.title}
+                                                                                    </span>
+                                                                                    <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">"公开"</span>
+                                                                                </div>
+                                                                                <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">{work.description}</p>
+                                                                                <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                                                                    <span><i class="fa fa-play-circle mr-1"></i>"128"</span>
+                                                                                    <span><i class="fa fa-heart mr-1"></i>{work.likes}</span>
+                                                                                    <span class="ml-auto">{work.time}</span>
+                                                                                </div>
+                                                                            </li>
+                                                                        }
+                                                                    />
+                                                                </ul>
+                                                            }.into_any(),
+                                                            _ => view! {
+                                                                <div class="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[200px]">
+                                                                    <i class="fa fa-folder-open-o text-4xl mb-2 opacity-50"></i>
+                                                                    <p class="text-sm">"暂无作品"</p>
+                                                                </div>
+                                                            }.into_any()
+                                                        }
+                                                    }}
+                                                </Suspense>
                                                 <div class="p-3 text-center border-t border-gray-50">
                                                     <button class="text-xs font-medium text-secondary hover:underline">"查看全部作品"</button>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        // 栏目 2: 声音文件
+                                        // 栏目 2: 我的声音 (模糊处理)
                                         <div class="space-y-4">
                                             <div class="flex items-center justify-between px-1">
                                                 <h3 class="text-lg font-bold text-dark flex items-center">
                                                     <span class="w-1.5 h-6 bg-primary rounded-full mr-2"></span>
-                                                    "声音文件"
+                                                    "我的声音"
                                                 </h3>
                                                 <button class="text-xs text-gray-400 hover:text-primary"><i class="fa fa-plus"></i></button>
                                             </div>
 
-                                            <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden min-h-[320px]">
-                                                <ul class="divide-y divide-gray-50">
-                                                    {(1..=5).map(|i| view! {
-                                                        <li class="flex items-center p-3 hover:bg-gray-50/80 transition-colors cursor-pointer group">
-                                                            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary mr-3 shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
-                                                                <i class="fa fa-music text-sm"></i>
-                                                            </div>
-                                                            <div class="flex-grow min-w-0">
-                                                                <div class="font-medium text-dark text-sm truncate">"录音_2025050" {i} ".mp3"</div>
-                                                                <div class="text-xs text-gray-400 mt-0.5">"00:45 • 1.2MB"</div>
-                                                            </div>
-                                                            <button class="text-gray-300 hover:text-dark w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors">
-                                                                <i class="fa fa-ellipsis-v text-xs"></i>
-                                                            </button>
-                                                        </li>
-                                                    }).collect::<Vec<_>>()}
-                                                </ul>
+                                            <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden min-h-[320px] relative group">
+                                                // 模糊内容
+                                                <div class="filter blur-[4px] opacity-60 select-none pointer-events-none p-2">
+                                                    <ul class="divide-y divide-gray-50">
+                                                        {(1..=5).map(|i| view! {
+                                                            <li class="flex items-center p-3">
+                                                                <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 mr-3 shrink-0">
+                                                                    <i class="fa fa-music text-sm"></i>
+                                                                </div>
+                                                                <div class="flex-grow min-w-0">
+                                                                    <div class="font-medium text-dark text-sm truncate">"录音_2025050" {i} ".mp3"</div>
+                                                                    <div class="text-xs text-gray-400 mt-0.5">"00:45 • 1.2MB"</div>
+                                                                </div>
+                                                            </li>
+                                                        }).collect::<Vec<_>>()}
+                                                    </ul>
+                                                </div>
+
+                                                // 覆盖层
+                                                <div class="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[1px] p-6 text-center z-10">
+                                                    <div class="w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center mb-3 text-primary">
+                                                        <i class="fa fa-folder text-xl"></i>
+                                                    </div>
+                                                    <h4 class="font-bold text-dark text-sm mb-1">"私有声音库"</h4>
+                                                    <p class="text-gray-500 text-xs">"功能开发中..."</p>
+                                                </div>
                                             </div>
                                         </div>
 
-                                        // 栏目 3: 声音分析 (模糊处理)
+                                        // 栏目 3: 声音分析 (模糊处理 - 未完成)
                                         <div class="space-y-4">
                                             <div class="flex items-center justify-between px-1">
                                                 <h3 class="text-lg font-bold text-dark flex items-center">
                                                     <span class="w-1.5 h-6 bg-accent rounded-full mr-2"></span>
                                                     "声音分析"
                                                 </h3>
-                                                <span class="text-[10px] bg-accent/10 text-accent px-2 py-0.5 rounded-full font-bold">"PRO"</span>
                                             </div>
 
                                             <div class="bg-white rounded-2xl p-0 shadow-soft min-h-[320px] border border-gray-100 relative overflow-hidden group">
                                                 // 背景内容 (被模糊)
-                                                <div class="p-5 space-y-4 filter blur-[6px] opacity-60 select-none pointer-events-none transform scale-105 group-hover:scale-110 transition-transform duration-700">
+                                                <div class="p-5 space-y-4 filter blur-[6px] opacity-60 select-none pointer-events-none transform scale-105">
                                                     <div class="flex items-center justify-between">
                                                         <div class="h-4 bg-gray-200 rounded w-1/3"></div>
                                                         <div class="h-4 bg-gray-200 rounded w-1/4"></div>
@@ -370,16 +387,13 @@ pub fn ProfilePage() -> impl IntoView {
                                                     </div>
                                                 </div>
 
-                                                // 覆盖层
+                                                // 覆盖层 - 未完成提示
                                                 <div class="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[2px] p-6 text-center z-10 transition-all">
-                                                    <div class="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mb-5 text-accent transform -rotate-6 group-hover:rotate-0 transition-transform duration-300">
-                                                        <i class="fa fa-lock text-2xl"></i>
+                                                    <div class="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mb-5 text-gray-400">
+                                                        <i class="fa fa-wrench text-2xl"></i>
                                                     </div>
-                                                    <h4 class="font-bold text-dark text-lg mb-2">"解锁声音特质分析"</h4>
-                                                    <p class="text-gray-500 text-sm mb-6 max-w-[200px] leading-relaxed">"获取关于您音色、音域及情感特征的深度 AI 报告"</p>
-                                                    <button class="px-6 py-2.5 bg-gradient-to-r from-accent to-pink-600 text-white rounded-full text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
-                                                        "升级会员"
-                                                    </button>
+                                                    <h4 class="font-bold text-dark text-lg mb-2">"功能开发中"</h4>
+                                                    <p class="text-gray-500 text-sm mb-6 max-w-[200px] leading-relaxed">"正在为您构建专业的 AI 声音分析模型，敬请期待。"</p>
                                                 </div>
                                             </div>
                                         </div>
