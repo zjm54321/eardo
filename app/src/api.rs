@@ -220,6 +220,9 @@ pub async fn generate_audio(params: GenerateParams) -> Result<String, ServerFnEr
 
     let json_str = serde_json::to_string(&run_task_msg)
         .map_err(|e| ServerFnError::new(format!("Serialize run-task failed: {}", e)))?;
+
+    debug_log!("Sending run-task: {}", json_str);
+
     ws_stream
         .send(Message::Text(json_str))
         .await
@@ -271,8 +274,10 @@ pub async fn generate_audio(params: GenerateParams) -> Result<String, ServerFnEr
                                     parameters: None,
                                 },
                             };
+                            let continue_json = serde_json::to_string(&continue_msg).unwrap();
+                            debug_log!("Sending continue-task: {}", continue_json);
                             ws_stream
-                                .send(Message::Text(serde_json::to_string(&continue_msg).unwrap()))
+                                .send(Message::Text(continue_json))
                                 .await
                                 .map_err(|e| {
                                     ServerFnError::new(format!("Send continue-task failed: {}", e))
@@ -297,6 +302,8 @@ pub async fn generate_audio(params: GenerateParams) -> Result<String, ServerFnEr
                                     parameters: None,
                                 },
                             };
+                            let finish_json = serde_json::to_string(&finish_msg).unwrap();
+                            debug_log!("Sending finish-task: {}", finish_json);
                             ws_stream
                                 .send(Message::Text(serde_json::to_string(&finish_msg).unwrap()))
                                 .await
@@ -463,6 +470,7 @@ pub async fn login(username: String, password: String) -> Result<data::User, Ser
         id: user_db.id,
         username: user_db.username,
         avatar: user_db.avatar,
+        bio: user_db.bio,
     })
 }
 
@@ -471,13 +479,17 @@ pub async fn get_current_user() -> Result<Option<data::User>, ServerFnError> {
     let pool = use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Pool missing"))?;
 
     // 1. 获取 Cookie
-    // 在 Axum 中，我们可以从 HeaderMap 获取
-    let headers =
-        use_context::<HeaderMap>().ok_or_else(|| ServerFnError::new("Headers missing"))?;
+    let headers = use_context::<HeaderMap>().ok_or_else(|| {
+        debug_log!("get_current_user: Headers missing from context");
+        ServerFnError::new("Headers missing")
+    })?;
 
     let cookie_header = match headers.get(http::header::COOKIE) {
         Some(h) => h.to_str().unwrap_or(""),
-        None => return Ok(None),
+        None => {
+            debug_log!("get_current_user: No Cookie header found");
+            return Ok(None);
+        }
     };
 
     // 简单解析 auth_token
@@ -492,13 +504,27 @@ pub async fn get_current_user() -> Result<Option<data::User>, ServerFnError> {
 
     let session_id = match session_id {
         Some(sid) => sid,
-        None => return Ok(None),
+        None => {
+            debug_log!("get_current_user: auth_token not found in cookies");
+            return Ok(None);
+        }
     };
 
+    debug_log!("get_current_user: Checking session_id: {}", session_id);
+
     // 2. 查询 Session 和 User
-    let result = sqlx::query_as::<_, (String, String, Option<String>, DateTime<Utc>)>(
+    let result = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<Utc>,
+        ),
+    >(
         r#"
-        SELECT u.id, u.username, u.avatar, s.expires_at
+        SELECT u.id, u.username, u.avatar, u.bio, s.expires_at
         FROM sessions s
         JOIN users u ON s.user_id = u.id
         WHERE s.id = ? AND s.expires_at > ?
@@ -508,15 +534,25 @@ pub async fn get_current_user() -> Result<Option<data::User>, ServerFnError> {
     .bind(Utc::now())
     .fetch_optional(&pool)
     .await
-    .map_err(|e| ServerFnError::new(format!("Session query failed: {}", e)))?;
+    .map_err(|e| {
+        error!("get_current_user: DB Query failed: {}", e);
+        ServerFnError::new(format!("Session query failed: {}", e))
+    })?;
 
     match result {
-        Some((id, username, avatar, _)) => Ok(Some(data::User {
-            id,
-            username,
-            avatar,
-        })),
-        None => Ok(None),
+        Some((id, username, avatar, bio, _)) => {
+            debug_log!("get_current_user: Found user {}", username);
+            Ok(Some(data::User {
+                id,
+                username,
+                avatar,
+                bio,
+            }))
+        }
+        None => {
+            debug_log!("get_current_user: Session not found or expired");
+            Ok(None)
+        }
     }
 }
 
@@ -551,6 +587,7 @@ pub async fn logout() -> Result<(), ServerFnError> {
     if let Some(res_options) = use_context::<leptos_axum::ResponseOptions>() {
         res_options.insert_header(SET_COOKIE, HeaderValue::from_str(cookie_val).unwrap());
     }
+
     Ok(())
 }
 
@@ -606,4 +643,72 @@ pub async fn get_my_works() -> Result<Vec<data::VoiceWork>, ServerFnError> {
 
     let works = works_db.into_iter().map(|w| w.to_domain()).collect();
     Ok(works)
+}
+
+// --- 新增：更新用户信息 API ---
+#[server]
+pub async fn update_user_profile(
+    avatar: Option<String>,
+    bio: Option<String>,
+) -> Result<(), ServerFnError> {
+    let pool = use_context::<SqlitePool>().ok_or_else(|| ServerFnError::new("Pool missing"))?;
+    let headers =
+        use_context::<HeaderMap>().ok_or_else(|| ServerFnError::new("Headers missing"))?;
+
+    // 1. 获取并验证当前用户 Session
+    let cookie_header = match headers.get(http::header::COOKIE) {
+        Some(h) => h.to_str().unwrap_or(""),
+        None => return Err(ServerFnError::new("Not logged in")),
+    };
+
+    let session_id = cookie_header
+        .split(';')
+        .find_map(|s| {
+            let s = s.trim();
+            if s.starts_with("auth_token=") {
+                Some(s.trim_start_matches("auth_token="))
+            } else {
+                None
+            }
+        })
+        .ok_or(ServerFnError::new("Invalid session"))?;
+
+    // 2. 查找 user_id
+    let user_res: Option<(String,)> =
+        sqlx::query_as("SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?")
+            .bind(session_id)
+            .bind(Utc::now())
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Session check failed: {}", e)))?;
+
+    let user_id = match user_res {
+        Some((uid,)) => uid,
+        None => return Err(ServerFnError::new("Session expired")),
+    };
+
+    // 3. 更新字段
+    // 构建动态更新 SQL (或者简单点，如果字段为 Some 则更新)
+    // 这里我们允许只更新其中一个
+
+    if let Some(new_avatar) = avatar {
+        // 直接存 Base64 字符串
+        sqlx::query("UPDATE users SET avatar = ? WHERE id = ?")
+            .bind(new_avatar)
+            .bind(&user_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Update avatar failed: {}", e)))?;
+    }
+
+    if let Some(new_bio) = bio {
+        sqlx::query("UPDATE users SET bio = ? WHERE id = ?")
+            .bind(new_bio)
+            .bind(&user_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Update bio failed: {}", e)))?;
+    }
+
+    Ok(())
 }

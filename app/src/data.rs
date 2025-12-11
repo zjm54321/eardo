@@ -1,5 +1,5 @@
 #[cfg(feature = "ssr")]
-use chrono::{DateTime, Utc}; // 引入 chrono 处理时间
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssr")]
 use sqlx::prelude::FromRow;
@@ -250,6 +250,7 @@ pub struct User {
     pub id: String,
     pub username: String,
     pub avatar: Option<String>,
+    pub bio: Option<String>,
 }
 
 #[cfg(feature = "ssr")]
@@ -259,5 +260,6 @@ pub struct UserDb {
     pub username: String,
     pub password_hash: String,
     pub avatar: Option<String>,
+    pub bio: Option<String>,
     pub created_at: DateTime<Utc>,
 }
