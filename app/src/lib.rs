@@ -47,21 +47,29 @@ pub fn App() -> impl IntoView {
         // content for this welcome page
         <Router>
             <main>
+                // 在 Welcome 页面，我们可能不需要 Header (全屏体验)，
+                // 但为了保持一致性和导航便利，我们保留 Header，或者你可以选择在 Welcome 页面隐藏它。
+                // 这里的实现是所有页面都有 Header。
                 <pages::Header />
                 <Routes fallback=|| pages::NotFound()>
-                    <Route path=StaticSegment("") view=pages::homepage::HomePage />
+                    // 根路径改为 Welcome Page
+                    <Route path=StaticSegment("") view=pages::welcome::WelcomePage />
+
+                    // 原首页功能移动到 /home
+                    <Route path=StaticSegment("home") view=pages::homepage::HomePage />
+
                     <Route path=StaticSegment("voice") view=pages::playground::Playground/>
                     <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
 
-                    // 新增 Auth 路由
                     <Route path=StaticSegment("login") view=pages::auth::LoginPage/>
                     <Route path=StaticSegment("register") view=pages::auth::RegisterPage/>
                     <Route path=StaticSegment("profile") view=pages::auth::ProfilePage/>
                 </Routes>
             </main>
-            <footer class="mt-auto py-6 px-4 bg-white/70 backdrop-blur-sm border-t border-gray-100">
+
+            // 页脚可以保留
+            <footer class="mt-auto py-6 px-4 bg-white/70 backdrop-blur-sm border-t border-gray-100 relative z-50">
                 <div class="container mx-auto text-center text-gray-500 text-sm">
-                    // 更新版权信息
                     <p>"© 2025 白昼聆夏 - 耳朵项目 | 声音转换技术展示平台"</p>
                 </div>
             </footer>
