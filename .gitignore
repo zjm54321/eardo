@@ -14,4 +14,7 @@ playwright/.cache/
 
 # dotenv environment variables file
 .env
+
+# database files
 *.db
+*.sqlite

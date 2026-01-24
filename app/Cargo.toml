@@ -46,6 +46,8 @@ web-sys = { version = "0.3", features = [
     "TouchEvent",
     "TouchList",
 ] }
+anyhow = "1.0.100"
+async-trait = "0.1.89"
 
 
 # --- 服务端依赖 (SSR) ---
