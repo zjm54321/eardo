@@ -4,8 +4,6 @@ use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
-use web_sys::{AudioContext, HtmlAudioElement, HtmlCanvasElement};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenerateParams {

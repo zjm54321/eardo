@@ -1,10 +1,9 @@
 use crate::api::{get_current_user, get_my_works, login, logout, register, update_user_profile};
-use crate::data::VoiceWork;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use wasm_bindgen::JsCast;
-use web_sys::{File, FileReader};
+use web_sys::FileReader;
 
 // ... (LoginPage and RegisterPage remain unchanged) ...
 // 请保留这些组件的原始代码
