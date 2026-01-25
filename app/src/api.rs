@@ -69,3 +69,8 @@ pub trait Posts {
     async fn comment_on_post(&self, post_id: &Self::PostId, comment: &str) -> anyhow::Result<()>;
     async fn like_dislike_post(&self, post_id: &Self::PostId) -> anyhow::Result<()>;
 }
+
+pub mod post;
+pub mod sql_struct;
+pub mod user;
+pub mod voicedata;
