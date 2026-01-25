@@ -1,3 +1,6 @@
+//! 定义应用程序的各种服务接口和数据结构
+//! 并且给出了实现，可以直接在页面中应用
+//! api 文件夹中有具体实现
 use async_trait::async_trait;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -27,9 +30,9 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserAuthInfo {
-    username: Option<String>,
-    email: Option<String>,
-    phone: Option<String>,
+    pub username: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
 }
 /// 登录/注册/登出/获取当前用户 接口
 #[async_trait]
@@ -49,11 +52,11 @@ pub enum UserStatus {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserInfo {
-    id: String,
+    pub id: String,
     pub username: String,
-    avatar_url: String,
-    status: UserStatus,
-    meta: String, // JSON 格式的用户元数据
+    pub avatar_url: String,
+    pub status: UserStatus,
+    pub meta: String, // JSON 格式的用户元数据
 }
 /// 用户资料管理接口
 #[async_trait]
@@ -82,9 +85,9 @@ pub type VoiceModelProvider = Arc<dyn VoiceModelService>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceMetaInfo {
-    id: String,
-    name: String,
-    metadata: String, // JSON 格式的元数据
+    pub id: String,
+    pub name: String,
+    pub metadata: String, // JSON 格式的元数据
 }
 /// 语音元数据(声音滤镜)管理接口
 #[async_trait]
@@ -93,14 +96,19 @@ pub trait VoiceMetadataService: Send + Sync {
     async fn get_voice_metadata(&self, voice_id: &str) -> anyhow::Result<VoiceMetaInfo>;
     async fn update_voice_metadata(&self, metadata: &VoiceMetaInfo) -> anyhow::Result<()>;
     async fn delete_voice_metadata(&self, voice_id: &str) -> anyhow::Result<()>;
+    async fn generate_voice(
+        &self,
+        voice_info: &VoiceMetaInfo,
+        input_text: &str,
+    ) -> anyhow::Result<Vec<u8>>; // 返回音频数据
 }
 pub type VoiceMetadataProvider = Arc<dyn VoiceMetadataService>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostInfo {
-    id: String,
-    title: String,
-    metadata: String, // JSON 格式的帖子元数据
+    pub id: String,
+    pub title: String,
+    pub metadata: String, // JSON 格式的帖子元数据
 }
 /// 帖子管理接口
 #[async_trait]
@@ -250,6 +258,18 @@ pub async fn delete_voice_metadata(voice_id: String) -> Result<(), ServerFnError
         .delete_voice_metadata(&voice_id)
         .await
         .map_err(|e| ServerFnError::new(format!("删除语音元数据失败: {}", e)))
+}
+
+#[server]
+pub async fn generate_audio(
+    voice_meta: VoiceMetaInfo,
+    input_text: String,
+) -> Result<Vec<u8>, ServerFnError> {
+    use_context::<VoiceMetadataProvider>()
+        .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
+        .generate_voice(&voice_meta, &input_text)
+        .await
+        .map_err(|e| ServerFnError::new(format!("生成音频失败: {}", e)))
 }
 
 // === 帖子模块 ===

@@ -66,13 +66,36 @@ pub fn HomePage() -> impl IntoView {
     // 创建 Action 处理生成请求
     // Action 自动管理 pending (加载中) 和 value (返回值) 状态
     let generate_action = Action::new(move |_| {
-        let voice_params = GenerateParams {
-            text: text_signal.get(),
-            voice_id: voice_signal.get(),
-            voice_param: param_signal.get(),
-        };
-        debug_log!("使用参数生成音频: {:?}", voice_params);
-        return api::generate_audio(voice_params);
+        let text = text_signal.get();
+        let voice_id = voice_signal.get();
+        let pitch = param_signal.get().pitch;
+        let speed = param_signal.get().speed;
+        let emotion = param_signal.get().emotion.to_string();
+
+        async move {
+            // 创建 VoiceMetaInfo 对象
+            let voice_meta = api::VoiceMetaInfo {
+                id: voice_id.clone(),
+                name: voice_id.clone(),
+                metadata: serde_json::json!({
+                    "pitch": pitch,
+                    "speed": speed,
+                    "emotion": emotion,
+                })
+                .to_string(),
+            };
+
+            debug_log!(
+                "生成音频: voice_id={}, text={}, pitch={}, speed={}, emotion={}",
+                voice_id,
+                text,
+                pitch,
+                speed,
+                emotion
+            );
+
+            api::generate_audio(voice_meta, text).await
+        }
     });
 
     view! {
@@ -212,7 +235,7 @@ pub fn VoiceSelectorCard(
     selected_voice: RwSignal<String>,
 ) -> impl IntoView {
     // Resource 用于异步获取数据
-    let voices_resource = Resource::new(|| (), |_| api::get_voices());
+    let voices_resource = Resource::new(|| (), |_| api::list_voice_metadata());
 
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
@@ -294,9 +317,21 @@ pub fn VoiceSelectorCard(
                                                 >
                                                     <div>
                                                         <div class="font-medium group-hover:text-primary transition-colors">
-                                                            {voice.name}
+                                                            {voice.name.clone()}
                                                         </div>
-                                                        <div class="text-sm text-gray-500">{voice.desc}</div>
+                                                        // 从 metadata JSON 中提取 description
+                                                        <div class="text-sm text-gray-500">
+                                                            {move || {
+                                                                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&voice.metadata) {
+                                                                    meta.get("description")
+                                                                        .and_then(|v| v.as_str())
+                                                                        .unwrap_or("暂无描述")
+                                                                        .to_string()
+                                                                } else {
+                                                                    "暂无描述".to_string()
+                                                                }
+                                                            }}
+                                                        </div>
                                                     </div>
 
                                                     // 选中图标
@@ -463,8 +498,8 @@ pub fn ParameterControlCard(
 
 #[component]
 pub fn AudioResultCard(
-    /// 生成动作 (Action)
-    generate_action: Action<(), Result<String, ServerFnError>>,
+    /// 生成动作 (Action) - 返回二进制音频数据
+    generate_action: Action<(), Result<Vec<u8>, ServerFnError>>,
 ) -> impl IntoView {
     // 获取 Action 的状态信号
     let is_pending = generate_action.pending();
@@ -646,45 +681,80 @@ pub fn AudioResultCard(
                         }
                             .into_any()
                     }
-                    (false, Some(Ok(url))) => {
+                    (false, Some(Ok(audio_bytes))) => {
+                        // 将二进制音频数据转换为 Blob URL
+                        #[cfg(target_arch = "wasm32")]
+                        let audio_url = {
+                            use wasm_bindgen::JsCast;
+                            let blob = web_sys::Blob::new_with_u8_array_sequence(&wasm_bindgen::JsValue::from(&web_sys::js_sys::Array::of1(
+                                &wasm_bindgen::JsValue::from(
+                                    js_sys::Uint8Array::from(audio_bytes.as_slice())
+                                )
+                            )));
+                            if let Ok(blob) = blob {
+                                web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default()
+                            } else {
+                                String::new()
+                            }
+                        };
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let audio_url = String::new();
+
                         view! {
-                            // 修改：使用 Flex 布局垂直排列 Canvas 和 Controls
-                            // 移除 absolute 定位，避免遮挡
+                            // 使用 Flex 布局垂直排列 Canvas 和 Controls
                             <div class="w-full animate-slide-up flex flex-col">
 
-                                // 2.1 可视化画布 (占据主要区域)
+                                // Canvas 区域
                                 <div class="w-full h-[300px] bg-light/30 rounded-t-xl flex items-center justify-center overflow-hidden relative border-b border-gray-200">
-                                    // 背景装饰 (移除深色渐变，保留透明或极浅色)
-                                    // <div class="absolute inset-0 bg-gradient-to-b from-slate-800/20 to-slate-900/80 pointer-events-none"></div>
-
                                     <canvas
                                         node_ref=canvas_ref
                                         class="z-10"
-                                        // 初始大小，会被 JS 覆盖
                                         width="600"
                                         height="300"
                                     ></canvas>
                                 </div>
 
-                                // 2.2 播放器控制栏 (作为普通块级元素放在底部)
+                                // 播放器控制栏
                                 <div class="w-full p-4 bg-white/80 rounded-b-xl flex flex-col gap-3">
                                     <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
                                         <span>"生成完成"</span>
-                                        <a
-                                            href=url.clone()
-                                            download="tts_audio.mp3"
-                                            target="_blank"
+                                        <button
                                             class="text-primary hover:text-secondary hover:underline flex items-center"
+                                            on:click=move |_| {
+                                                #[cfg(target_arch = "wasm32")]
+                                                {
+                                                    let bytes = audio_bytes.clone();
+                                                    use wasm_bindgen::JsCast;
+                                                    if let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(&wasm_bindgen::JsValue::from(&web_sys::js_sys::Array::of1(
+                                                        &wasm_bindgen::JsValue::from(
+                                                            js_sys::Uint8Array::from(bytes.as_slice())
+                                                        )
+                                                    ))) {
+                                                        if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
+                                                            let a = web_sys::window()
+                                                                .and_then(|w| w.document())
+                                                                .and_then(|d| d.create_element("a").ok())
+                                                                .and_then(|a| a.dyn_into::<web_sys::HtmlAnchorElement>().ok());
+                                                            if let Some(a) = a {
+                                                                a.set_href(&url);
+                                                                a.set_download("tts_audio.mp3");
+                                                                a.click();
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         >
                                             <i class="fa fa-download mr-1"></i> "下载"
-                                        </a>
+                                        </button>
                                     </div>
                                     <audio
                                         node_ref=audio_ref
                                         controls
                                         autoplay
                                         class="w-full h-8 custom-audio-player"
-                                        src=url.clone()
+                                        src=audio_url
                                         on:play=move |_| is_playing.set(true)
                                         on:pause=move |_| is_playing.set(false)
                                         crossorigin="anonymous"

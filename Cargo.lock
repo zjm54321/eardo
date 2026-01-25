@@ -67,7 +67,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -79,6 +79,7 @@ dependencies = [
  "dotenv",
  "futures-util",
  "http",
+ "js-sys",
  "leptos",
  "leptos_axum",
  "leptos_meta",
@@ -954,7 +955,7 @@ dependencies = [
 
 [[package]]
 name = "frontend"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "app",
  "console_error_panic_hook",
@@ -2951,7 +2952,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "app",
  "axum 0.8.7",

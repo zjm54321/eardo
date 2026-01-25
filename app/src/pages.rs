@@ -1,10 +1,10 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-//pub mod auth;
-//pub mod homepage;
-//pub mod playground;
-//pub mod voicefilter;
+pub mod auth;
+pub mod homepage;
+pub mod playground;
+pub mod voicefilter;
 pub mod welcome; // 新增
 
 #[component]

@@ -1,49 +1,67 @@
-use crate::api::{get_featured_works, get_latest_works};
-use crate::data::VoiceWork;
+use crate::api::{PostInfo, list_posts};
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
+
+// 用于解析 PostInfo 的 metadata JSON
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostMetadata {
+    pub author: String,
+    pub avatar: String,
+    pub time: String,
+    pub description: String,
+    pub likes: i32,
+    pub comments: i32,
+    pub voice_type: String,
+    pub audio_url: String,
+}
+
+impl PostMetadata {
+    pub fn from_post(post: &PostInfo) -> Self {
+        match serde_json::from_str(&post.metadata) {
+            Ok(meta) => meta,
+            Err(_) => Self {
+                author: "未知".to_string(),
+                avatar: "https://via.placeholder.com/48".to_string(),
+                time: "刚刚".to_string(),
+                description: String::new(),
+                likes: 0,
+                comments: 0,
+                voice_type: "未知".to_string(),
+                audio_url: String::new(),
+            },
+        }
+    }
+}
 
 #[component]
 pub fn Playground() -> impl IntoView {
     // --- 状态管理 ---
     // 1. 轮播图状态
     let (current_slide, set_current_slide) = signal(0);
-    // 资源：获取精选作品
-    let featured_resource = Resource::new(|| (), |_| get_featured_works());
 
     // 2. 列表作品状态
-    let (page, set_page) = signal(1);
-    // 资源：获取列表作品 (依赖 page)
-    // 注意：这里我们简化处理，实际无限加载通常需要将新数据追加到旧数据列表
-    // 但为了 Resource 的简单性，我们先只展示当前页，或者使用 create_local_resource + action 来手动追加
-    // 这里演示使用 Action 来手动加载更多并追加到信号中
-    let (works_list, set_works_list) = signal(Vec::<VoiceWork>::new());
+    let (works_list, set_works_list) = signal(Vec::<PostInfo>::new());
+    let (featured_list, set_featured_list) = signal(Vec::<PostInfo>::new());
 
-    // 初始化：加载第一页
-    let load_initial_works = Resource::new(
+    // 初始化：加载所有作品
+    let _load_initial_works = Resource::new(
         || (),
         move |_| async move {
-            match get_latest_works(1, 6).await {
-                Ok(works) => set_works_list.set(works),
-                Err(_) => {}
+            match list_posts().await {
+                Ok(posts) => {
+                    // 分离精选和普通作品
+                    // 为了简化，我们取前 3 个作为精选
+                    let (featured, rest): (Vec<_>, Vec<_>) =
+                        posts.into_iter().enumerate().partition(|(idx, _)| *idx < 3);
+                    set_featured_list.set(featured.into_iter().map(|(_, p)| p).collect());
+                    set_works_list.set(rest.into_iter().map(|(_, p)| p).collect());
+                }
+                Err(e) => {
+                    leptos::logging::error!("加载作品失败: {}", e);
+                }
             }
         },
     );
-
-    // Action: 加载更多
-    let load_more_action = Action::new(move |_| {
-        let current_p = page.get() + 1;
-        async move {
-            match get_latest_works(current_p, 6).await {
-                Ok(new_works) => {
-                    if !new_works.is_empty() {
-                        set_works_list.update(|list| list.extend(new_works));
-                        set_page.set(current_p);
-                    }
-                }
-                Err(e) => leptos::logging::error!("加载更多失败: {}", e),
-            }
-        }
-    });
 
     // --- 交互逻辑 ---
     let next_slide = move |total: usize| {
@@ -71,64 +89,64 @@ pub fn Playground() -> impl IntoView {
                 <section class="mb-16">
                     <Suspense fallback=|| view! { <div class="text-center py-10">"加载精选作品..."</div> }>
                         {move || {
-                            featured_resource.get().map(|res| match res {
-                                Ok(featured) if !featured.is_empty() => {
-                                    let total = featured.len();
-                                    view! {
-                                        <div class="relative">
-                                            // 标题栏 + 控制按钮
-                                            <div class="flex justify-between items-center mb-6">
-                                                <h3 class="text-xl font-semibold">"精选作品"</h3>
-                                                <div class="flex space-x-2">
-                                                    <button
-                                                        class="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-primary hover:text-primary transition-all duration-300"
-                                                        on:click=move |_| prev_slide(total)
-                                                    >
-                                                        <i class="fa fa-chevron-left"></i>
-                                                    </button>
-                                                    <button
-                                                        class="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-primary hover:text-primary transition-all duration-300"
-                                                        on:click=move |_| next_slide(total)
-                                                    >
-                                                        <i class="fa fa-chevron-right"></i>
-                                                    </button>
-                                                    </div>
-                                            </div>
-
-                                            // 轮播内容
-                                            <div class="relative overflow-hidden rounded-2xl min-h-[300px]">
-                                                {featured.into_iter().enumerate().map(|(idx, work)| {
-                                                    view! {
-                                                        <div
-                                                            class="transition-all duration-500 ease-in-out"
-                                                            class:hidden=move || current_slide.get() != idx
-                                                            class:block=move || current_slide.get() == idx
-                                                            class:animate-fade-in=move || current_slide.get() == idx
-                                                        >
-                                                            <WorkCard work=work is_featured=true />
-                                                        </div>
-                                                    }
-                                                }).collect::<Vec<_>>()}
-                                            </div>
-
-                                            // 指示器
-                                            <div class="flex justify-center mt-6 space-x-2">
-                                                {(0..total).map(|idx| {
-                                                    view! {
-                                                        <button
-                                                            class="w-3 h-3 rounded-full transition-colors duration-300"
-                                                            class:bg-primary=move || current_slide.get() == idx
-                                                            class:bg-gray-300=move || current_slide.get() != idx
-                                                            on:click=move |_| set_current_slide.set(idx)
-                                                        />
-                                                    }
-                                                }).collect::<Vec<_>>()}
-                                            </div>
+                            let featured = featured_list.get();
+                            if !featured.is_empty() {
+                                let total = featured.len();
+                                view! {
+                                    <div class="relative">
+                                        // 标题栏 + 控制按钮
+                                        <div class="flex justify-between items-center mb-6">
+                                            <h3 class="text-xl font-semibold">"精选作品"</h3>
+                                            <div class="flex space-x-2">
+                                                <button
+                                                    class="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-primary hover:text-primary transition-all duration-300"
+                                                    on:click=move |_| prev_slide(total)
+                                                >
+                                                    <i class="fa fa-chevron-left"></i>
+                                                </button>
+                                                <button
+                                                    class="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-primary hover:text-primary transition-all duration-300"
+                                                    on:click=move |_| next_slide(total)
+                                                >
+                                                    <i class="fa fa-chevron-right"></i>
+                                                </button>
+                                                </div>
                                         </div>
-                                    }.into_any()
-                                }
-                                _ => view! { <div class="text-gray-500 text-center">"暂无精选作品"</div> }.into_any()
-                            })
+
+                                        // 轮播内容
+                                        <div class="relative overflow-hidden rounded-2xl min-h-[300px]">
+                                            {featured.into_iter().enumerate().map(|(idx, work)| {
+                                                view! {
+                                                    <div
+                                                        class="transition-all duration-500 ease-in-out"
+                                                        class:hidden=move || current_slide.get() != idx
+                                                        class:block=move || current_slide.get() == idx
+                                                        class:animate-fade-in=move || current_slide.get() == idx
+                                                    >
+                                                        <WorkCard work=work is_featured=true />
+                                                    </div>
+                                                }
+                                            }).collect::<Vec<_>>()}
+                                        </div>
+
+                                        // 指示器
+                                        <div class="flex justify-center mt-6 space-x-2">
+                                            {(0..total).map(|idx| {
+                                                view! {
+                                                    <button
+                                                        class="w-3 h-3 rounded-full transition-colors duration-300"
+                                                        class:bg-primary=move || current_slide.get() == idx
+                                                        class:bg-gray-300=move || current_slide.get() != idx
+                                                        on:click=move |_| set_current_slide.set(idx)
+                                                    />
+                                                }
+                                            }).collect::<Vec<_>>()}
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <div class="text-gray-500 text-center">"暂无精选作品"</div> }.into_any()
+                            }
                         }}
                     </Suspense>
                 </section>
@@ -140,27 +158,25 @@ pub fn Playground() -> impl IntoView {
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <For
                             each=move || works_list.get()
-                            key=|w| w.id
+                            key=|w| w.id.clone()
                             children=move |work| {
                                 view! { <WorkCard work=work is_featured=false /> }
                             }
                         />
                     </div>
 
-                    // 加载更多按钮
-                    <div class="text-center mt-10">
-                        <button
-                            class="border border-secondary text-secondary hover:bg-secondary hover:text-white py-3 px-8 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                            on:click=move |_| { load_more_action.dispatch(()); }
-                            disabled=move || load_more_action.pending().get()
-                        >
-                            {move || if load_more_action.pending().get() {
-                                "加载中..."
-                            } else {
-                                "加载更多作品"
-                            }}
-                        </button>
-                    </div>
+                    // 暂无更多作品提示
+                    {move || {
+                        if works_list.get().is_empty() {
+                            view! {
+                                <div class="text-center mt-10 text-gray-500">
+                                    "暂无更多作品"
+                                </div>
+                            }.into_any()
+                        } else {
+                            view! { <div></div> }.into_any()
+                        }
+                    }}
                 </section>
 
             </div>
@@ -170,10 +186,11 @@ pub fn Playground() -> impl IntoView {
 
 // --- 子组件：作品卡片 ---
 #[component]
-fn WorkCard(work: VoiceWork, is_featured: bool) -> impl IntoView {
+fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
+    let meta = PostMetadata::from_post(&work);
     // 简单的点赞状态 (仅前端模拟)
     let (liked, set_liked) = signal(false);
-    let (like_count, set_like_count) = signal(work.likes);
+    let (like_count, set_like_count) = signal(meta.likes);
 
     let toggle_like = move |_| {
         set_liked.update(|v| *v = !*v);
@@ -187,16 +204,16 @@ fn WorkCard(work: VoiceWork, is_featured: bool) -> impl IntoView {
 
             // 用户信息
             <div class="flex items-center mb-4">
-                <img src=work.avatar alt="Avatar" class="w-12 h-12 rounded-full mr-3 object-cover" />
+                <img src=meta.avatar alt="Avatar" class="w-12 h-12 rounded-full mr-3 object-cover" />
                 <div>
-                    <div class="font-medium text-gray-800">{work.author}</div>
-                    <div class="text-xs text-gray-500">{work.time}</div>
+                    <div class="font-medium text-gray-800">{meta.author}</div>
+                    <div class="text-xs text-gray-500">{meta.time}</div>
                 </div>
             </div>
 
             // 内容
             <h3 class="font-semibold mb-3 text-lg text-dark">{work.title}</h3>
-            <p class="text-sm text-gray-600 mb-4 line-clamp-3">{work.description}</p>
+            <p class="text-sm text-gray-600 mb-4 line-clamp-3">{meta.description}</p>
 
             // 音频播放器
             <div class="mb-4 bg-gray-50 rounded-lg p-2">
@@ -206,7 +223,7 @@ fn WorkCard(work: VoiceWork, is_featured: bool) -> impl IntoView {
                         <i class="fa fa-refresh mr-1"></i> "替换"
                     </span>
                 </div>
-                <audio controls class="w-full h-8" src=work.audio_url>
+                <audio controls class="w-full h-8" src=meta.audio_url>
                     "您的浏览器不支持音频播放"
                 </audio>
             </div>
@@ -224,11 +241,11 @@ fn WorkCard(work: VoiceWork, is_featured: bool) -> impl IntoView {
                     </button>
                     <button class="flex items-center hover:text-primary transition-colors duration-200">
                         <i class="fa fa-comment-o mr-1"></i>
-                        <span>{work.comments}</span>
+                        <span>{meta.comments}</span>
                     </button>
                 </div>
                 <span class="text-secondary bg-secondary/10 px-2 py-1 rounded-full text-xs">
-                    {work.voice_type}
+                    {meta.voice_type}
                 </span>
             </div>
         </div>

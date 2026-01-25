@@ -1,4 +1,8 @@
-use crate::api::{get_current_user, get_my_works, login, logout, register, update_user_profile};
+use crate::api::{
+    UserAuthInfo, UserInfo, get_user_profile, list_posts, login, logout, register,
+    update_user_profile,
+};
+use crate::pages::playground::PostMetadata;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
@@ -21,7 +25,12 @@ pub fn LoginPage() -> impl IntoView {
         {
             let value = navigate.clone();
             async move {
-                match login(u, p).await {
+                let auth_info = UserAuthInfo {
+                    username: Some(u),
+                    email: None,
+                    phone: None,
+                };
+                match login(auth_info, p).await {
                     Ok(_) => {
                         value("/profile", Default::default());
                     }
@@ -104,7 +113,12 @@ pub fn RegisterPage() -> impl IntoView {
                     set_error_msg.set(Some("两次输入的密码不一致".to_string()));
                     return;
                 }
-                match register(u, p).await {
+                let auth_info = UserAuthInfo {
+                    username: Some(u),
+                    email: None,
+                    phone: None,
+                };
+                match register(auth_info, p).await {
                     Ok(_) => {
                         // 注册成功跳转登录
                         value("/login", Default::default());
@@ -182,8 +196,8 @@ pub fn RegisterPage() -> impl IntoView {
 #[component]
 pub fn ProfilePage() -> impl IntoView {
     let navigate = use_navigate();
-    let user_resource = Resource::new(|| (), |_| get_current_user());
-    let works_resource = Resource::new(|| (), |_| get_my_works());
+    let user_resource = Resource::new(|| (), |_| get_user_profile());
+    let works_resource = Resource::new(|| (), |_| list_posts());
 
     // 编辑状态
     let (is_editing, set_is_editing) = signal(false);
@@ -200,9 +214,17 @@ pub fn ProfilePage() -> impl IntoView {
 
     let update_action = Action::new(move |_| {
         let bio = edit_bio.get();
-        let avatar = new_avatar.get();
+        let avatar_url = new_avatar.get().unwrap_or_default();
         async move {
-            match update_user_profile(avatar, Some(bio)).await {
+            // 构造 UserInfo 对象
+            let user_info = UserInfo {
+                id: "current".to_string(), // 服务端会自动填充当前用户 ID
+                username: "".to_string(),  // 保持原用户名
+                avatar_url,
+                status: crate::api::UserStatus::Normal,
+                meta: serde_json::json!({ "bio": bio }).to_string(),
+            };
+            match update_user_profile(user_info).await {
                 Ok(_) => {
                     set_is_editing.set(false);
                     // 刷新用户信息
@@ -252,14 +274,18 @@ pub fn ProfilePage() -> impl IntoView {
                 <Suspense fallback=move || view! { <div class="text-center py-10 text-gray-400">"加载用户信息..."</div> }>
                     {move || {
                         match user_resource.get() {
-                            Some(Ok(Some(user))) => {
-                                // Clone the bio string for use inside the effect
-                                let user_bio = user.bio.clone();
+                            Some(Ok(user)) => {
+                                // 从 meta JSON 解析 bio
+                                let user_bio = serde_json::from_str::<serde_json::Value>(&user.meta)
+                                    .ok()
+                                    .and_then(|v| v.get("bio").and_then(|b| b.as_str()).map(|s| s.to_string()))
+                                    .unwrap_or_default();
+                                let user_bio_clone = user_bio.clone();
 
                                 // 使用 Effect::new 替代 create_effect
                                 Effect::new(move |_| {
                                     if !is_editing.get_untracked() {
-                                        set_edit_bio.set(user_bio.clone().unwrap_or_default());
+                                        set_edit_bio.set(user_bio_clone.clone());
                                     }
                                 });
 
@@ -286,8 +312,8 @@ pub fn ProfilePage() -> impl IntoView {
                                                         // 优先显示新上传的头像预览
                                                         {move || if let Some(preview) = new_avatar.get() {
                                                             view! { <img src=preview class="w-full h-full object-cover" /> }.into_any()
-                                                        } else if let Some(avatar) = user.avatar.clone() {
-                                                            view! { <img src=avatar class="w-full h-full object-cover" /> }.into_any()
+                                                        } else if !user.avatar_url.is_empty() {
+                                                            view! { <img src=user.avatar_url.clone() class="w-full h-full object-cover" /> }.into_any()
                                                         } else {
                                                             view! {
                                                                 <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
@@ -337,14 +363,14 @@ pub fn ProfilePage() -> impl IntoView {
 
                                                     <Show when=move || is_editing.get()
                                                         fallback=move || {
-                                                            let bio_display = user.bio.clone();
+                                                            let bio_display = user_bio.clone();
                                                             view! {
                                                                 <div>
                                                                     {
-                                                                        if let Some(bio) = bio_display {
-                                                                            if bio.is_empty() { "暂无简介，快来写点什么吧...".to_string() } else { bio }
-                                                                        } else {
+                                                                        if bio_display.is_empty() {
                                                                             "暂无简介，快来写点什么吧...".to_string()
+                                                                        } else {
+                                                                            bio_display
                                                                         }
                                                                     }
                                                                     <button
@@ -409,22 +435,25 @@ pub fn ProfilePage() -> impl IntoView {
                                                                     <ul class="divide-y divide-gray-50">
                                                                         <For
                                                                             each=move || works.clone()
-                                                                            key=|w| w.id
-                                                                            children=move |work| view! {
-                                                                                <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
-                                                                                    <div class="flex items-center justify-between mb-1">
-                                                                                        <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors truncate pr-2">
-                                                                                            {work.title}
-                                                                                        </span>
-                                                                                        <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">"公开"</span>
-                                                                                    </div>
-                                                                                    <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">{work.description}</p>
-                                                                                    <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                                                                                        <span><i class="fa fa-play-circle mr-1"></i>"128"</span>
-                                                                                        <span><i class="fa fa-heart mr-1"></i>{work.likes}</span>
-                                                                                        <span class="ml-auto">{work.time}</span>
-                                                                                    </div>
-                                                                                </li>
+                                                                            key=|w| w.id.clone()
+                                                                            children=move |work| {
+                                                                                let meta = PostMetadata::from_post(&work);
+                                                                                view! {
+                                                                                    <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
+                                                                                        <div class="flex items-center justify-between mb-1">
+                                                                                            <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors truncate pr-2">
+                                                                                                {work.title}
+                                                                                            </span>
+                                                                                            <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">"公开"</span>
+                                                                                        </div>
+                                                                                        <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">{meta.description}</p>
+                                                                                        <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                                                                            <span><i class="fa fa-play-circle mr-1"></i>"128"</span>
+                                                                                            <span><i class="fa fa-heart mr-1"></i>{meta.likes}</span>
+                                                                                            <span class="ml-auto">{meta.time}</span>
+                                                                                        </div>
+                                                                                    </li>
+                                                                                }
                                                                             }
                                                                         />
                                                                     </ul>
@@ -534,34 +563,32 @@ pub fn ProfilePage() -> impl IntoView {
                                     </div>
                                 }.into_any()
                             },
-                            Some(Ok(None)) => {
+                            Some(Err(e)) => {
                                 view! {
                                     <div class="min-h-[60vh] flex flex-col items-center justify-center">
                                         <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
                                             <i class="fa fa-user-lock text-4xl"></i>
                                         </div>
-                                        <h2 class="text-2xl font-bold mb-2 text-dark">"未登录"</h2>
-                                        <p class="text-gray-500 mb-8">"请登录以查看您的个人主页"</p>
+                                        <h2 class="text-2xl font-bold mb-2 text-dark">"加载失败"</h2>
+                                        <p class="text-gray-500 mb-8">{format!("错误: {}", e)}</p>
                                         <A href="/login" attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold">
                                             "去登录"
                                         </A>
                                     </div>
                                 }.into_any()
                             },
-                            Some(Err(e)) => view! {
-                                <div class="text-center py-20 bg-white rounded-xl shadow-soft max-w-lg mx-auto">
-                                    <div class="text-red-500 text-6xl mb-4"><i class="fa fa-exclamation-circle"></i></div>
-                                    <h2 class="text-2xl font-bold mb-2 text-dark">"加载用户信息失败"</h2>
-                                    <p class="text-gray-600 mb-6 bg-gray-100 inline-block px-4 py-2 rounded font-mono text-sm mx-4 break-all">{e.to_string()}</p>
-                                    <button
-                                        class="text-primary hover:underline font-medium"
-                                        on:click=move |_| window().location().reload().unwrap()
-                                    >
-                                        "刷新页面重试"
-                                    </button>
+                            _ => view! {
+                                <div class="min-h-[60vh] flex flex-col items-center justify-center">
+                                    <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
+                                        <i class="fa fa-user-lock text-4xl"></i>
+                                    </div>
+                                    <h2 class="text-2xl font-bold mb-2 text-dark">"未登录"</h2>
+                                    <p class="text-gray-500 mb-8">"请登录以查看您的个人主页"</p>
+                                    <A href="/login" attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold">
+                                        "去登录"
+                                    </A>
                                 </div>
-                            }.into_any(),
-                            None => view! { <div class="text-center py-20 text-gray-400">"初始化中..."</div> }.into_any()
+                            }.into_any()
                         }
                     }}
                 </Suspense>

@@ -1,26 +1,103 @@
-use crate::api::get_voice_filters;
-use crate::data::{self, VoiceFilter};
+use crate::api::{VoiceMetaInfo, list_voice_metadata};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
+use serde::{Deserialize, Serialize};
+
+// 定义 metadata JSON 的结构
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VoiceFilterMetadata {
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    base_model_id: String,
+    #[serde(default)]
+    pitch: f64,
+    #[serde(default = "default_speed")]
+    speed: f64,
+    #[serde(default)]
+    volume: f64,
+    #[serde(default)]
+    emotion: String,
+    #[serde(default)]
+    usage_count: i32,
+    #[serde(default)]
+    is_public: bool,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    author: String,
+    #[serde(default)]
+    is_official: bool,
+}
+
+fn default_speed() -> f64 {
+    1.0
+}
+
+// 用于显示的滤镜结构
+#[derive(Debug, Clone)]
+struct DisplayFilter {
+    id: String,
+    name: String,
+    description: String,
+    base_model_id: String,
+    pitch: f64,
+    speed: f64,
+    volume: f64,
+    emotion: String,
+    usage_count: i32,
+    tags: Vec<String>,
+    author: String,
+    is_official: bool,
+}
+
+impl DisplayFilter {
+    fn from_voice_meta(meta: VoiceMetaInfo) -> Self {
+        let metadata: VoiceFilterMetadata =
+            serde_json::from_str(&meta.metadata).unwrap_or_else(|_| VoiceFilterMetadata {
+                description: String::new(),
+                base_model_id: String::new(),
+                pitch: 0.0,
+                speed: 1.0,
+                volume: 1.0,
+                emotion: "normal".to_string(),
+                usage_count: 0,
+                is_public: true,
+                tags: vec![],
+                author: "未知".to_string(),
+                is_official: false,
+            });
+
+        DisplayFilter {
+            id: meta.id,
+            name: meta.name,
+            description: metadata.description,
+            base_model_id: metadata.base_model_id,
+            pitch: metadata.pitch,
+            speed: metadata.speed,
+            volume: metadata.volume,
+            emotion: metadata.emotion,
+            usage_count: metadata.usage_count,
+            tags: metadata.tags,
+            author: metadata.author,
+            is_official: metadata.is_official,
+        }
+    }
+}
 
 #[component]
 pub fn VoiceFilterPage() -> impl IntoView {
     // 获取数据资源
-    let filters_resource = Resource::new(|| (), |_| get_voice_filters());
+    let filters_resource = Resource::new(|| (), |_| list_voice_metadata());
 
     // 导航 hook
     let navigate = use_navigate();
 
     // 处理“使用滤镜”点击
-    // 这个闭包捕获了 navigate，navigate 实现了 Clone，所以这个闭包也实现了 Clone
-    // 但它没有实现 Copy，所以我们需要在传递时注意
-    let apply_filter = move |filter: VoiceFilter| {
+    let apply_filter = move |filter: DisplayFilter| {
         let url = format!(
             "/?voice_id={}&pitch={}&speed={}&emotion={}",
-            filter.voice_data.voice_id,
-            filter.voice_data.voice_params.pitch,
-            filter.voice_data.voice_params.speed,
-            filter.voice_data.voice_params.emotion
+            filter.base_model_id, filter.pitch, filter.speed, filter.emotion
         );
         navigate(&url, Default::default());
     };
@@ -51,9 +128,15 @@ pub fn VoiceFilterPage() -> impl IntoView {
                 <Suspense fallback=move || view! { <div class="text-center py-10">"加载滤镜中..."</div> }>
                     {move || {
                         match filters_resource.get() {
-                            Some(Ok(all_filters)) => {
-                                let (official, user): (Vec<_>, Vec<_>) = all_filters.into_iter()
-                                    .partition(|f| f.state == data::DisplayState::Official);
+                            Some(Ok(meta_list)) => {
+                                let all_filters: Vec<DisplayFilter> = meta_list
+                                    .into_iter()
+                                    .map(DisplayFilter::from_voice_meta)
+                                    .collect();
+
+                                let (official, user): (Vec<_>, Vec<_>) = all_filters
+                                    .into_iter()
+                                    .partition(|f| f.is_official);
 
                                 // 显式克隆闭包传递给组件
                                 let apply_filter_1 = apply_filter.clone();
@@ -97,13 +180,11 @@ fn FilterSection<F>(
     title: &'static str,
     icon: &'static str,
     icon_color: &'static str,
-    filters: Vec<VoiceFilter>,
+    filters: Vec<DisplayFilter>,
     on_apply: F, // 泛型闭包
 ) -> impl IntoView
 where
-    // 关键修改：移除了 Copy 约束
-    // 我们保留 Clone 和 Send (For 组件通常需要 Send)
-    F: Fn(VoiceFilter) + Clone + Send + 'static,
+    F: Fn(DisplayFilter) + Clone + Send + 'static,
 {
     view! {
         <section>
@@ -118,9 +199,6 @@ where
                     key=|f| f.id.clone()
                     children=move |filter| {
                         let filter_clone = filter.clone();
-
-                        // 关键修改：因为 F 不是 Copy 的，我们必须在这里显式 clone 它
-                        // children 闭包是 Fn，所以它借用了 on_apply，我们可以调用 .clone() 得到一个新的所有权闭包
                         let on_apply = on_apply.clone();
 
                         view! {
@@ -128,12 +206,12 @@ where
                                 <div class="flex justify-between items-start mb-3">
                                     <h4 class="text-lg font-bold text-gray-800">{filter.name.clone()}</h4>
                                     <span class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">
-                                        {if filter.state == data::DisplayState::Official { "官方".to_string() } else { filter.author.clone() }}
+                                        {if filter.is_official { "官方".to_string() } else { filter.author.clone() }}
                                     </span>
                                 </div>
 
                                 <p class="text-sm text-gray-500 mb-4 h-10 line-clamp-2">
-                                    {filter.desc.clone()}
+                                    {filter.description.clone()}
                                 </p>
 
                                 <div class="flex flex-wrap gap-2 mb-6">
@@ -146,14 +224,13 @@ where
 
                                 <div class="flex items-center justify-between mt-auto">
                                     <div class="text-xs text-gray-400 space-x-2">
-                                        <span><i class="fa fa-signal mr-1"></i>{filter.voice_data.voice_params.pitch}</span>
-                                        <span><i class="fa fa-tachometer mr-1"></i>{filter.voice_data.voice_params.speed}"x"</span>
+                                        <span><i class="fa fa-signal mr-1"></i>{filter.pitch}</span>
+                                        <span><i class="fa fa-tachometer mr-1"></i>{filter.speed}"x"</span>
                                     </div>
 
                                     <button
                                         class="bg-primary/10 hover:bg-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
                                         on:click=move |_| {
-                                            // 这里使用的是上面 clone 进来的 on_apply
                                             on_apply(filter_clone.clone());
                                         }
                                     >
