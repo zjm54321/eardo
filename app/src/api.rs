@@ -102,198 +102,205 @@ pub mod voicedata;
 #[server]
 pub async fn register(userauth: UserAuthInfo, password: String) -> Result<(), ServerFnError> {
     use_context::<AuthProvider>()
-        .ok_or(ServerFnError::new("AuthProvider not found in context"))?
+        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
         .register(userauth, &password)
         .await
-        .map_err(|e| ServerFnError::new(format!("Register failed: {}", e)))?;
+        .map_err(|e| ServerFnError::new(format!("注册失败: {}", e)))
 }
 
 #[server]
 pub async fn login(userauth: UserAuthInfo, password: String) -> Result<(), ServerFnError> {
     use_context::<AuthProvider>()
-        .ok_or_else(|| ServerFnError::new("Auth provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
         .login(userauth, &password)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("登录失败: {}", e)))
 }
 
 #[server]
 pub async fn logout() -> Result<(), ServerFnError> {
     use_context::<AuthProvider>()
-        .ok_or_else(|| ServerFnError::new("Auth provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
         .logout()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("登出失败: {}", e)))
 }
 
 #[server]
 pub async fn get_current_user() -> Result<(), ServerFnError> {
-    // 注意：Trait定义中返回的是()，通常这里应该返回具体的 UserInfo 或 UserID
     use_context::<AuthProvider>()
-        .ok_or_else(|| ServerFnError::new("Auth provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
         .get_current_user()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取当前登录用户失败: {}", e)))
 }
+
+// === 用户资料模块 ===
 
 #[server]
 pub async fn get_my_profile() -> Result<UserInfo, ServerFnError> {
     use_context::<UserServiceProvider>()
-        .ok_or_else(|| ServerFnError::new("User provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserServiceProvider)"))?
         .get_user_profile()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取个人资料失败: {}", e)))
 }
 
 #[server]
 pub async fn update_my_profile(user: UserInfo) -> Result<(), ServerFnError> {
     use_context::<UserServiceProvider>()
-        .ok_or_else(|| ServerFnError::new("User provider missing"))?
-        .update_user_profile(&user) // 注意这里传引用
+        .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserServiceProvider)"))?
+        .update_user_profile(&user)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("更新个人资料失败: {}", e)))
 }
+
+// === 语音模型模块 ===
 
 #[server]
 pub async fn list_voice_models() -> Result<Vec<VoiceModelInfo>, ServerFnError> {
     use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("Voice model provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
         .list_voice_models()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取语音模型列表失败: {}", e)))
 }
 
 #[server]
 pub async fn get_voice_model(voice_id: String) -> Result<VoiceModelInfo, ServerFnError> {
     use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("Voice model provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
         .get_voice_model(&voice_id)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取语音模型详情失败: {}", e)))
 }
 
 #[server]
 pub async fn update_voice_model(voice: VoiceModelInfo) -> Result<(), ServerFnError> {
     use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("Voice model provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
         .update_voice_model(&voice)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("更新语音模型失败: {}", e)))
 }
 
 #[server]
 pub async fn delete_voice_model(voice_id: String) -> Result<(), ServerFnError> {
     use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("Voice model provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
         .delete_voice_model(&voice_id)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("删除语音模型失败: {}", e)))
 }
+
+// === 语音元数据模块 ===
 
 #[server]
 pub async fn list_voice_metadata() -> Result<Vec<VoiceMetaInfo>, ServerFnError> {
     use_context::<VoiceMetadataProvider>()
-        .ok_or_else(|| ServerFnError::new("Metadata provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
         .list_voice_metadata()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取语音元数据列表失败: {}", e)))
 }
 
 #[server]
 pub async fn get_voice_metadata(voice_id: String) -> Result<VoiceMetaInfo, ServerFnError> {
     use_context::<VoiceMetadataProvider>()
-        .ok_or_else(|| ServerFnError::new("Metadata provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
         .get_voice_metadata(&voice_id)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取语音元数据详情失败: {}", e)))
 }
 
 #[server]
 pub async fn update_voice_metadata(metadata: VoiceMetaInfo) -> Result<(), ServerFnError> {
     use_context::<VoiceMetadataProvider>()
-        .ok_or_else(|| ServerFnError::new("Metadata provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
         .update_voice_metadata(&metadata)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("更新语音元数据失败: {}", e)))
 }
 
 #[server]
 pub async fn delete_voice_metadata(voice_id: String) -> Result<(), ServerFnError> {
     use_context::<VoiceMetadataProvider>()
-        .ok_or_else(|| ServerFnError::new("Metadata provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
         .delete_voice_metadata(&voice_id)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("删除语音元数据失败: {}", e)))
 }
+
+// === 帖子模块 ===
 
 #[server]
 pub async fn list_posts() -> Result<Vec<PostInfo>, ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .list_posts()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取帖子列表失败: {}", e)))
 }
 
 #[server]
 pub async fn search_posts(query: String) -> Result<Vec<String>, ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .search_post(&query)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("搜索帖子失败: {}", e)))
 }
 
 #[server]
 pub async fn get_post(post_id: String) -> Result<PostInfo, ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .get_post(&post_id)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("获取帖子详情失败: {}", e)))
 }
 
 #[server]
 pub async fn create_post(post: PostInfo) -> Result<(), ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .create_post(&post)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("创建帖子失败: {}", e)))
 }
 
 #[server]
 pub async fn update_post(post: PostInfo) -> Result<(), ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .update_post(&post)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("更新帖子失败: {}", e)))
 }
 
 #[server]
 pub async fn delete_post(post_id: String) -> Result<(), ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .delete_post(&post_id)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("删除帖子失败: {}", e)))
 }
 
 #[server]
 pub async fn comment_on_post(post_id: String, comment: String) -> Result<(), ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .comment_on_post(&post_id, &comment)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("评论帖子失败: {}", e)))
 }
 
 #[server]
 pub async fn like_dislike_post(post_id: String) -> Result<(), ServerFnError> {
     use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("Post provider missing"))?
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .like_dislike_post(&post_id)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("点赞/取消作失败: {}", e)))
 }
