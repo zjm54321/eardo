@@ -1,17 +1,17 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-pub mod auth;
-pub mod homepage;
-pub mod playground;
-pub mod voicefilter;
+//pub mod auth;
+//pub mod homepage;
+//pub mod playground;
+//pub mod voicefilter;
 pub mod welcome; // 新增
 
 #[component]
 pub fn Header() -> impl IntoView {
     // 检查用户登录状态的资源
     // 这是一个简单的做法，实际上可能需要一个全局 Context 来存储 User
-    let user_resource = Resource::new(|| (), |_| crate::api::get_current_user());
+    let user_resource = Resource::new(|| (), |_| crate::api::get_user_profile());
 
     view! {
         // 顶部导航栏容器
@@ -77,7 +77,7 @@ pub fn Header() -> impl IntoView {
                     <Suspense fallback=move || view!{ <div class="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div> }>
                         {move || {
                             match user_resource.get() {
-                                Some(Ok(Some(user))) => view! {
+                                Some(Ok(user)) => view! {
                                     <A href="/profile">
                                         <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300">
                                             <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden font-bold text-primary">

@@ -5,7 +5,7 @@ use leptos_router::{
     components::{Route, Router, Routes},
 };
 
-mod api;
+pub mod api;
 mod data;
 mod pages;
 
@@ -56,14 +56,14 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("") view=pages::welcome::WelcomePage />
 
                     // 原首页功能移动到 /home
-                    <Route path=StaticSegment("home") view=pages::homepage::HomePage />
+                    //<Route path=StaticSegment("home") view=pages::homepage::HomePage />
 
-                    <Route path=StaticSegment("voice") view=pages::playground::Playground/>
-                    <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
+                    //<Route path=StaticSegment("voice") view=pages::playground::Playground/>
+                    //<Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
 
-                    <Route path=StaticSegment("login") view=pages::auth::LoginPage/>
-                    <Route path=StaticSegment("register") view=pages::auth::RegisterPage/>
-                    <Route path=StaticSegment("profile") view=pages::auth::ProfilePage/>
+                    //<Route path=StaticSegment("login") view=pages::auth::LoginPage/>
+                    //<Route path=StaticSegment("register") view=pages::auth::RegisterPage/>
+                    //<Route path=StaticSegment("profile") view=pages::auth::ProfilePage/>
                 </Routes>
             </main>
 

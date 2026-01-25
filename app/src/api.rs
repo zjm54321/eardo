@@ -3,6 +3,28 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+#[cfg(feature = "ssr")]
+pub struct ServiceProvider<DB>
+where
+    DB: sqlx::Database,
+{
+    // 2. 字段明确为 sqlx 的连接池
+    pub pool: sqlx::Pool<DB>,
+}
+
+#[cfg(feature = "ssr")]
+impl<DB> Clone for ServiceProvider<DB>
+where
+    DB: sqlx::Database,
+{
+    fn clone(&self) -> Self {
+        Self {
+            // Pool 内部是 Arc，这里只是增加引用计数，开销极小
+            pool: self.pool.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserAuthInfo {
     username: Option<String>,
@@ -28,7 +50,7 @@ pub enum UserStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserInfo {
     id: String,
-    username: String,
+    pub username: String,
     avatar_url: String,
     status: UserStatus,
     meta: String, // JSON 格式的用户元数据
@@ -95,7 +117,6 @@ pub trait PostService: Send + Sync {
 pub type PostProvider = Arc<dyn PostService>;
 
 pub mod post;
-pub mod sql_struct;
 pub mod user;
 pub mod voicedata;
 
@@ -138,7 +159,7 @@ pub async fn get_current_user() -> Result<(), ServerFnError> {
 // === 用户资料模块 ===
 
 #[server]
-pub async fn get_my_profile() -> Result<UserInfo, ServerFnError> {
+pub async fn get_user_profile() -> Result<UserInfo, ServerFnError> {
     use_context::<UserServiceProvider>()
         .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserServiceProvider)"))?
         .get_user_profile()
@@ -147,7 +168,7 @@ pub async fn get_my_profile() -> Result<UserInfo, ServerFnError> {
 }
 
 #[server]
-pub async fn update_my_profile(user: UserInfo) -> Result<(), ServerFnError> {
+pub async fn update_user_profile(user: UserInfo) -> Result<(), ServerFnError> {
     use_context::<UserServiceProvider>()
         .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserServiceProvider)"))?
         .update_user_profile(&user)
@@ -243,7 +264,7 @@ pub async fn list_posts() -> Result<Vec<PostInfo>, ServerFnError> {
 }
 
 #[server]
-pub async fn search_posts(query: String) -> Result<Vec<String>, ServerFnError> {
+pub async fn search_post(query: String) -> Result<Vec<String>, ServerFnError> {
     use_context::<PostProvider>()
         .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?
         .search_post(&query)

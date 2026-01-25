@@ -1,76 +1,38 @@
-use crate::api::{Auth, UserProfile, sql_struct::*};
-use anyhow::Result;
-use async_trait::async_trait;
-pub struct UserMeta {
-    id: Option<u128>,
-    pub icon_url: String,
-}
+#[cfg(feature = "ssr")]
+use sqlx::Sqlite;
 
-pub struct User {
-    pub user_meta: UserMeta,
-    pub nickname: String,
-    pub bio: String,
-    pub level: i32,
-}
+use crate::api::*;
 
-struct UserAuth {
-    username: String,
-    email: Option<String>,
-    phone: Option<String>,
-    password: String,
-}
-
-impl UserAuth {
-    pub fn new(
-        username: String,
-        password: String,
-        email: Option<String>,
-        phone: Option<String>,
-    ) -> UserAuth {
-        UserAuth {
-            username,
-            email,
-            phone,
-            password,
-        }
-    }
-}
-
-#[async_trait]
-impl Auth for UserMeta {
-    type UserAuth = UserAuth;
-
-    async fn register(userauth: &Self::UserAuth, password: &str) -> Result<()> {
+#[cfg(feature = "ssr")]
+#[async_trait::async_trait]
+impl AuthService for ServiceProvider<Sqlite> {
+    async fn register(&self, userauth: UserAuthInfo, password: &str) -> anyhow::Result<()> {
         todo!()
     }
-    async fn login(&mut self, userauth: &str, password: &str) -> Result<()> {
+    async fn login(&self, userauth: UserAuthInfo, password: &str) -> anyhow::Result<()> {
         todo!()
     }
-    async fn logout(&mut self) -> Result<()> {
+    async fn logout(&self) -> anyhow::Result<()> {
         todo!()
     }
-    async fn get_current_user(&mut self) -> Result<()> {
+    async fn get_current_user(&self) -> anyhow::Result<()> {
         todo!()
     }
 }
 
-#[async_trait]
-impl UserProfile for UserMeta {
-    type User = u8;
-
-    async fn get_user_profile(&self) -> Result<Self::User> {
-        todo!()
+#[cfg(feature = "ssr")]
+#[async_trait::async_trait]
+impl UserService for ServiceProvider<Sqlite> {
+    async fn get_user_profile(&self) -> anyhow::Result<UserInfo> {
+        Ok(UserInfo {
+            id: "".to_string(),
+            username: "ming".to_string(),
+            avatar_url: "".to_string(),
+            status: UserStatus::Normal,
+            meta: "".to_string(),
+        })
     }
-    async fn update_user_profile(&self, user: &Self::User) -> Result<()> {
+    async fn update_user_profile(&self, user: &UserInfo) -> anyhow::Result<()> {
         todo!()
-    }
-}
-
-impl UserMeta {
-    pub fn new() -> UserMeta {
-        UserMeta {
-            id: None,
-            icon_url: String::new(),
-        }
     }
 }
