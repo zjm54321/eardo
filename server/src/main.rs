@@ -78,6 +78,31 @@ async fn get_audio_handler(
     }
 }
 
+// 2.1 头像获取处理函数
+async fn get_avatar_handler(
+    Path(user_id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let result: Result<(Vec<u8>, String), sqlx::Error> = sqlx::query_as(
+        "SELECT avatar_data, avatar_mime FROM users WHERE id = ? AND avatar_data IS NOT NULL",
+    )
+    .bind(&user_id)
+    .fetch_one(&state.pool)
+    .await;
+
+    match result {
+        Ok((data, mime)) => (
+            [
+                (header::CONTENT_TYPE, mime.as_str()),
+                (header::CACHE_CONTROL, "public, max-age=86400"),
+            ],
+            data,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "Avatar not found").into_response(),
+    }
+}
+
 // 3. 新增：SSR 页面渲染处理函数
 // 专门用于处理页面请求，确保在服务端渲染时也能获取到 Headers (Cookie)
 async fn ssr_handler(
@@ -114,7 +139,7 @@ async fn main() {
     let routes = generate_route_list(App);
 
     let db_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eardo.db?mode=rwc".to_string());
+        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eardo.sqlite?mode=rwc".to_string());
     log!("连接数据库: {}", db_url);
 
     let pool = SqlitePoolOptions::new()
@@ -149,7 +174,8 @@ async fn main() {
     // 构建 Router
     let mut app = Router::<AppState>::new()
         .route("/api/{*fn_name}", post(server_fn_handler))
-        .route("/api/audio/{id}", get(get_audio_handler));
+        .route("/api/audio/{id}", get(get_audio_handler))
+        .route("/api/avatar/{user_id}", get(get_avatar_handler));
 
     // 为每个 Leptos 路由注册我们自定义的 ssr_handler
     // 替代之前的 .leptos_routes_with_context()
