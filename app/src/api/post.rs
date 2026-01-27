@@ -72,15 +72,18 @@ impl PostService for ServiceProvider<Sqlite> {
                 i64,
                 i64,
                 String,
+                String,
             ),
         >(
             "SELECT 
                 p.id, p.title, p.content, p.user_id, 
                 ua.username, u.nickname, u.avatar_mime,
-                p.likes_count, p.comments_count, p.created_at
+                p.likes_count, p.comments_count, p.created_at,
+                vm.name as voice_name
             FROM posts p
             JOIN users u ON p.user_id = u.id
             JOIN user_auth ua ON u.id = ua.user_id
+            JOIN voice_meta_infos vm ON p.voice_meta_id = vm.id
             WHERE p.status = 'normal'
             ORDER BY p.created_at DESC",
         )
@@ -100,6 +103,7 @@ impl PostService for ServiceProvider<Sqlite> {
             likes_count,
             comments_count,
             created_at,
+            voice_name,
         ) in posts
         {
             // 检查当前用户是否点赞了该帖子
@@ -129,6 +133,7 @@ impl PostService for ServiceProvider<Sqlite> {
                 "description": content,
                 "likes": likes_count,
                 "comments": comments_count,
+                "voice_type": voice_name,
                 "audio_url": format!("/api/post/audio/{}", id),
                 "is_liked": is_liked
             })
@@ -183,6 +188,7 @@ impl PostService for ServiceProvider<Sqlite> {
             likes_count,
             comments_count,
             created_at,
+            voice_name,
         ) = sqlx::query_as::<
             _,
             (
@@ -196,15 +202,18 @@ impl PostService for ServiceProvider<Sqlite> {
                 i64,
                 i64,
                 String,
+                String,
             ),
         >(
             "SELECT 
                     p.id, p.title, p.content, p.user_id, 
                     ua.username, u.nickname, u.avatar_mime,
-                    p.likes_count, p.comments_count, p.created_at
+                    p.likes_count, p.comments_count, p.created_at,
+                    vm.name as voice_name
                 FROM posts p
                 JOIN users u ON p.user_id = u.id
                 JOIN user_auth ua ON u.id = ua.user_id
+                JOIN voice_meta_infos vm ON p.voice_meta_id = vm.id
                 WHERE p.id = ? AND p.status = 'normal'",
         )
         .bind(post_id)
@@ -236,6 +245,7 @@ impl PostService for ServiceProvider<Sqlite> {
             "description": content,
             "likes": likes_count,
             "comments": comments_count,
+            "voice_type": voice_name,
             "audio_url": format!("/api/post/audio/{}", id),
             "is_liked": is_liked
         })

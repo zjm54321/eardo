@@ -99,7 +99,20 @@ async fn get_avatar_handler(
             data,
         )
             .into_response(),
-        Err(_) => (StatusCode::NOT_FOUND, "Avatar not found").into_response(),
+        Err(_) => {
+            // 返回默认头像 - 重定向到 DiceBear API
+            (
+                StatusCode::FOUND,
+                [(
+                    header::LOCATION,
+                    format!(
+                        "https://api.dicebear.com/7.x/avataaars/svg?seed={}",
+                        user_id
+                    ),
+                )],
+            )
+                .into_response()
+        }
     }
 }
 

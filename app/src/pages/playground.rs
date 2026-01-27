@@ -1,6 +1,79 @@
 use crate::api::{PostInfo, list_posts};
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
+
+#[server]
+pub async fn toggle_post_like(post_id: String) -> Result<(), ServerFnError> {
+    let provider = leptos::prelude::use_context::<crate::api::PostProvider>()
+        .ok_or_else(|| ServerFnError::new("未找到PostProvider"))?;
+    provider
+        .like_dislike_post(&post_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("点赞操作失败: {}", e)))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommentInfo {
+    pub id: String,
+    pub author: String,
+    pub avatar: Option<String>,
+    pub content: String,
+    pub time: String,
+}
+
+#[server]
+pub async fn get_post_comments(post_id: String) -> Result<Vec<CommentInfo>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let pool = leptos::prelude::use_context::<sqlx::SqlitePool>()
+            .ok_or_else(|| ServerFnError::new("未找到数据库连接池"))?;
+        let comments =
+            sqlx::query_as::<_, (String, String, String, String, String, Option<String>)>(
+                "SELECT 
+                pc.id, pc.content, pc.created_at, pc.user_id,
+                ua.username, u.nickname
+            FROM post_comments pc
+            JOIN users u ON pc.user_id = u.id
+            JOIN user_auth ua ON u.id = ua.user_id
+            WHERE pc.post_id = ? AND pc.status = 'normal'
+            ORDER BY pc.created_at DESC",
+            )
+            .bind(&post_id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取评论失败: {}", e)))?;
+
+        Ok(comments
+            .into_iter()
+            .map(|(id, content, created_at, user_id, username, nickname)| {
+                let author = nickname.unwrap_or(username);
+                let avatar = Some(format!("/api/avatar/{}", user_id));
+                CommentInfo {
+                    id,
+                    author,
+                    avatar,
+                    content,
+                    time: created_at,
+                }
+            })
+            .collect())
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
+#[server]
+pub async fn add_post_comment(post_id: String, content: String) -> Result<(), ServerFnError> {
+    let provider = leptos::prelude::use_context::<crate::api::PostProvider>()
+        .ok_or_else(|| ServerFnError::new("未找到PostProvider"))?;
+    provider
+        .comment_on_post(&post_id, &content)
+        .await
+        .map_err(|e| ServerFnError::new(format!("发表评论失败: {}", e)))
+}
 
 // 用于解析 PostInfo 的 metadata JSON
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +94,7 @@ impl PostMetadata {
             Ok(meta) => meta,
             Err(_) => Self {
                 author: "未知".to_string(),
-                avatar: "https://via.placeholder.com/48".to_string(),
+                avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=unknown".to_string(),
                 time: "刚刚".to_string(),
                 description: String::new(),
                 likes: 0,
@@ -44,24 +117,24 @@ pub fn Playground() -> impl IntoView {
     let (featured_list, set_featured_list) = signal(Vec::<PostInfo>::new());
 
     // 初始化：加载所有作品
-    let _load_initial_works = Resource::new(
-        || (),
-        move |_| async move {
-            match list_posts().await {
-                Ok(posts) => {
-                    // 分离精选和普通作品
-                    // 为了简化，我们取前 3 个作为精选
-                    let (featured, rest): (Vec<_>, Vec<_>) =
-                        posts.into_iter().enumerate().partition(|(idx, _)| *idx < 3);
-                    set_featured_list.set(featured.into_iter().map(|(_, p)| p).collect());
-                    set_works_list.set(rest.into_iter().map(|(_, p)| p).collect());
-                }
-                Err(e) => {
-                    leptos::logging::error!("加载作品失败: {}", e);
-                }
+    let posts_resource = LocalResource::new(move || async move {
+        match list_posts().await {
+            Ok(posts) => Ok(posts),
+            Err(e) => {
+                leptos::logging::error!("加载作品失败: {}", e);
+                Err(e)
             }
-        },
-    );
+        }
+    });
+
+    Effect::new(move || {
+        if let Some(Ok(posts)) = posts_resource.get() {
+            let (featured, rest): (Vec<_>, Vec<_>) =
+                posts.into_iter().enumerate().partition(|(idx, _)| *idx < 3);
+            set_featured_list.set(featured.into_iter().map(|(_, p)| p).collect());
+            set_works_list.set(rest.into_iter().map(|(_, p)| p).collect());
+        }
+    });
 
     // --- 交互逻辑 ---
     let next_slide = move |total: usize| {
@@ -188,19 +261,57 @@ pub fn Playground() -> impl IntoView {
 #[component]
 fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
     let meta = PostMetadata::from_post(&work);
-    // 简单的点赞状态 (仅前端模拟)
-    let (liked, set_liked) = signal(false);
+    let post_id = work.id.clone();
+    let post_id_for_comment = work.id.clone();
+
+    // 从metadata中获取is_liked状态
+    let initial_liked = serde_json::from_str::<serde_json::Value>(&work.metadata)
+        .ok()
+        .and_then(|v| v.get("is_liked").and_then(|l| l.as_bool()))
+        .unwrap_or(false);
+
+    let (liked, set_liked) = signal(initial_liked);
     let (like_count, set_like_count) = signal(meta.likes);
+    let (is_loading, set_is_loading) = signal(false);
+
+    // 评论相关状态
+    let (show_comments, set_show_comments) = signal(false);
+    let (comment_count, set_comment_count) = signal(meta.comments);
 
     let toggle_like = move |_| {
+        if is_loading.get() {
+            return;
+        }
+
+        let post_id = post_id.clone();
+        let was_liked = liked.get();
+
+        // 乐观更新UI
         set_liked.update(|v| *v = !*v);
-        set_like_count.update(|c| if liked.get() { *c += 1 } else { *c -= 1 });
+        set_like_count.update(|c| if was_liked { *c -= 1 } else { *c += 1 });
+        set_is_loading.set(true);
+
+        spawn_local(async move {
+            match toggle_post_like(post_id).await {
+                Ok(_) => {
+                    leptos::logging::debug_log!("点赞操作成功");
+                }
+                Err(e) => {
+                    leptos::logging::error!("点赞失败: {}", e);
+                    // 恢复原状态
+                    set_liked.set(was_liked);
+                    set_like_count.update(|c| if was_liked { *c += 1 } else { *c -= 1 });
+                }
+            }
+            set_is_loading.set(false);
+        });
     };
 
     view! {
-        <div class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col"
-             class:max-w-2xl=is_featured
-             class:mx-auto=is_featured>
+        <div class="relative">
+            <div class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col"
+                 class:max-w-2xl=is_featured
+                 class:mx-auto=is_featured>
 
             // 用户信息
             <div class="flex items-center mb-4">
@@ -233,20 +344,189 @@ fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
                 <div class="flex items-center text-gray-500 space-x-4">
                     <button
                         class="flex items-center transition-colors duration-200 group"
-                        class:text-accent=move || liked.get()
+                        class:text-red-500=move || liked.get()
+                        class:text-gray-500=move || !liked.get()
                         on:click=toggle_like
+                        disabled=move || is_loading.get()
                     >
-                        <i class="mr-1" class:fa-heart=move || liked.get() class:fa-heart-o=move || !liked.get()></i>
+                        {move || if liked.get() {
+                            view! { <i class="fa fa-heart mr-1"></i> }
+                        } else {
+                            view! { <i class="fa fa-heart-o mr-1"></i> }
+                        }}
                         <span>{move || like_count.get()}</span>
                     </button>
-                    <button class="flex items-center hover:text-primary transition-colors duration-200">
-                        <i class="fa fa-comment-o mr-1"></i>
-                        <span>{meta.comments}</span>
+                    <button
+                        class="flex items-center hover:text-primary transition-colors duration-200"
+                        on:click=move |_| set_show_comments.update(|v| *v = !*v)
+                    >
+                        <i class="fa fa-comment mr-1"></i>
+                        <span>{move || comment_count.get()}</span>
                     </button>
                 </div>
                 <span class="text-secondary bg-secondary/10 px-2 py-1 rounded-full text-xs">
                     {meta.voice_type}
                 </span>
+            </div>
+
+            </div>
+
+            // 评论弹出窗口
+            {move || {
+            if show_comments.get() {
+                view! {
+                    <div
+                        class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+                        on:click=move |_| set_show_comments.set(false)
+                    >
+                        <div
+                            class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+                            on:click=move |e| e.stop_propagation()
+                        >
+                            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                                <h3 class="text-lg font-semibold">"评论"</h3>
+                                <button
+                                    class="text-gray-400 hover:text-gray-600 transition-colors text-2xl leading-none px-2"
+                                    on:click=move |_| set_show_comments.set(false)
+                                >
+                                    "×"
+                                </button>
+                            </div>
+                            <div class="flex-1 overflow-y-auto p-4">
+                                <CommentSection
+                                    post_id=post_id_for_comment.clone()
+                                    on_comment_added=move |_| set_comment_count.update(|c| *c += 1)
+                                />
+                            </div>
+                        </div>
+                    </div>
+                }.into_any()
+            } else {
+                ().into_any()
+            }
+            }}
+        </div>
+    }
+}
+
+// 评论区组件
+#[component]
+fn CommentSection<F>(post_id: String, on_comment_added: F) -> impl IntoView
+where
+    F: Fn(()) + 'static + Clone,
+{
+    let post_id_clone = post_id.clone();
+    let (comment_text, set_comment_text) = signal(String::new());
+    let (is_submitting, set_is_submitting) = signal(false);
+
+    let comments_resource = LocalResource::new(move || {
+        let pid = post_id.clone();
+        async move { get_post_comments(pid).await }
+    });
+
+    let submit_comment = move |_| {
+        if comment_text.get().trim().is_empty() || is_submitting.get() {
+            return;
+        }
+
+        let content = comment_text.get();
+        let pid = post_id_clone.clone();
+        let on_added = on_comment_added.clone();
+        set_is_submitting.set(true);
+
+        spawn_local(async move {
+            match add_post_comment(pid, content).await {
+                Ok(_) => {
+                    leptos::logging::debug_log!("评论发表成功");
+                    set_comment_text.set(String::new());
+                    on_added(());
+                    // 刷新评论列表
+                    comments_resource.refetch();
+                }
+                Err(e) => {
+                    leptos::logging::error!("评论失败: {}", e);
+                }
+            }
+            set_is_submitting.set(false);
+        });
+    };
+
+    view! {
+        <div>
+            // 发表评论
+            <div class="mb-4">
+                <textarea
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    rows="3"
+                    placeholder="写下你的评论..."
+                    prop:value=move || comment_text.get()
+                    on:input=move |e| set_comment_text.set(event_target_value(&e))
+                />
+                <div class="flex justify-end mt-2">
+                    <button
+                        class="px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        on:click=submit_comment
+                        disabled=move || is_submitting.get() || comment_text.get().trim().is_empty()
+                    >
+                        {move || if is_submitting.get() { "发表中..." } else { "发表评论" }}
+                    </button>
+                </div>
+            </div>
+
+            // 评论列表
+            <div class="border-t border-gray-200 pt-4">
+                <h4 class="text-sm font-semibold text-gray-700 mb-3">"全部评论"</h4>
+                <div class="space-y-3 max-h-96 overflow-y-auto">
+                    <Suspense fallback=|| view! { <div class="text-center text-gray-500 py-2">"加载评论..."</div> }>
+                    {move || {
+                        comments_resource.get().map(|result| {
+                            match result {
+                                Ok(comments) if !comments.is_empty() => {
+                                    view! {
+                                        <div class="space-y-3">
+                                            <For
+                                                each=move || comments.clone()
+                                                key=|c| c.id.clone()
+                                                children=move |comment| {
+                                                    view! {
+                                                        <div class="flex items-start space-x-2">
+                                                            <img
+                                                                src=comment.avatar.unwrap_or_else(|| "https://api.dicebear.com/7.x/avataaars/svg?seed=comment".to_string())
+                                                                class="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                                                            />
+                                                            <div class="flex-1 min-w-0">
+                                                                <div class="flex items-center space-x-2">
+                                                                    <span class="font-medium text-sm text-gray-800">{comment.author}</span>
+                                                                    <span class="text-xs text-gray-400">{comment.time}</span>
+                                                                </div>
+                                                                <p class="text-sm text-gray-600 mt-1">{comment.content}</p>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                }
+                                            />
+                                        </div>
+                                    }.into_any()
+                                }
+                                Ok(_) => {
+                                    view! {
+                                        <div class="text-center text-gray-400 py-4 text-sm">
+                                            "暂无评论，快来抢沙发吧~"
+                                        </div>
+                                    }.into_any()
+                                }
+                                Err(e) => {
+                                    view! {
+                                        <div class="text-center text-red-500 py-2 text-sm">
+                                            {format!("加载失败: {}", e)}
+                                        </div>
+                                    }.into_any()
+                                }
+                            }
+                        })
+                    }}
+                </Suspense>
+                </div>
             </div>
         </div>
     }
