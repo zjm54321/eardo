@@ -259,10 +259,25 @@ impl PostService for ServiceProvider<Sqlite> {
     }
 
     async fn create_post(&self, post: &PostInfo) -> anyhow::Result<()> {
-        leptos::logging::debug_log!("创建新帖子: {}", post.title);
+        let post_id = if post.id.is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            post.id.clone()
+        };
+
+        leptos::logging::debug_log!("创建新帖子: {}, ID: {}", post.title, post_id);
 
         let pool = &self.pool;
-        let user_id = get_user_id_from_session(pool).await?;
+        let user_id = match get_user_id_from_session(pool).await {
+            Ok(id) => {
+                leptos::logging::debug_log!("用户ID: {}", id);
+                id
+            }
+            Err(e) => {
+                leptos::logging::error!("获取用户ID失败: {}", e);
+                return Err(e);
+            }
+        };
 
         // 从 metadata 中解析所需数据
         let metadata: serde_json::Value =
@@ -279,26 +294,51 @@ impl PostService for ServiceProvider<Sqlite> {
             .and_then(|s| general_purpose::STANDARD.decode(s).ok())
             .unwrap_or_default();
 
-        let voice_meta_id = metadata
+        leptos::logging::debug_log!("音频数据长度: {} bytes", audio_data.len());
+
+        // 从 metadata 中获取 base_model_id，然后查询数据库获取对应的 voice_meta_id
+        let base_model_id = metadata
             .get("voice_meta_id")
             .and_then(|v| v.as_str())
             .unwrap_or("default");
 
-        sqlx::query(
+        let voice_meta_id: Option<String> =
+            sqlx::query_scalar("SELECT id FROM voice_meta_infos WHERE base_model_id = ? LIMIT 1")
+                .bind(base_model_id)
+                .fetch_optional(pool)
+                .await
+                .context("查询 voice_meta_id 失败")?;
+
+        leptos::logging::debug_log!(
+            "查询结果: base_model_id={}, voice_meta_id={:?}",
+            base_model_id,
+            voice_meta_id
+        );
+
+        let result = sqlx::query(
             "INSERT INTO posts (id, user_id, title, content, generated_audio_data, voice_meta_id, status, created_at)
              VALUES (?, ?, ?, ?, ?, ?, 'normal', datetime('now'))"
         )
-        .bind(&post.id)
+        .bind(&post_id)
         .bind(&user_id)
         .bind(&post.title)
         .bind(content)
         .bind(&audio_data)
-        .bind(voice_meta_id)
-        .execute(pool)
-        .await
-        .context("创建帖子失败")?;
+        .bind(&voice_meta_id)
 
-        Ok(())
+        .execute(pool)
+        .await;
+
+        match result {
+            Ok(_) => {
+                leptos::logging::debug_log!("帖子创建成功: {}", post_id);
+                Ok(())
+            }
+            Err(e) => {
+                leptos::logging::error!("帖子创建失败: {}", e);
+                Err(anyhow!("创建帖子失败: {}", e))
+            }
+        }
     }
 
     async fn update_post(&self, post: &PostInfo) -> anyhow::Result<()> {

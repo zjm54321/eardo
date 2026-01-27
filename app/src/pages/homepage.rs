@@ -12,6 +12,15 @@ pub struct GenerateParams {
     pub voice_param: VoiceParams,
 }
 
+// 用于 create_post_action 的有效负载
+#[derive(Clone)]
+pub struct CreatePostPayload {
+    title: String,
+    content: String,
+    voice_id: String,
+    audio_data: Vec<u8>,
+}
+
 #[component]
 pub fn HomePage() -> impl IntoView {
     // 状态
@@ -63,6 +72,16 @@ pub fn HomePage() -> impl IntoView {
         emotion: initial_emotion,
     });
 
+    // 保存生成成功的数据用于分享
+    let (_generated_text, set_generated_text) = signal(String::new());
+    let (_generated_voice_name, set_generated_voice_name) = signal(String::new());
+    let (generated_voice_id, set_generated_voice_id) = signal(String::new());
+    let (generated_audio_data, set_generated_audio_data) = signal(Vec::<u8>::new());
+    let (show_share_popup, set_show_share_popup) = signal(false);
+    let (show_share_modal, set_show_share_modal) = signal(false);
+    let (share_title, set_share_title) = signal(String::new());
+    let (share_content, set_share_content) = signal(String::new());
+
     // 创建 Action 处理生成请求
     // Action 自动管理 pending (加载中) 和 value (返回值) 状态
     let generate_action = Action::new(move |_| {
@@ -95,7 +114,61 @@ pub fn HomePage() -> impl IntoView {
                 emotion
             );
 
-            api::generate_audio(voice_meta, text).await
+            let result = api::generate_audio(voice_meta.clone(), text.clone()).await;
+
+            // 生成成功后保存数据供分享使用
+            if let Ok(audio_data) = &result {
+                set_generated_text.set(text.clone());
+                set_generated_voice_name.set(voice_id.clone());
+                set_generated_voice_id.set(voice_id.clone());
+                set_generated_audio_data.set(audio_data.clone());
+                set_show_share_popup.set(true);
+                // 设置默认分享内容
+                set_share_title.set(format!("我的{}", voice_id));
+                set_share_content.set(format!("我使用{}创建了:{}", voice_id, text));
+            }
+
+            result
+        }
+    });
+
+    // 创建帖子的 Action
+    let create_post_action = Action::new(move |payload: &CreatePostPayload| {
+        let payload = payload.clone();
+        async move {
+            let post = api::PostInfo {
+                id: String::new(), // 服务器端生成 UUID
+                title: payload.title,
+                metadata: serde_json::json!({
+                    "description": payload.content,
+                    "audio_data": base64_encode(&payload.audio_data),
+                    "voice_meta_id": payload.voice_id,
+                })
+                .to_string(),
+            };
+            api::create_post(post).await
+        }
+    });
+
+    // 监听 create_post_action 的完成
+    Effect::new(move |_| {
+        match create_post_action.value().get() {
+            Some(Ok(())) => {
+                debug_log!("帖子创建成功");
+                set_show_share_modal.set(false);
+                set_generated_text.set(String::new());
+                set_generated_voice_name.set(String::new());
+                set_generated_voice_id.set(String::new());
+                set_generated_audio_data.set(Vec::new());
+                set_share_title.set(String::new());
+                set_share_content.set(String::new());
+            }
+            Some(Err(e)) => {
+                debug_error!("帖子创建失败: {}", e);
+            }
+            None => {
+                // 还没有结果
+            }
         }
     });
 
@@ -129,8 +202,148 @@ pub fn HomePage() -> impl IntoView {
                     </div>
                 </div>
             </div>
+
+            // 分享弹窗
+            <Show when=move || show_share_popup.get()>
+                <div
+                    class="fixed bottom-6 right-6 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-40 animate-in slide-in-from-bottom-4 duration-300"
+                    style="width: 280px;"
+                >
+                    <div class="flex items-start justify-between mb-3">
+                        <h4 class="font-semibold text-gray-800">"是否分享此作品"</h4>
+                        <button
+                            class="text-gray-400 hover:text-gray-600 transition-colors"
+                            on:click=move |_| set_show_share_popup.set(false)
+                        >
+                            <i class="fa fa-times"></i>
+                        </button>
+                    </div>
+                    <p class="text-sm text-gray-500 mb-4">
+                        "分享到社区，与其他用户一起欣赏你的创作"
+                    </p>
+                    <div class="flex gap-3">
+                        <button
+                            class="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors text-sm font-medium"
+                            on:click=move |_| set_show_share_popup.set(false)
+                        >
+                            稍后再说
+                        </button>
+                        <button
+                            class="flex-1 px-3 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors text-sm font-medium"
+                            on:click=move |_| {
+                                set_show_share_popup.set(false);
+                                set_show_share_modal.set(true);
+                            }
+                        >
+                            是的
+                        </button>
+                    </div>
+                </div>
+            </Show>
+
+            // 分享模态窗口
+            <Show when=move || show_share_modal.get()>
+                <div
+                    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+                    on:click=move |_| set_show_share_modal.set(false)
+                >
+                    <div
+                        class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                    >
+                        // 头部
+                        <div class="flex justify-between items-center p-6 border-b border-gray-200">
+                            <h2 class="text-2xl font-bold text-gray-800">"创建分享作品"</h2>
+                            <button
+                                class="text-gray-400 hover:text-gray-600 transition-colors"
+                                on:click=move |_| set_show_share_modal.set(false)
+                            >
+                                <i class="fa fa-times text-xl"></i>
+                            </button>
+                        </div>
+
+                        // 内容区域 (可滚动)
+                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                            // 标题输入
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    "作品标题"
+                                </label>
+                                <input
+                                    type="text"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                                    placeholder="请输入作品标题..."
+                                    prop:value=move || share_title.get()
+                                    on:input=move |ev| set_share_title.set(event_target_value(&ev))
+                                />
+                            </div>
+
+                            // 内容输入
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    "作品描述"
+                                </label>
+                                <textarea
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none"
+                                    rows="8"
+                                    placeholder="请输入作品描述..."
+                                    prop:value=move || share_content.get()
+                                    on:input=move |ev| set_share_content.set(event_target_value(&ev))
+                                ></textarea>
+                            </div>
+
+                            // 提示信息
+                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                <p class="text-xs text-blue-700">
+                                    <i class="fa fa-info-circle mr-2"></i>
+                                    "分享后将在社区中显示，所有用户都可以欣赏和互动"
+                                </p>
+                            </div>
+                        </div>
+
+                        // 底部操作栏
+                        <div class="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+                            <button
+                                class="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors font-medium"
+                                on:click=move |_| set_show_share_modal.set(false)
+                            >
+                                "取消"
+                            </button>
+                            <button
+                                class="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                on:click=move |_| {
+                                    let title = share_title.get();
+                                    let content = share_content.get();
+                                    let voice_id = generated_voice_id.get();
+                                    let audio_data = generated_audio_data.get();
+
+                                    if title.trim().is_empty() || content.trim().is_empty() {
+                                        return;
+                                    }
+
+                                    // 使用 Action 来处理创建请求
+                                    create_post_action.dispatch(CreatePostPayload {
+                                        title,
+                                        content,
+                                        voice_id,
+                                        audio_data,
+                                    });
+                                }
+                                disabled=move || share_title.get().trim().is_empty() || share_content.get().trim().is_empty()
+                            >
+                                "创建"
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
         </div>
     }
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(data)
 }
 
 #[component]
