@@ -96,7 +96,7 @@ pub fn VoiceFilterPage() -> impl IntoView {
     // 处理“使用滤镜”点击
     let apply_filter = move |filter: DisplayFilter| {
         let url = format!(
-            "/?voice_id={}&pitch={}&speed={}&emotion={}",
+            "/home?voice_id={}&pitch={}&speed={}&emotion={}",
             filter.base_model_id, filter.pitch, filter.speed, filter.emotion
         );
         navigate(&url, Default::default());

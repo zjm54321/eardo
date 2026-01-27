@@ -325,40 +325,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             speed
         );
 
-        // 优先调用 CosyVoice 后端生成
-        match crate::api::voice_backend_api::cosyvoice_generate(text, voice_id, speed, pitch).await
-        {
-            Ok(bytes) => Ok(bytes),
-            Err(e) => {
-                leptos::logging::error!("CosyVoice 生成失败，回退到本地生成: {}", e);
-                // 回退：生成简单 MP3 占位数据
-                use std::io::Write;
-                let mut audio_data = Vec::new();
-                let id3_header = b"ID3\x04\x00\x00\x00\x00\x00\x00";
-                audio_data.write_all(id3_header)?;
-                let frame_header = [0xFF, 0xFB, 0x90, 0x00];
-                let estimated_seconds = if text.is_empty() {
-                    1
-                } else {
-                    (text.len() / 3).max(1).min(30)
-                };
-                let frames_needed = (estimated_seconds * 1000) / 26;
-                for i in 0..frames_needed {
-                    audio_data.write_all(&frame_header)?;
-                    let mut frame_data = vec![0; 417];
-                    for j in 0..frame_data.len() {
-                        frame_data[j] =
-                            (((text.len() as u16) ^ (j as u16) ^ (i as u16)) % 256) as u8;
-                    }
-                    audio_data.write_all(&frame_data)?;
-                }
-                let id3v1_tag = format!(
-                    "TAG{:<30}{:<30}{:<30}{}{}{}",
-                    "生成的音频", "耳朵 TTS", "合成音频", "2026", "0", 0xFF
-                );
-                audio_data.write_all(id3v1_tag.as_bytes())?;
-                Ok(audio_data)
-            }
-        }
+        // 调用 CosyVoice 后端生成，失败直接返回错误
+        crate::api::voice_backend_api::cosyvoice_generate(text, voice_id, speed, pitch).await
     }
 }
