@@ -98,12 +98,16 @@ pub fn LoginPage() -> impl IntoView {
 pub fn RegisterPage() -> impl IntoView {
     let navigate = use_navigate();
     let (username, set_username) = signal(String::new());
+    let (email, set_email) = signal(String::new());
+    let (phone, set_phone) = signal(String::new());
     let (password, set_password) = signal(String::new());
     let (confirm_password, set_confirm_password) = signal(String::new());
     let (error_msg, set_error_msg) = signal(Option::<String>::None);
 
     let register_action = Action::new(move |_| {
         let u = username.get();
+        let e = email.get();
+        let ph = phone.get();
         let p = password.get();
         let cp = confirm_password.get();
         {
@@ -115,8 +119,8 @@ pub fn RegisterPage() -> impl IntoView {
                 }
                 let auth_info = UserAuthInfo {
                     username: Some(u),
-                    email: None,
-                    phone: None,
+                    email: if e.is_empty() { None } else { Some(e) },
+                    phone: if ph.is_empty() { None } else { Some(ph) },
                 };
                 match register(auth_info, p).await {
                     Ok(_) => {
@@ -146,6 +150,26 @@ pub fn RegisterPage() -> impl IntoView {
                             placeholder="设置用户名"
                             on:input=move |ev| set_username.set(event_target_value(&ev))
                             prop:value=username
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">"邮箱 (可选)"</label>
+                        <input
+                            type="email"
+                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
+                            placeholder="输入邮箱地址"
+                            on:input=move |ev| set_email.set(event_target_value(&ev))
+                            prop:value=email
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">"手机号 (可选)"</label>
+                        <input
+                            type="tel"
+                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
+                            placeholder="输入手机号"
+                            on:input=move |ev| set_phone.set(event_target_value(&ev))
+                            prop:value=phone
                         />
                     </div>
                     <div>
@@ -201,6 +225,7 @@ pub fn ProfilePage() -> impl IntoView {
 
     // 编辑状态
     let (is_editing, set_is_editing) = signal(false);
+    let (edit_nickname, set_edit_nickname) = signal(String::new());
     let (edit_bio, set_edit_bio) = signal(String::new());
     let (new_avatar, set_new_avatar) = signal(Option::<String>::None);
 
@@ -213,6 +238,7 @@ pub fn ProfilePage() -> impl IntoView {
     });
 
     let update_action = Action::new(move |_| {
+        let nickname = edit_nickname.get();
         let bio = edit_bio.get();
         let avatar_url = new_avatar.get().unwrap_or_default();
         async move {
@@ -222,7 +248,7 @@ pub fn ProfilePage() -> impl IntoView {
                 username: "".to_string(),  // 保持原用户名
                 avatar_url,
                 status: crate::api::UserStatus::Normal,
-                meta: serde_json::json!({ "bio": bio }).to_string(),
+                meta: serde_json::json!({ "bio": bio, "nickname": nickname }).to_string(),
             };
             match update_user_profile(user_info).await {
                 Ok(_) => {
@@ -282,10 +308,19 @@ pub fn ProfilePage() -> impl IntoView {
                                     .unwrap_or_default();
                                 let user_bio_clone = user_bio.clone();
 
+                                let user_nickname = serde_json::from_str::<serde_json::Value>(&user.meta)
+                                    .ok()
+                                    .and_then(|v| v.get("nickname").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                                    .unwrap_or_default();
+                                let user_nickname_clone = user_nickname.clone();
+                                let user_username_clone1 = user.username.clone();
+                                let user_username_clone2 = user.username.clone();
+
                                 // 使用 Effect::new 替代 create_effect
                                 Effect::new(move |_| {
                                     if !is_editing.get_untracked() {
                                         set_edit_bio.set(user_bio_clone.clone());
+                                        set_edit_nickname.set(user_nickname_clone.clone());
                                     }
                                 });
 
@@ -335,19 +370,55 @@ pub fn ProfilePage() -> impl IntoView {
 
                                             // 信息内容
                                             <div class="flex-grow text-center md:text-left space-y-5 z-10 w-full">
-                                                <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                                                    <div>
-                                                        <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">{user.username.clone()}</h2>
-                                                        <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
-                                                            <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">"UID: " {user.id.clone()}</span>
-                                                            <span class="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded font-medium">"Creator"</span>
-                                                        </div>
+                                                <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                                    <div class="flex-1">
+                                                        <Show when=move || is_editing.get()
+                                                            fallback=move || {
+                                                                let nickname_display = user_nickname.clone();
+                                                                let username_display = user_username_clone1.clone();
+                                                                view! {
+                                                                    <>
+                                                                        <div class="flex items-start gap-2">
+                                                                            <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">
+                                                                                {
+                                                                                    if nickname_display.is_empty() {
+                                                                                        "未设置昵称".to_string()
+                                                                                    } else {
+                                                                                        nickname_display
+                                                                                    }
+                                                                                }
+                                                                            </h2>
+                                                                            <button
+                                                                                class="text-primary text-sm hover:underline font-medium mt-1"
+                                                                                on:click=move |_| set_is_editing.set(true)
+                                                                            >
+                                                                                <i class="fa fa-pencil"></i>"编辑"
+                                                                            </button>
+                                                                        </div>
+                                                                        <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
+                                                                            <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">"username: " {username_display}</span>
+                                                                        </div>
+                                                                    </>
+                                                                }
+                                                            }
+                                                        >
+                                                            <input
+                                                                type="text"
+                                                                class="text-3xl md:text-4xl font-bold border border-gray-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-primary/50 w-full md:w-auto"
+                                                                placeholder="设置昵称"
+                                                                prop:value=move || edit_nickname.get()
+                                                                on:input=move |ev| set_edit_nickname.set(event_target_value(&ev))
+                                                            />
+                                                            <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
+                                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">"username: " {user_username_clone2.clone()}</span>
+                                                            </div>
+                                                        </Show>
                                                     </div>
 
                                                     <div class="flex gap-2 justify-center md:justify-end">
                                                         <Show when=move || !is_editing.get()>
                                                             <button
-                                                                class="px-5 py-2 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm text-sm flex items-center gap-2 mx-auto md:mx-0"
+                                                                class="px-5 py-2 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm text-sm flex items-center gap-2"
                                                                 on:click=move |_| { logout_action.dispatch(()); }
                                                             >
                                                                 <i class="fa fa-sign-out"></i>
@@ -366,19 +437,15 @@ pub fn ProfilePage() -> impl IntoView {
                                                             let bio_display = user_bio.clone();
                                                             view! {
                                                                 <div>
-                                                                    {
-                                                                        if bio_display.is_empty() {
-                                                                            "暂无简介，快来写点什么吧...".to_string()
-                                                                        } else {
-                                                                            bio_display
+                                                                    <p>
+                                                                        {
+                                                                            if bio_display.is_empty() {
+                                                                                "暂无简介，快来写点什么吧...".to_string()
+                                                                            } else {
+                                                                                bio_display
+                                                                            }
                                                                         }
-                                                                    }
-                                                                    <button
-                                                                        class="ml-2 text-primary text-xs hover:underline font-medium"
-                                                                        on:click=move |_| set_is_editing.set(true)
-                                                                    >
-                                                                        <i class="fa fa-pencil mr-1"></i>"编辑简介"
-                                                                    </button>
+                                                                    </p>
                                                                 </div>
                                                             }
                                                         }

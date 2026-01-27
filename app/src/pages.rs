@@ -79,10 +79,20 @@ pub fn Header() -> impl IntoView {
                             match user_resource.get() {
                                 Some(Ok(user)) => view! {
                                     <A href="/profile">
-                                        <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300">
+                                        <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
                                             <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden font-bold text-primary">
-                                                // 显示用户名首字母
-                                                {user.username.chars().next().unwrap_or('U').to_string().to_uppercase()}
+                                                // 显示头像
+                                                {
+                                                    if user.avatar_url.starts_with("/api/") || user.avatar_url.starts_with("http") {
+                                                        view! {
+                                                            <img src=user.avatar_url.clone() alt="avatar" class="w-full h-full object-cover" />
+                                                        }.into_any()
+                                                    } else {
+                                                        view! {
+                                                            <i class="fa fa-user text-lg"></i>
+                                                        }.into_any()
+                                                    }
+                                                }
                                             </div>
                                         </button>
                                     </A>

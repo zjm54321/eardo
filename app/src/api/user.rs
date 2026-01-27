@@ -255,8 +255,16 @@ impl UserService for ServiceProvider<Sqlite> {
         let user_id = get_user_id_from_session(&self.pool).await?;
 
         // 2. 查询用户信息
-        let user: (String, String, Option<String>, i64, String, String) = sqlx::query_as(
-            "SELECT u.id, ua.username, u.bio, u.level, u.status, u.role
+        let user: (
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            i64,
+            String,
+            String,
+        ) = sqlx::query_as(
+            "SELECT u.id, ua.username, u.nickname, u.bio, u.level, u.status, u.role
              FROM users u
              JOIN user_auth ua ON u.id = ua.user_id
              WHERE u.id = ?",
@@ -266,7 +274,7 @@ impl UserService for ServiceProvider<Sqlite> {
         .await
         .context("获取用户信息失败")?;
 
-        let (id, username, bio, level, status, role) = user;
+        let (id, username, nickname, bio, level, status, role) = user;
 
         // 3. 检查是否有头像
         let has_avatar: Option<(i64,)> =
@@ -285,6 +293,7 @@ impl UserService for ServiceProvider<Sqlite> {
         // 5. 构建元数据
         let meta = serde_json::json!({
             "bio": bio.unwrap_or_default(),
+            "nickname": nickname.unwrap_or_default(),
             "level": level,
             "role": role,
         })
@@ -311,6 +320,7 @@ impl UserService for ServiceProvider<Sqlite> {
         let meta: serde_json::Value = serde_json::from_str(&user.meta).context("元数据格式错误")?;
 
         let bio = meta.get("bio").and_then(|v| v.as_str()).unwrap_or("");
+        let nickname = meta.get("nickname").and_then(|v| v.as_str()).unwrap_or("");
 
         // 3. 更新用户信息（直接使用 session 中的 user_id，无需验证前端传来的 id）
         sqlx::query(
@@ -318,7 +328,7 @@ impl UserService for ServiceProvider<Sqlite> {
              SET nickname = ?, bio = ?, updated_at = datetime('now')
              WHERE id = ?",
         )
-        .bind(&user.username)
+        .bind(nickname)
         .bind(bio)
         .bind(&user_id)
         .execute(&self.pool)
