@@ -112,17 +112,18 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,         // emotion
             i64,            // usage_count
             i64,            // is_public
+            String,         // status
             Option<String>, // nickname
             Option<String>, // username
         )> = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
                       vm.pitch, vm.speed, vm.volume, vm.emotion,
-                      vm.usage_count, vm.is_public,
+                      vm.usage_count, vm.is_public, vm.status,
                       u.nickname, ua.username
                  FROM voice_meta_infos vm
                  JOIN users u ON vm.user_id = u.id
                  JOIN user_auth ua ON ua.user_id = u.id
-                 WHERE vm.status = 'normal' AND vm.is_public = 1
+                 WHERE (vm.status = 'normal' OR vm.status = 'official') AND vm.is_public = 1
                  ORDER BY vm.usage_count DESC, vm.created_at DESC"#,
         )
         .fetch_all(&self.pool)
@@ -142,6 +143,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
                     emotion,
                     usage,
                     is_public,
+                    status,
                     nickname,
                     username,
                 )| {
@@ -157,7 +159,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
                         "is_public": is_public == 1,
                         "tags": [],
                         "author": author,
-                        "is_official": false
+                        "is_official": status == "official"
                     });
                     VoiceMetaInfo {
                         id,
@@ -182,12 +184,13 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,
             i64,
             i64,
+            String,
             Option<String>,
             Option<String>,
         ) = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
                       vm.pitch, vm.speed, vm.volume, vm.emotion,
-                      vm.usage_count, vm.is_public,
+                      vm.usage_count, vm.is_public, vm.status,
                       u.nickname, ua.username
                  FROM voice_meta_infos vm
                  JOIN users u ON vm.user_id = u.id
@@ -209,6 +212,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             emotion,
             usage,
             is_public,
+            status,
             nickname,
             username,
         ) = row;
@@ -224,7 +228,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             "is_public": is_public == 1,
             "tags": [],
             "author": author,
-            "is_official": false
+            "is_official": status == "official"
         });
 
         Ok(VoiceMetaInfo {

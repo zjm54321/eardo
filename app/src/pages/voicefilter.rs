@@ -93,6 +93,9 @@ pub fn VoiceFilterPage() -> impl IntoView {
     // 导航 hook
     let navigate = use_navigate();
 
+    // 搜索词
+    let (search, set_search) = signal(String::new());
+
     // 处理“使用滤镜”点击
     let apply_filter = move |filter: DisplayFilter| {
         let url = format!(
@@ -106,7 +109,7 @@ pub fn VoiceFilterPage() -> impl IntoView {
         <div class="min-h-screen bg-base-100 pb-20 pt-8">
             <div class="container mx-auto px-4 max-w-6xl">
 
-                // --- 1. 顶部标题 & 搜索占位 ---
+                // --- 1. 顶部标题 & 搜索 ---
                 <section class="text-center mb-12">
                     <h2 class="text-3xl font-bold mb-4 text-dark flex items-center justify-center">
                         <i class="fa fa-magic text-secondary mr-3"></i>
@@ -114,14 +117,24 @@ pub fn VoiceFilterPage() -> impl IntoView {
                     </h2>
                     <p class="text-gray-500 mb-8">"发现并使用各种声音滤镜，一键应用到你的作品中"</p>
 
-                    <div class="relative max-w-xl mx-auto opacity-60 hover:opacity-100 transition-opacity">
+                    <div class="relative max-w-xl mx-auto">
                         <input
                             type="text"
-                            placeholder="搜索滤镜 (功能开发中...)"
-                            disabled
-                            class="w-full pl-12 pr-4 py-3 rounded-full border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 shadow-sm cursor-not-allowed"
+                            placeholder="搜索滤镜（名称、作者、标签、描述）"
+                            class="w-full pl-12 pr-10 py-3 rounded-full border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 shadow-sm"
+                            prop:value=move || search.get()
+                            on:input=move |ev| set_search.set(event_target_value(&ev))
                         />
                         <i class="fa fa-search absolute left-5 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                        <Show when=move || !search.get().is_empty()>
+                            <button
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 px-2"
+                                on:click=move |_| set_search.set(String::new())
+                                title="清除"
+                            >
+                                <i class="fa fa-times"></i>
+                            </button>
+                        </Show>
                     </div>
                 </section>
 
@@ -134,7 +147,30 @@ pub fn VoiceFilterPage() -> impl IntoView {
                                     .map(DisplayFilter::from_voice_meta)
                                     .collect();
 
-                                let (official, user): (Vec<_>, Vec<_>) = all_filters
+                                // 根据搜索词过滤
+                                let query = search.get().trim().to_lowercase();
+                                let filtered: Vec<DisplayFilter> = if query.is_empty() {
+                                    all_filters.clone()
+                                } else {
+                                    all_filters
+                                        .into_iter()
+                                        .filter(|f| {
+                                            let name = f.name.to_lowercase();
+                                            let author = f.author.to_lowercase();
+                                            let desc = f.description.to_lowercase();
+                                            let tag_hit = f
+                                                .tags
+                                                .iter()
+                                                .any(|t| t.to_lowercase().contains(&query));
+                                            name.contains(&query)
+                                                || author.contains(&query)
+                                                || desc.contains(&query)
+                                                || tag_hit
+                                        })
+                                        .collect()
+                                };
+
+                                let (official, user): (Vec<_>, Vec<_>) = filtered
                                     .into_iter()
                                     .partition(|f| f.is_official);
 
