@@ -60,6 +60,7 @@ pub fn App() -> impl IntoView {
 
                     <Route path=StaticSegment("voice") view=pages::playground::Playground/>
                     <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
+                    <Route path=StaticSegment("help") view=pages::help::HelpPage/>
 
                     <Route path=StaticSegment("login") view=pages::auth::LoginPage/>
                     <Route path=StaticSegment("register") view=pages::auth::RegisterPage/>

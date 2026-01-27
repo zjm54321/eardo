@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 pub mod auth;
+pub mod help; // 帮助中心
 pub mod homepage;
 pub mod playground;
 pub mod voicefilter;
@@ -68,6 +69,17 @@ pub fn Header() -> impl IntoView {
                         <i class="fa fa-sliders text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
                             "声音滤镜"
+                        </span>
+                    </A>
+
+                    // 4. 帮助中心
+                    <A
+                        href="/help"
+                        attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                    >
+                        <i class="fa fa-question-circle text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
+                            "帮助"
                         </span>
                     </A>
                 </nav>
