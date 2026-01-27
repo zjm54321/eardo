@@ -1,5 +1,5 @@
 use crate::api::{
-    UserAuthInfo, UserInfo, get_user_profile, list_posts, login, logout, register,
+    PostInfo, PostProvider, UserAuthInfo, UserInfo, get_user_profile, login, logout, register,
     update_user_profile,
 };
 use crate::pages::playground::PostMetadata;
@@ -9,8 +9,26 @@ use leptos_router::hooks::use_navigate;
 use wasm_bindgen::JsCast;
 use web_sys::FileReader;
 
-// ... (LoginPage and RegisterPage remain unchanged) ...
-// 请保留这些组件的原始代码
+#[server]
+pub async fn search_posts_info(query: String) -> Result<Vec<PostInfo>, ServerFnError> {
+    let post_provider = use_context::<PostProvider>()
+        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?;
+
+    let post_ids = post_provider
+        .search_post(&query)
+        .await
+        .map_err(|e| ServerFnError::new(format!("搜索帖子失败: {}", e)))?;
+
+    let mut posts = Vec::new();
+    for id in post_ids {
+        match post_provider.get_post(&id).await {
+            Ok(post) => posts.push(post),
+            Err(e) => leptos::logging::error!("获取帖子 {} 失败: {}", id, e),
+        }
+    }
+
+    Ok(posts)
+}
 
 #[component]
 pub fn LoginPage() -> impl IntoView {
@@ -221,7 +239,24 @@ pub fn RegisterPage() -> impl IntoView {
 pub fn ProfilePage() -> impl IntoView {
     let navigate = use_navigate();
     let user_resource = Resource::new(|| (), |_| get_user_profile());
-    let works_resource = Resource::new(|| (), |_| list_posts());
+
+    // 使用用户ID动态加载用户的作品
+    let works_resource = Resource::new(
+        move || {
+            user_resource
+                .get()
+                .map(|user_opt| user_opt.ok().map(|u| u.id))
+        },
+        move |user_id_opt| async move {
+            match user_id_opt {
+                Some(Some(uid)) => {
+                    let query = format!("uid:{}", uid);
+                    search_posts_info(query).await
+                }
+                _ => Ok(Vec::new()),
+            }
+        },
+    );
 
     // 编辑状态
     let (is_editing, set_is_editing) = signal(false);
@@ -515,7 +550,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                                                         </div>
                                                                                         <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">{meta.description}</p>
                                                                                         <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                                                                                            <span><i class="fa fa-play-circle mr-1"></i>"128"</span>
+                                                                                            <span><i class="fa fa-commenting-o mr-1"></i>{meta.comments}</span>
                                                                                             <span><i class="fa fa-heart mr-1"></i>{meta.likes}</span>
                                                                                             <span class="ml-auto">{meta.time}</span>
                                                                                         </div>

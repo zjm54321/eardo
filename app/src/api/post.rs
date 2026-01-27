@@ -149,26 +149,49 @@ impl PostService for ServiceProvider<Sqlite> {
         Ok(result)
     }
 
-    async fn search_post(&self, keyword: &str) -> anyhow::Result<Vec<String>> {
-        leptos::logging::debug_log!("搜索帖子: {}", keyword);
+    async fn search_post(&self, query: &str) -> anyhow::Result<Vec<String>> {
+        leptos::logging::debug_log!("搜索帖子: {}", query);
 
         let pool = &self.pool;
 
-        let search_pattern = format!("%{}%", keyword);
+        // 支持高级查询语法
+        // uid:xxx - 查询特定用户的帖子
+        // 其他 - 搜索标题和内容
 
-        let post_ids: Vec<(String,)> = sqlx::query_as(
-            "SELECT id FROM posts
-            WHERE status = 'normal' 
-            AND (title LIKE ? OR content LIKE ?)
-            ORDER BY created_at DESC",
-        )
-        .bind(&search_pattern)
-        .bind(&search_pattern)
-        .fetch_all(pool)
-        .await
-        .context("搜索帖子失败")?;
+        if query.starts_with("uid:") {
+            // 查询特定用户的帖子
+            let user_id = &query[4..];
+            leptos::logging::debug_log!("查询用户帖子: {}", user_id);
 
-        Ok(post_ids.into_iter().map(|(id,)| id).collect())
+            let post_ids: Vec<(String,)> = sqlx::query_as(
+                "SELECT id FROM posts
+                WHERE status = 'normal' AND user_id = ?
+                ORDER BY created_at DESC",
+            )
+            .bind(user_id)
+            .fetch_all(pool)
+            .await
+            .context("查询用户帖子失败")?;
+
+            Ok(post_ids.into_iter().map(|(id,)| id).collect())
+        } else {
+            // 按标题和内容搜索
+            let search_pattern = format!("%{}%", query);
+
+            let post_ids: Vec<(String,)> = sqlx::query_as(
+                "SELECT id FROM posts
+                WHERE status = 'normal' 
+                AND (title LIKE ? OR content LIKE ?)
+                ORDER BY created_at DESC",
+            )
+            .bind(&search_pattern)
+            .bind(&search_pattern)
+            .fetch_all(pool)
+            .await
+            .context("搜索帖子失败")?;
+
+            Ok(post_ids.into_iter().map(|(id,)| id).collect())
+        }
     }
 
     async fn get_post(&self, post_id: &str) -> anyhow::Result<PostInfo> {

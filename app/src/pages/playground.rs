@@ -90,7 +90,7 @@ pub struct PostMetadata {
 
 impl PostMetadata {
     pub fn from_post(post: &PostInfo) -> Self {
-        match serde_json::from_str(&post.metadata) {
+        let mut meta: PostMetadata = match serde_json::from_str(&post.metadata) {
             Ok(meta) => meta,
             Err(_) => Self {
                 author: "未知".to_string(),
@@ -102,7 +102,33 @@ impl PostMetadata {
                 voice_type: "未知".to_string(),
                 audio_url: String::new(),
             },
-        }
+        };
+
+        meta.time = format_local_time(&meta.time);
+        meta
+    }
+}
+
+fn format_local_time(raw: &str) -> String {
+    #[cfg(feature = "csr")]
+    {
+        use wasm_bindgen::JsValue;
+
+        let iso = if raw.contains('T') {
+            raw.to_string()
+        } else {
+            format!("{}Z", raw.replace(' ', "T"))
+        };
+
+        js_sys::Date::new(&JsValue::from_str(&iso))
+            .to_locale_string("default", &JsValue::UNDEFINED)
+            .as_string()
+            .unwrap_or_else(|| raw.to_string())
+    }
+
+    #[cfg(not(feature = "csr"))]
+    {
+        raw.to_string()
     }
 }
 
