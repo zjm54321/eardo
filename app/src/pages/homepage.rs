@@ -78,6 +78,7 @@ pub fn HomePage() -> impl IntoView {
                 id: voice_id.clone(),
                 name: voice_id.clone(),
                 metadata: serde_json::json!({
+                    "base_model_id": voice_id.clone(),
                     "pitch": pitch,
                     "speed": speed,
                     "emotion": emotion,
@@ -235,7 +236,7 @@ pub fn VoiceSelectorCard(
     selected_voice: RwSignal<String>,
 ) -> impl IntoView {
     // Resource 用于异步获取数据
-    let voices_resource = Resource::new(|| (), |_| api::list_voice_metadata());
+    let voices_resource = Resource::new(|| (), |_| api::list_voice_models());
 
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">

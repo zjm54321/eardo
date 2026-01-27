@@ -7,112 +7,91 @@ use crate::api::*;
 #[async_trait::async_trait]
 impl VoiceModelService for ServiceProvider<Sqlite> {
     async fn list_voice_models(&self) -> anyhow::Result<Vec<VoiceModelInfo>> {
-        // 假实现：返回示例语音模型
-        let models = vec![
-            VoiceModelInfo {
-                id: "model_001".to_string(),
-                name: "基础女声".to_string(),
-                icon_url: "https://cdn.example.com/models/001.png".to_string(),
+        // 从数据库读取 voice_models 表
+        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
+            r#"SELECT id, name, category, description
+               FROM voice_models
+               WHERE status = 'normal'"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let models = rows
+            .into_iter()
+            .map(|(id, name, category, description)| VoiceModelInfo {
+                id: id.clone(),
+                name,
+                // 使用 DiceBear 生成占位图标，避免额外静态资源依赖
+                icon_url: format!(
+                    "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
+                    id
+                ),
                 metadata: serde_json::json!({
-                    "version": "1.0",
-                    "language": "zh-CN",
-                    "gender": "female",
-                    "quality": "high",
-                    "latency": "low",
-                    "description": "高质量的标准女性声音模型"
+                    "category": category,
+                    "description": description.unwrap_or_default()
                 })
                 .to_string(),
-            },
-            VoiceModelInfo {
-                id: "model_002".to_string(),
-                name: "基础男声".to_string(),
-                icon_url: "https://cdn.example.com/models/002.png".to_string(),
-                metadata: serde_json::json!({
-                    "version": "1.0",
-                    "language": "zh-CN",
-                    "gender": "male",
-                    "quality": "high",
-                    "latency": "low",
-                    "description": "高质量的标准男性声音模型"
-                })
-                .to_string(),
-            },
-            VoiceModelInfo {
-                id: "model_003".to_string(),
-                name: "儿童声".to_string(),
-                icon_url: "https://cdn.example.com/models/003.png".to_string(),
-                metadata: serde_json::json!({
-                    "version": "1.0",
-                    "language": "zh-CN",
-                    "gender": "child",
-                    "quality": "high",
-                    "latency": "low",
-                    "description": "可爱的儿童声音模型"
-                })
-                .to_string(),
-            },
-        ];
+            })
+            .collect();
         Ok(models)
     }
 
     async fn get_voice_model(&self, voice_id: &str) -> anyhow::Result<VoiceModelInfo> {
-        // 假实现：根据 ID 返回对应的模型
-        match voice_id {
-            "model_001" => Ok(VoiceModelInfo {
-                id: "model_001".to_string(),
-                name: "基础女声".to_string(),
-                icon_url: "https://cdn.example.com/models/001.png".to_string(),
-                metadata: serde_json::json!({
-                    "version": "1.0",
-                    "language": "zh-CN",
-                    "gender": "female",
-                    "quality": "high",
-                    "latency": "low",
-                    "description": "高质量的标准女性声音模型"
-                })
-                .to_string(),
-            }),
-            "model_002" => Ok(VoiceModelInfo {
-                id: "model_002".to_string(),
-                name: "基础男声".to_string(),
-                icon_url: "https://cdn.example.com/models/002.png".to_string(),
-                metadata: serde_json::json!({
-                    "version": "1.0",
-                    "language": "zh-CN",
-                    "gender": "male",
-                    "quality": "high",
-                    "latency": "low",
-                    "description": "高质量的标准男性声音模型"
-                })
-                .to_string(),
-            }),
-            "model_003" => Ok(VoiceModelInfo {
-                id: "model_003".to_string(),
-                name: "儿童声".to_string(),
-                icon_url: "https://cdn.example.com/models/003.png".to_string(),
-                metadata: serde_json::json!({
-                    "version": "1.0",
-                    "language": "zh-CN",
-                    "gender": "child",
-                    "quality": "high",
-                    "latency": "low",
-                    "description": "可爱的儿童声音模型"
-                })
-                .to_string(),
-            }),
-            _ => Err(anyhow::anyhow!("Voice model not found: {}", voice_id)),
-        }
+        let row: (String, String, String, Option<String>) = sqlx::query_as(
+            r#"SELECT id, name, category, description
+               FROM voice_models
+               WHERE id = ? LIMIT 1"#,
+        )
+        .bind(voice_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| anyhow::anyhow!("Voice model not found: {}", voice_id))?;
+
+        let (id, name, category, description) = row;
+        Ok(VoiceModelInfo {
+            id: id.clone(),
+            name,
+            icon_url: format!(
+                "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
+                id
+            ),
+            metadata: serde_json::json!({
+                "category": category,
+                "description": description.unwrap_or_default()
+            })
+            .to_string(),
+        })
     }
 
     async fn update_voice_model(&self, voice: &VoiceModelInfo) -> anyhow::Result<()> {
-        // 假实现：仅记录更新操作
-        eprintln!("Mock: Updating voice model: {:?}", voice.id);
+        // 从 metadata 中提取可更新字段
+        let meta: serde_json::Value = serde_json::from_str(&voice.metadata).unwrap_or_default();
+        let category = meta.get("category").and_then(|v| v.as_str()).unwrap_or("");
+        let description = meta
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        sqlx::query(
+            r#"UPDATE voice_models
+               SET name = ?, category = ?, description = ?
+               WHERE id = ?"#,
+        )
+        .bind(&voice.name)
+        .bind(category)
+        .bind(description)
+        .bind(&voice.id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     async fn delete_voice_model(&self, voice_id: &str) -> anyhow::Result<()> {
-        // 假实现：仅记录删除操作
-        eprintln!("Mock: Deleting voice model: {}", voice_id);
+        // 软删除：隐藏模型
+        sqlx::query("UPDATE voice_models SET status = 'hidden' WHERE id = ?")
+            .bind(voice_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }
@@ -121,139 +100,195 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
 #[async_trait::async_trait]
 impl VoiceMetadataService for ServiceProvider<Sqlite> {
     async fn list_voice_metadata(&self) -> anyhow::Result<Vec<VoiceMetaInfo>> {
-        // 假实现：返回示例数据
-        let sample_metadata = vec![
-            VoiceMetaInfo {
-                id: "1".to_string(),
-                name: "甜美少女音".to_string(),
-                metadata: serde_json::json!({
-                    "description": "温柔甜美的少女声音，适合温馨场景",
-                    "base_model_id": "model_001",
-                    "pitch": 5.0,
-                    "speed": 1.1,
-                    "volume": 1.0,
-                    "emotion": "happy",
-                    "usage_count": 1250,
-                    "is_public": true,
-                    "tags": ["甜美", "少女", "温柔"],
-                    "author": "官方",
-                    "is_official": true
-                })
-                .to_string(),
-            },
-            VoiceMetaInfo {
-                id: "2".to_string(),
-                name: "磁性男声".to_string(),
-                metadata: serde_json::json!({
-                    "description": "低沉磁性的男性声音，充满魅力",
-                    "base_model_id": "model_002",
-                    "pitch": -3.0,
-                    "speed": 0.95,
-                    "volume": 1.2,
-                    "emotion": "calm",
-                    "usage_count": 980,
-                    "is_public": true,
-                    "tags": ["磁性", "男声", "低沉"],
-                    "author": "官方",
-                    "is_official": true
-                })
-                .to_string(),
-            },
-            VoiceMetaInfo {
-                id: "3".to_string(),
-                name: "活力少年".to_string(),
-                metadata: serde_json::json!({
-                    "description": "充满活力的少年声音，元气满满",
-                    "base_model_id": "model_003",
-                    "pitch": 3.0,
-                    "speed": 1.15,
-                    "volume": 1.1,
-                    "emotion": "excited",
-                    "usage_count": 750,
-                    "is_public": true,
-                    "tags": ["活力", "少年", "元气"],
-                    "author": "官方",
-                    "is_official": true
-                })
-                .to_string(),
-            },
-            VoiceMetaInfo {
-                id: "4".to_string(),
-                name: "御姐音".to_string(),
-                metadata: serde_json::json!({
-                    "description": "成熟性感的女性声音",
-                    "base_model_id": "model_004",
-                    "pitch": -1.0,
-                    "speed": 0.9,
-                    "volume": 1.0,
-                    "emotion": "calm",
-                    "usage_count": 520,
-                    "is_public": true,
-                    "tags": ["御姐", "成熟", "性感"],
-                    "author": "用户小明",
-                    "is_official": false
-                })
-                .to_string(),
-            },
-            VoiceMetaInfo {
-                id: "5".to_string(),
-                name: "正太音".to_string(),
-                metadata: serde_json::json!({
-                    "description": "可爱的小男孩声音",
-                    "base_model_id": "model_005",
-                    "pitch": 8.0,
-                    "speed": 1.2,
-                    "volume": 0.9,
-                    "emotion": "happy",
-                    "usage_count": 430,
-                    "is_public": true,
-                    "tags": ["正太", "可爱", "童声"],
-                    "author": "用户小红",
-                    "is_official": false
-                })
-                .to_string(),
-            },
-            VoiceMetaInfo {
-                id: "6".to_string(),
-                name: "冷酷杀手".to_string(),
-                metadata: serde_json::json!({
-                    "description": "冷酷无情的声音，适合反派角色",
-                    "base_model_id": "model_006",
-                    "pitch": -2.0,
-                    "speed": 0.85,
-                    "volume": 1.1,
-                    "emotion": "angry",
-                    "usage_count": 320,
-                    "is_public": true,
-                    "tags": ["冷酷", "反派", "低沉"],
-                    "author": "用户暗影",
-                    "is_official": false
-                })
-                .to_string(),
-            },
-        ];
+        // 公开且正常的滤镜，按使用量倒序
+        let rows: Vec<(
+            String,         // id
+            String,         // name
+            Option<String>, // description
+            String,         // base_model_id
+            f64,            // pitch
+            f64,            // speed
+            f64,            // volume
+            String,         // emotion
+            i64,            // usage_count
+            i64,            // is_public
+            Option<String>, // nickname
+            Option<String>, // username
+        )> = sqlx::query_as(
+            r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
+                      vm.pitch, vm.speed, vm.volume, vm.emotion,
+                      vm.usage_count, vm.is_public,
+                      u.nickname, ua.username
+                 FROM voice_meta_infos vm
+                 JOIN users u ON vm.user_id = u.id
+                 JOIN user_auth ua ON ua.user_id = u.id
+                 WHERE vm.status = 'normal' AND vm.is_public = 1
+                 ORDER BY vm.usage_count DESC, vm.created_at DESC"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
-        Ok(sample_metadata)
+        let list = rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    name,
+                    description,
+                    base_model_id,
+                    pitch,
+                    speed,
+                    volume,
+                    emotion,
+                    usage,
+                    is_public,
+                    nickname,
+                    username,
+                )| {
+                    let author = nickname.or(username).unwrap_or_else(|| "未知".to_string());
+                    let meta = serde_json::json!({
+                        "description": description.unwrap_or_default(),
+                        "base_model_id": base_model_id,
+                        "pitch": pitch,
+                        "speed": speed,
+                        "volume": volume,
+                        "emotion": emotion,
+                        "usage_count": usage as i32,
+                        "is_public": is_public == 1,
+                        "tags": [],
+                        "author": author,
+                        "is_official": false
+                    });
+                    VoiceMetaInfo {
+                        id,
+                        name,
+                        metadata: meta.to_string(),
+                    }
+                },
+            )
+            .collect();
+        Ok(list)
     }
 
     async fn get_voice_metadata(&self, voice_id: &str) -> anyhow::Result<VoiceMetaInfo> {
-        // 模拟实现：返回对应 ID 的元数据
-        let all_metadata = self.list_voice_metadata().await?;
-        all_metadata
-            .into_iter()
-            .find(|m| m.id == voice_id)
-            .ok_or_else(|| anyhow::anyhow!("Voice metadata not found: {}", voice_id))
+        let row: (
+            String,
+            String,
+            Option<String>,
+            String,
+            f64,
+            f64,
+            f64,
+            String,
+            i64,
+            i64,
+            Option<String>,
+            Option<String>,
+        ) = sqlx::query_as(
+            r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
+                      vm.pitch, vm.speed, vm.volume, vm.emotion,
+                      vm.usage_count, vm.is_public,
+                      u.nickname, ua.username
+                 FROM voice_meta_infos vm
+                 JOIN users u ON vm.user_id = u.id
+                 JOIN user_auth ua ON ua.user_id = u.id
+                 WHERE vm.id = ? LIMIT 1"#,
+        )
+        .bind(voice_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let (
+            id,
+            name,
+            description,
+            base_model_id,
+            pitch,
+            speed,
+            volume,
+            emotion,
+            usage,
+            is_public,
+            nickname,
+            username,
+        ) = row;
+        let author = nickname.or(username).unwrap_or_else(|| "未知".to_string());
+        let meta = serde_json::json!({
+            "description": description.unwrap_or_default(),
+            "base_model_id": base_model_id,
+            "pitch": pitch,
+            "speed": speed,
+            "volume": volume,
+            "emotion": emotion,
+            "usage_count": usage as i32,
+            "is_public": is_public == 1,
+            "tags": [],
+            "author": author,
+            "is_official": false
+        });
+
+        Ok(VoiceMetaInfo {
+            id,
+            name,
+            metadata: meta.to_string(),
+        })
     }
 
     async fn update_voice_metadata(&self, metadata: &VoiceMetaInfo) -> anyhow::Result<()> {
-        // 模拟实现：记录更新操作
-        leptos::logging::log!("Mock: Updating voice metadata: {}", metadata.name);
+        // 从 metadata JSON 提取字段并更新
+        let meta: serde_json::Value = serde_json::from_str(&metadata.metadata).unwrap_or_default();
+        let description = meta
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let base_model_id = meta
+            .get("base_model_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let pitch = meta.get("pitch").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let speed = meta.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
+        let volume = meta.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
+        let emotion = meta
+            .get("emotion")
+            .and_then(|v| v.as_str())
+            .unwrap_or("normal");
+        let is_public = meta
+            .get("is_public")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        // 约束范围：pitch/speed/volume between 0.5~2.5
+        let clamp = |v: f64| v.max(0.5).min(2.5);
+        let pitch = clamp(pitch);
+        let speed = clamp(speed);
+        let volume = clamp(volume);
+
+        sqlx::query(
+            r#"UPDATE voice_meta_infos
+               SET name = ?, description = ?, base_model_id = ?,
+                   pitch = ?, speed = ?, volume = ?, emotion = ?, is_public = ?
+               WHERE id = ?"#,
+        )
+        .bind(&metadata.name)
+        .bind(description)
+        .bind(base_model_id)
+        .bind(pitch)
+        .bind(speed)
+        .bind(volume)
+        .bind(emotion)
+        .bind(if is_public { 1 } else { 0 })
+        .bind(&metadata.id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     async fn delete_voice_metadata(&self, voice_id: &str) -> anyhow::Result<()> {
-        // 模拟实现：记录删除操作
-        leptos::logging::log!("Mock: Deleting voice metadata: {}", voice_id);
+        // 软删除
+        sqlx::query("UPDATE voice_meta_infos SET status = 'deleted' WHERE id = ?")
+            .bind(voice_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
     async fn generate_voice(
@@ -261,60 +296,69 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         voice_info: &VoiceMetaInfo,
         text: &str,
     ) -> anyhow::Result<Vec<u8>> {
-        println!("{:?}", voice_info);
-        // 模拟实现：生成一个简单的 MP3 格式音频数据
-        // 这是一个真实的 MP3 文件头 + 一些音频帧数据
-        // 实际的 TTS 引擎应该替换这个实现
+        // 从 metadata 解析所需参数
+        let meta: serde_json::Value =
+            serde_json::from_str(&voice_info.metadata).unwrap_or_default();
 
-        use std::io::Write;
-        let mut audio_data = Vec::new();
+        leptos::logging::debug_log!("generate_voice metadata: {}", voice_info.metadata);
 
-        // MP3 文件头 (ID3v2)
-        let id3_header = b"ID3\x04\x00\x00\x00\x00\x00\x00";
-        audio_data.write_all(id3_header)?;
+        let base_model_id = meta
+            .get("base_model_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
-        // MP3 帧头 - 创建多个帧来模拟音频长度
-        // MPEG-1 Layer III, 44.1kHz, 128kbps, stereo
-        let frame_header = [0xFF, 0xFB, 0x90, 0x00]; // 同步字 + 帧头
-
-        // 根据文本长度生成不同长度的音频
-        // 假设每个汉字对应约 1 秒的语音
-        let estimated_seconds = if text.is_empty() {
-            1
+        // 如果 base_model_id 为空，尝试使用默认语音
+        let voice_id = if base_model_id.is_empty() {
+            leptos::logging::error!("base_model_id is empty, using default voice");
+            "longanhuan" // 使用默认语音
         } else {
-            (text.len() / 3).max(1).min(30) // 限制在 1-30 秒之间
+            base_model_id
         };
 
-        // 每帧约 26ms (44100Hz, 1152 样本)
-        let frames_needed = (estimated_seconds * 1000) / 26;
+        let pitch = meta.get("pitch").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+        let speed = meta.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
 
-        // 生成音频帧数据
-        for _ in 0..frames_needed {
-            audio_data.write_all(&frame_header)?;
-
-            // 填充一些随机的音频数据来模拟真实的 MP3 帧
-            // 实际的 MP3 帧应该包含压缩的音频数据
-            let mut frame_data = vec![0; 417]; // MP3 帧的典型大小
-            for i in 0..frame_data.len() {
-                // 生成一些伪随机数据，但保持可重复性
-                frame_data[i] =
-                    (((text.len() as u16) ^ (i as u16) ^ (frames_needed as u16)) % 256) as u8;
-            }
-            audio_data.write_all(&frame_data)?;
-        }
-
-        // 添加 ID3v1 标签 (可选)
-        let id3v1_tag = format!(
-            "TAG{:<30}{:<30}{:<30}{}{}{}",
-            "生成的音频", // 标题
-            "耳朵 TTS",   // 艺术家
-            "合成音频",   // 相册
-            "2026",       // 年份
-            "0",          // 注释
-            0xFF          // 流派
+        leptos::logging::debug_log!(
+            "Calling CosyVoice with voice_id={}, pitch={}, speed={}",
+            voice_id,
+            pitch,
+            speed
         );
-        audio_data.write_all(id3v1_tag.as_bytes())?;
 
-        Ok(audio_data)
+        // 优先调用 CosyVoice 后端生成
+        match crate::api::voice_backend_api::cosyvoice_generate(text, voice_id, speed, pitch).await
+        {
+            Ok(bytes) => Ok(bytes),
+            Err(e) => {
+                leptos::logging::error!("CosyVoice 生成失败，回退到本地生成: {}", e);
+                // 回退：生成简单 MP3 占位数据
+                use std::io::Write;
+                let mut audio_data = Vec::new();
+                let id3_header = b"ID3\x04\x00\x00\x00\x00\x00\x00";
+                audio_data.write_all(id3_header)?;
+                let frame_header = [0xFF, 0xFB, 0x90, 0x00];
+                let estimated_seconds = if text.is_empty() {
+                    1
+                } else {
+                    (text.len() / 3).max(1).min(30)
+                };
+                let frames_needed = (estimated_seconds * 1000) / 26;
+                for i in 0..frames_needed {
+                    audio_data.write_all(&frame_header)?;
+                    let mut frame_data = vec![0; 417];
+                    for j in 0..frame_data.len() {
+                        frame_data[j] =
+                            (((text.len() as u16) ^ (j as u16) ^ (i as u16)) % 256) as u8;
+                    }
+                    audio_data.write_all(&frame_data)?;
+                }
+                let id3v1_tag = format!(
+                    "TAG{:<30}{:<30}{:<30}{}{}{}",
+                    "生成的音频", "耳朵 TTS", "合成音频", "2026", "0", 0xFF
+                );
+                audio_data.write_all(id3v1_tag.as_bytes())?;
+                Ok(audio_data)
+            }
+        }
     }
 }

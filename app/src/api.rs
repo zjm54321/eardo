@@ -68,10 +68,10 @@ pub type UserServiceProvider = Arc<dyn UserService>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceModelInfo {
-    id: String,
-    name: String,
-    icon_url: String,
-    metadata: String, // JSON 格式的模型元数据
+    pub id: String,
+    pub name: String,
+    pub icon_url: String,
+    pub metadata: String, // JSON 格式的模型元数据
 }
 /// 语音模型管理接口
 #[async_trait]
@@ -126,6 +126,7 @@ pub type PostProvider = Arc<dyn PostService>;
 
 pub mod post;
 pub mod user;
+pub mod voice_backend_api;
 pub mod voicedata;
 
 #[server]
