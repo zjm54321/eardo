@@ -141,6 +141,7 @@ pub fn Playground() -> impl IntoView {
     // 2. 列表作品状态
     let (works_list, set_works_list) = signal(Vec::<PostInfo>::new());
     let (featured_list, set_featured_list) = signal(Vec::<PostInfo>::new());
+    let (search_query, set_search_query) = signal(String::new());
 
     // 初始化：加载所有作品
     let posts_resource = LocalResource::new(move || async move {
@@ -250,13 +251,48 @@ pub fn Playground() -> impl IntoView {
                     </Suspense>
                 </section>
 
-                // --- 3. 最新作品列表 ---
+                // --- 3. 最新作品列表 + 搜索 ---
                 <section>
-                    <h3 class="text-xl font-semibold mb-6">"最新作品"</h3>
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+                        <h3 class="text-xl font-semibold">"最新作品"</h3>
+                        <div class="flex items-center gap-2 w-full md:w-auto">
+                            <div class="flex-1 md:flex-initial md:w-72 lg:w-80">
+                                <input
+                                    class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+                                    type="text"
+                                    placeholder="搜索标题、作者或描述"
+                                    prop:value=move || search_query.get()
+                                    on:input=move |ev| set_search_query.set(event_target_value(&ev))
+                                />
+                            </div>
+                            <button
+                                class="text-sm text-gray-500 hover:text-primary px-3 py-2"
+                                on:click=move |_| set_search_query.set(String::new())
+                            >
+                                "清除"
+                            </button>
+                        </div>
+                    </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <For
-                            each=move || works_list.get()
+                            each=move || {
+                                let query = search_query.get().trim().to_lowercase();
+                                let posts = works_list.get();
+                                if query.is_empty() {
+                                    posts
+                                } else {
+                                    posts
+                                        .into_iter()
+                                        .filter(|p| {
+                                            let meta = PostMetadata::from_post(p);
+                                            p.title.to_lowercase().contains(&query)
+                                                || meta.description.to_lowercase().contains(&query)
+                                                || meta.author.to_lowercase().contains(&query)
+                                        })
+                                        .collect()
+                                }
+                            }
                             key=|w| w.id.clone()
                             children=move |work| {
                                 view! { <WorkCard work=work is_featured=false /> }
