@@ -103,6 +103,30 @@ async fn get_avatar_handler(
     }
 }
 
+// 2.2 帖子音频获取处理函数
+async fn get_post_audio_handler(
+    Path(post_id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let result: Result<(Vec<u8>,), sqlx::Error> =
+        sqlx::query_as("SELECT generated_audio_data FROM posts WHERE id = ? AND status = 'normal'")
+            .bind(&post_id)
+            .fetch_one(&state.pool)
+            .await;
+
+    match result {
+        Ok((data,)) => (
+            [
+                (header::CONTENT_TYPE, "audio/mpeg"),
+                (header::CACHE_CONTROL, "public, max-age=86400"),
+            ],
+            data,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "Post audio not found").into_response(),
+    }
+}
+
 // 3. 新增：SSR 页面渲染处理函数
 // 专门用于处理页面请求，确保在服务端渲染时也能获取到 Headers (Cookie)
 async fn ssr_handler(
@@ -175,7 +199,8 @@ async fn main() {
     let mut app = Router::<AppState>::new()
         .route("/api/{*fn_name}", post(server_fn_handler))
         .route("/api/audio/{id}", get(get_audio_handler))
-        .route("/api/avatar/{user_id}", get(get_avatar_handler));
+        .route("/api/avatar/{user_id}", get(get_avatar_handler))
+        .route("/api/post/audio/{post_id}", get(get_post_audio_handler));
 
     // 为每个 Leptos 路由注册我们自定义的 ssr_handler
     // 替代之前的 .leptos_routes_with_context()
