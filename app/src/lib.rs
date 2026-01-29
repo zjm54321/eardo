@@ -1,8 +1,8 @@
 use leptos::prelude::*;
-use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
+use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
 use leptos_router::{
-    StaticSegment,
     components::{Route, Router, Routes},
+    StaticSegment,
 };
 
 pub mod api;
@@ -58,13 +58,13 @@ pub fn App() -> impl IntoView {
                     // 原首页功能移动到 /home
                     <Route path=StaticSegment("home") view=pages::homepage::HomePage />
 
-                    <Route path=StaticSegment("voice") view=pages::playground::Playground/>
-                    <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage/>
-                    <Route path=StaticSegment("help") view=pages::help::HelpPage/>
+                    <Route path=StaticSegment("voice") view=pages::playground::Playground />
+                    <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage />
+                    <Route path=StaticSegment("help") view=pages::help::HelpPage />
 
-                    <Route path=StaticSegment("login") view=pages::auth::LoginPage/>
-                    <Route path=StaticSegment("register") view=pages::auth::RegisterPage/>
-                    <Route path=StaticSegment("profile") view=pages::auth::ProfilePage/>
+                    <Route path=StaticSegment("login") view=pages::auth::LoginPage />
+                    <Route path=StaticSegment("register") view=pages::auth::RegisterPage />
+                    <Route path=StaticSegment("profile") view=pages::auth::ProfilePage />
                 </Routes>
             </main>
 

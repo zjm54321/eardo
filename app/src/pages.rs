@@ -86,36 +86,49 @@ pub fn Header() -> impl IntoView {
 
                 // --- 右侧：头像框 ---
                 <div class="relative group">
-                    <Suspense fallback=move || view!{ <div class="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div> }>
+                    <Suspense fallback=move || {
+                        view! {
+                            <div class="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div>
+                        }
+                    }>
                         {move || {
                             match user_resource.get() {
-                                Some(Ok(user)) => view! {
-                                    <A href="/profile">
-                                        <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
-                                            <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden font-bold text-primary">
-                                                // 显示头像
-                                                {
-                                                    if user.avatar_url.starts_with("/api/") || user.avatar_url.starts_with("http") {
+                                Some(Ok(user)) => {
+                                    view! {
+                                        <A href="/profile">
+                                            <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+                                                <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden font-bold text-primary">
+                                                    // 显示头像
+                                                    {if user.avatar_url.starts_with("/api/")
+                                                        || user.avatar_url.starts_with("http")
+                                                    {
                                                         view! {
-                                                            <img src=user.avatar_url.clone() alt="avatar" class="w-full h-full object-cover" />
-                                                        }.into_any()
+                                                            <img
+                                                                src=user.avatar_url.clone()
+                                                                alt="avatar"
+                                                                class="w-full h-full object-cover"
+                                                            />
+                                                        }
+                                                            .into_any()
                                                     } else {
-                                                        view! {
-                                                            <i class="fa fa-user text-lg"></i>
-                                                        }.into_any()
-                                                    }
-                                                }
-                                            </div>
-                                        </button>
-                                    </A>
-                                }.into_any(),
-                                _ => view! {
-                                    <A href="/login">
-                                        <button class="px-4 py-2 rounded-full bg-dark text-white text-sm hover:bg-gray-700 transition-colors shadow-sm">
-                                            "登录"
-                                        </button>
-                                    </A>
-                                }.into_any()
+                                                        view! { <i class="fa fa-user text-lg"></i> }.into_any()
+                                                    }}
+                                                </div>
+                                            </button>
+                                        </A>
+                                    }
+                                        .into_any()
+                                }
+                                _ => {
+                                    view! {
+                                        <A href="/login">
+                                            <button class="px-4 py-2 rounded-full bg-dark text-white text-sm hover:bg-gray-700 transition-colors shadow-sm">
+                                                "登录"
+                                            </button>
+                                        </A>
+                                    }
+                                        .into_any()
+                                }
                             }
                         }}
                     </Suspense>

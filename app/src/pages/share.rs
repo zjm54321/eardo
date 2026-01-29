@@ -46,7 +46,8 @@ pub fn SharePopup(
                             </button>
                         </div>
                     </div>
-                }.into_any()
+                }
+                    .into_any()
             } else {
                 view! { <div></div> }.into_any()
             }
@@ -214,14 +215,25 @@ pub fn ShareModal(
                                 <button
                                     class="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                     on:click=handle_create
-                                    disabled=move || create_post_action.pending().get() || title.get().trim().is_empty() || content.get().trim().is_empty()
+                                    disabled=move || {
+                                        create_post_action.pending().get()
+                                            || title.get().trim().is_empty()
+                                            || content.get().trim().is_empty()
+                                    }
                                 >
-                                    {move || if create_post_action.pending().get() { "Creating..." } else { "Create" }}
+                                    {move || {
+                                        if create_post_action.pending().get() {
+                                            "Creating..."
+                                        } else {
+                                            "Create"
+                                        }
+                                    }}
                                 </button>
                             </div>
                         </div>
                     </div>
-                }.into_any()
+                }
+                    .into_any()
             } else {
                 view! { <div></div> }.into_any()
             }

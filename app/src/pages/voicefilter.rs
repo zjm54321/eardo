@@ -1,4 +1,4 @@
-use crate::api::{VoiceMetaInfo, list_voice_metadata};
+use crate::api::{list_voice_metadata, VoiceMetaInfo};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use serde::{Deserialize, Serialize};
@@ -115,7 +115,9 @@ pub fn VoiceFilterPage() -> impl IntoView {
                         <i class="fa fa-magic text-secondary mr-3"></i>
                         "声音滤镜库"
                     </h2>
-                    <p class="text-gray-500 mb-8">"发现并使用各种声音滤镜，一键应用到你的作品中"</p>
+                    <p class="text-gray-500 mb-8">
+                        "发现并使用各种声音滤镜，一键应用到你的作品中"
+                    </p>
 
                     <div class="relative max-w-xl mx-auto">
                         <input
@@ -138,7 +140,9 @@ pub fn VoiceFilterPage() -> impl IntoView {
                     </div>
                 </section>
 
-                <Suspense fallback=move || view! { <div class="text-center py-10">"加载滤镜中..."</div> }>
+                <Suspense fallback=move || {
+                    view! { <div class="text-center py-10">"加载滤镜中..."</div> }
+                }>
                     {move || {
                         match filters_resource.get() {
                             Some(Ok(meta_list)) => {
@@ -146,8 +150,6 @@ pub fn VoiceFilterPage() -> impl IntoView {
                                     .into_iter()
                                     .map(DisplayFilter::from_voice_meta)
                                     .collect();
-
-                                // 根据搜索词过滤
                                 let query = search.get().trim().to_lowercase();
                                 let filtered: Vec<DisplayFilter> = if query.is_empty() {
                                     all_filters.clone()
@@ -162,21 +164,20 @@ pub fn VoiceFilterPage() -> impl IntoView {
                                                 .tags
                                                 .iter()
                                                 .any(|t| t.to_lowercase().contains(&query));
-                                            name.contains(&query)
-                                                || author.contains(&query)
-                                                || desc.contains(&query)
-                                                || tag_hit
+                                            name.contains(&query) || author.contains(&query)
+                                                || desc.contains(&query) || tag_hit
                                         })
                                         .collect()
                                 };
-
                                 let (official, user): (Vec<_>, Vec<_>) = filtered
                                     .into_iter()
                                     .partition(|f| f.is_official);
-
-                                // 显式克隆闭包传递给组件
                                 let apply_filter_1 = apply_filter.clone();
                                 let apply_filter_2 = apply_filter.clone();
+
+                                // 根据搜索词过滤
+
+                                // 显式克隆闭包传递给组件
 
                                 view! {
                                     <div class="space-y-16">
@@ -196,12 +197,20 @@ pub fn VoiceFilterPage() -> impl IntoView {
                                             on_apply=apply_filter_2
                                         />
                                     </div>
-                                }.into_any()
-                            },
-                            Some(Err(e)) => view! {
-                                <div class="text-red-500 text-center">"加载失败: " {e.to_string()}</div>
-                            }.into_any(),
-                            None => view! { <div class="text-center">"加载中..."</div> }.into_any()
+                                }
+                                    .into_any()
+                            }
+                            Some(Err(e)) => {
+                                view! {
+                                    <div class="text-red-500 text-center">
+                                        "加载失败: " {e.to_string()}
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            None => {
+                                view! { <div class="text-center">"加载中..."</div> }.into_any()
+                            }
                         }
                     }}
                 </Suspense>
@@ -225,7 +234,7 @@ where
     view! {
         <section>
             <h3 class="text-xl font-bold mb-6 flex items-center text-gray-800">
-                <i class={format!("fa {} {} mr-2", icon, icon_color)}></i>
+                <i class=format!("fa {} {} mr-2", icon, icon_color)></i>
                 {title}
             </h3>
 
@@ -240,9 +249,15 @@ where
                         view! {
                             <div class="bg-white rounded-xl p-6 shadow-soft hover:shadow-lg transition-all duration-300 border border-gray-100 group">
                                 <div class="flex justify-between items-start mb-3">
-                                    <h4 class="text-lg font-bold text-gray-800">{filter.name.clone()}</h4>
+                                    <h4 class="text-lg font-bold text-gray-800">
+                                        {filter.name.clone()}
+                                    </h4>
                                     <span class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">
-                                        {if filter.is_official { "官方".to_string() } else { filter.author.clone() }}
+                                        {if filter.is_official {
+                                            "官方".to_string()
+                                        } else {
+                                            filter.author.clone()
+                                        }}
                                     </span>
                                 </div>
 
@@ -251,17 +266,30 @@ where
                                 </p>
 
                                 <div class="flex flex-wrap gap-2 mb-6">
-                                    {filter.tags.iter().map(|tag| view! {
-                                        <span class="text-xs px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-200">
-                                            {tag.clone()}
-                                        </span>
-                                    }).collect::<Vec<_>>()}
+                                    {filter
+                                        .tags
+                                        .iter()
+                                        .map(|tag| {
+                                            view! {
+                                                <span class="text-xs px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-200">
+                                                    {tag.clone()}
+                                                </span>
+                                            }
+                                        })
+                                        .collect::<Vec<_>>()}
                                 </div>
 
                                 <div class="flex items-center justify-between mt-auto">
                                     <div class="text-xs text-gray-400 space-x-2">
-                                        <span><i class="fa fa-signal mr-1"></i>{filter.pitch}</span>
-                                        <span><i class="fa fa-tachometer mr-1"></i>{filter.speed}"x"</span>
+                                        <span>
+                                            <i class="fa fa-signal mr-1"></i>
+                                            {filter.pitch}
+                                        </span>
+                                        <span>
+                                            <i class="fa fa-tachometer mr-1"></i>
+                                            {filter.speed}
+                                            "x"
+                                        </span>
                                     </div>
 
                                     <button

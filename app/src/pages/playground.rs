@@ -182,12 +182,16 @@ pub fn Playground() -> impl IntoView {
                         <i class="fa fa-users text-secondary mr-2"></i>
                         "声音广场"
                     </h2>
-                    <p class="text-gray-600 max-w-2xl mx-auto">"分享您的创意声音作品，聆听他人的声音世界"</p>
+                    <p class="text-gray-600 max-w-2xl mx-auto">
+                        "分享您的创意声音作品，聆听他人的声音世界"
+                    </p>
                 </section>
 
                 // --- 2. 精选作品轮播 ---
                 <section class="mb-16">
-                    <Suspense fallback=|| view! { <div class="text-center py-10">"加载精选作品..."</div> }>
+                    <Suspense fallback=|| {
+                        view! { <div class="text-center py-10">"加载精选作品..."</div> }
+                    }>
                         {move || {
                             let featured = featured_list.get();
                             if !featured.is_empty() {
@@ -210,42 +214,54 @@ pub fn Playground() -> impl IntoView {
                                                 >
                                                     <i class="fa fa-chevron-right"></i>
                                                 </button>
-                                                </div>
+                                            </div>
                                         </div>
 
                                         // 轮播内容
                                         <div class="relative overflow-hidden rounded-2xl min-h-[300px]">
-                                            {featured.into_iter().enumerate().map(|(idx, work)| {
-                                                view! {
-                                                    <div
-                                                        class="transition-all duration-500 ease-in-out"
-                                                        class:hidden=move || current_slide.get() != idx
-                                                        class:block=move || current_slide.get() == idx
-                                                        class:animate-fade-in=move || current_slide.get() == idx
-                                                    >
-                                                        <WorkCard work=work is_featured=true />
-                                                    </div>
-                                                }
-                                            }).collect::<Vec<_>>()}
+                                            {featured
+                                                .into_iter()
+                                                .enumerate()
+                                                .map(|(idx, work)| {
+                                                    view! {
+                                                        <div
+                                                            class="transition-all duration-500 ease-in-out"
+                                                            class:hidden=move || current_slide.get() != idx
+                                                            class:block=move || current_slide.get() == idx
+                                                            class:animate-fade-in=move || current_slide.get() == idx
+                                                        >
+                                                            <WorkCard work=work is_featured=true />
+                                                        </div>
+                                                    }
+                                                })
+                                                .collect::<Vec<_>>()}
                                         </div>
 
                                         // 指示器
                                         <div class="flex justify-center mt-6 space-x-2">
-                                            {(0..total).map(|idx| {
-                                                view! {
-                                                    <button
-                                                        class="w-3 h-3 rounded-full transition-colors duration-300"
-                                                        class:bg-primary=move || current_slide.get() == idx
-                                                        class:bg-gray-300=move || current_slide.get() != idx
-                                                        on:click=move |_| set_current_slide.set(idx)
-                                                    />
-                                                }
-                                            }).collect::<Vec<_>>()}
+                                            {(0..total)
+                                                .map(|idx| {
+                                                    view! {
+                                                        <button
+                                                            class="w-3 h-3 rounded-full transition-colors duration-300"
+                                                            class:bg-primary=move || current_slide.get() == idx
+                                                            class:bg-gray-300=move || current_slide.get() != idx
+                                                            on:click=move |_| set_current_slide.set(idx)
+                                                        />
+                                                    }
+                                                })
+                                                .collect::<Vec<_>>()}
                                         </div>
                                     </div>
-                                }.into_any()
+                                }
+                                    .into_any()
                             } else {
-                                view! { <div class="text-gray-500 text-center">"暂无精选作品"</div> }.into_any()
+                                view! {
+                                    <div class="text-gray-500 text-center">
+                                        "暂无精选作品"
+                                    </div>
+                                }
+                                    .into_any()
                             }
                         }}
                     </Suspense>
@@ -307,7 +323,8 @@ pub fn Playground() -> impl IntoView {
                                 <div class="text-center mt-10 text-gray-500">
                                     "暂无更多作品"
                                 </div>
-                            }.into_any()
+                            }
+                                .into_any()
                         } else {
                             view! { <div></div> }.into_any()
                         }
@@ -371,101 +388,113 @@ fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
 
     view! {
         <div class="relative">
-            <div class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col"
-                 class:max-w-2xl=is_featured
-                 class:mx-auto=is_featured>
+            <div
+                class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col"
+                class:max-w-2xl=is_featured
+                class:mx-auto=is_featured
+            >
 
-            // 用户信息
-            <div class="flex items-center mb-4">
-                <img src=meta.avatar alt="Avatar" class="w-12 h-12 rounded-full mr-3 object-cover" />
-                <div>
-                    <div class="font-medium text-gray-800">{meta.author}</div>
-                    <div class="text-xs text-gray-500">{meta.time}</div>
+                // 用户信息
+                <div class="flex items-center mb-4">
+                    <img
+                        src=meta.avatar
+                        alt="Avatar"
+                        class="w-12 h-12 rounded-full mr-3 object-cover"
+                    />
+                    <div>
+                        <div class="font-medium text-gray-800">{meta.author}</div>
+                        <div class="text-xs text-gray-500">{meta.time}</div>
+                    </div>
                 </div>
-            </div>
 
-            // 内容
-            <h3 class="font-semibold mb-3 text-lg text-dark">{work.title}</h3>
-            <p class="text-sm text-gray-600 mb-4 line-clamp-3">{meta.description}</p>
+                // 内容
+                <h3 class="font-semibold mb-3 text-lg text-dark">{work.title}</h3>
+                <p class="text-sm text-gray-600 mb-4 line-clamp-3">{meta.description}</p>
 
-            // 音频播放器
-            <div class="mb-4 bg-gray-50 rounded-lg p-2">
-                <div class="flex items-center justify-between mb-2 px-1">
-                    <p class="text-xs text-gray-500">"作品音频"</p>
-                    <span class="text-xs text-primary cursor-pointer hover:underline">
-                        <i class="fa fa-refresh mr-1"></i> "替换"
+                // 音频播放器
+                <div class="mb-4 bg-gray-50 rounded-lg p-2">
+                    <div class="flex items-center justify-between mb-2 px-1">
+                        <p class="text-xs text-gray-500">"作品音频"</p>
+                        <span class="text-xs text-primary cursor-pointer hover:underline">
+                            <i class="fa fa-refresh mr-1"></i>
+                            "替换"
+                        </span>
+                    </div>
+                    <audio controls class="w-full h-8" src=meta.audio_url>
+                        "您的浏览器不支持音频播放"
+                    </audio>
+                </div>
+
+                // 底部操作栏 (mt-auto 保证对齐底部)
+                <div class="flex justify-between items-center text-sm mt-auto pt-2">
+                    <div class="flex items-center text-gray-500 space-x-4">
+                        <button
+                            class="flex items-center transition-colors duration-200 group"
+                            class:text-red-500=move || liked.get()
+                            class:text-gray-500=move || !liked.get()
+                            on:click=toggle_like
+                            disabled=move || is_loading.get()
+                        >
+                            {move || {
+                                if liked.get() {
+                                    view! { <i class="fa fa-heart mr-1"></i> }
+                                } else {
+                                    view! { <i class="fa fa-heart-o mr-1"></i> }
+                                }
+                            }}
+                            <span>{move || like_count.get()}</span>
+                        </button>
+                        <button
+                            class="flex items-center hover:text-primary transition-colors duration-200"
+                            on:click=move |_| set_show_comments.update(|v| *v = !*v)
+                        >
+                            <i class="fa fa-comment mr-1"></i>
+                            <span>{move || comment_count.get()}</span>
+                        </button>
+                    </div>
+                    <span class="text-secondary bg-secondary/10 px-2 py-1 rounded-full text-xs">
+                        {meta.voice_type}
                     </span>
                 </div>
-                <audio controls class="w-full h-8" src=meta.audio_url>
-                    "您的浏览器不支持音频播放"
-                </audio>
-            </div>
-
-            // 底部操作栏 (mt-auto 保证对齐底部)
-            <div class="flex justify-between items-center text-sm mt-auto pt-2">
-                <div class="flex items-center text-gray-500 space-x-4">
-                    <button
-                        class="flex items-center transition-colors duration-200 group"
-                        class:text-red-500=move || liked.get()
-                        class:text-gray-500=move || !liked.get()
-                        on:click=toggle_like
-                        disabled=move || is_loading.get()
-                    >
-                        {move || if liked.get() {
-                            view! { <i class="fa fa-heart mr-1"></i> }
-                        } else {
-                            view! { <i class="fa fa-heart-o mr-1"></i> }
-                        }}
-                        <span>{move || like_count.get()}</span>
-                    </button>
-                    <button
-                        class="flex items-center hover:text-primary transition-colors duration-200"
-                        on:click=move |_| set_show_comments.update(|v| *v = !*v)
-                    >
-                        <i class="fa fa-comment mr-1"></i>
-                        <span>{move || comment_count.get()}</span>
-                    </button>
-                </div>
-                <span class="text-secondary bg-secondary/10 px-2 py-1 rounded-full text-xs">
-                    {meta.voice_type}
-                </span>
-            </div>
 
             </div>
 
             // 评论弹出窗口
             {move || {
-            if show_comments.get() {
-                view! {
-                    <div
-                        class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-                        on:click=move |_| set_show_comments.set(false)
-                    >
+                if show_comments.get() {
+                    view! {
                         <div
-                            class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
-                            on:click=move |e| e.stop_propagation()
+                            class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+                            on:click=move |_| set_show_comments.set(false)
                         >
-                            <div class="flex justify-between items-center p-4 border-b border-gray-200">
-                                <h3 class="text-lg font-semibold">"评论"</h3>
-                                <button
-                                    class="text-gray-400 hover:text-gray-600 transition-colors text-2xl leading-none px-2"
-                                    on:click=move |_| set_show_comments.set(false)
-                                >
-                                    "×"
-                                </button>
-                            </div>
-                            <div class="flex-1 overflow-y-auto p-4">
-                                <CommentSection
-                                    post_id=post_id_for_comment.clone()
-                                    on_comment_added=move |_| set_comment_count.update(|c| *c += 1)
-                                />
+                            <div
+                                class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+                                on:click=move |e| e.stop_propagation()
+                            >
+                                <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                                    <h3 class="text-lg font-semibold">"评论"</h3>
+                                    <button
+                                        class="text-gray-400 hover:text-gray-600 transition-colors text-2xl leading-none px-2"
+                                        on:click=move |_| set_show_comments.set(false)
+                                    >
+                                        "×"
+                                    </button>
+                                </div>
+                                <div class="flex-1 overflow-y-auto p-4">
+                                    <CommentSection
+                                        post_id=post_id_for_comment.clone()
+                                        on_comment_added=move |_| {
+                                            set_comment_count.update(|c| *c += 1)
+                                        }
+                                    />
+                                </div>
                             </div>
                         </div>
-                    </div>
-                }.into_any()
-            } else {
-                ().into_any()
-            }
+                    }
+                        .into_any()
+                } else {
+                    ().into_any()
+                }
             }}
         </div>
     }
@@ -539,55 +568,71 @@ where
             <div class="border-t border-gray-200 pt-4">
                 <h4 class="text-sm font-semibold text-gray-700 mb-3">"全部评论"</h4>
                 <div class="space-y-3 max-h-96 overflow-y-auto">
-                    <Suspense fallback=|| view! { <div class="text-center text-gray-500 py-2">"加载评论..."</div> }>
-                    {move || {
-                        comments_resource.get().map(|result| {
-                            match result {
-                                Ok(comments) if !comments.is_empty() => {
-                                    view! {
-                                        <div class="space-y-3">
-                                            <For
-                                                each=move || comments.clone()
-                                                key=|c| c.id.clone()
-                                                children=move |comment| {
-                                                    view! {
-                                                        <div class="flex items-start space-x-2">
-                                                            <img
-                                                                src=comment.avatar.unwrap_or_else(|| "https://api.dicebear.com/7.x/avataaars/svg?seed=comment".to_string())
-                                                                class="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                                                            />
-                                                            <div class="flex-1 min-w-0">
-                                                                <div class="flex items-center space-x-2">
-                                                                    <span class="font-medium text-sm text-gray-800">{comment.author}</span>
-                                                                    <span class="text-xs text-gray-400">{comment.time}</span>
+                    <Suspense fallback=|| {
+                        view! {
+                            <div class="text-center text-gray-500 py-2">"加载评论..."</div>
+                        }
+                    }>
+                        {move || {
+                            comments_resource
+                                .get()
+                                .map(|result| {
+                                    match result {
+                                        Ok(comments) if !comments.is_empty() => {
+                                            view! {
+                                                <div class="space-y-3">
+                                                    <For
+                                                        each=move || comments.clone()
+                                                        key=|c| c.id.clone()
+                                                        children=move |comment| {
+                                                            view! {
+                                                                <div class="flex items-start space-x-2">
+                                                                    <img
+                                                                        src=comment
+                                                                            .avatar
+                                                                            .unwrap_or_else(|| {
+                                                                                "https://api.dicebear.com/7.x/avataaars/svg?seed=comment"
+                                                                                    .to_string()
+                                                                            })
+                                                                        class="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                                                                    />
+                                                                    <div class="flex-1 min-w-0">
+                                                                        <div class="flex items-center space-x-2">
+                                                                            <span class="font-medium text-sm text-gray-800">
+                                                                                {comment.author}
+                                                                            </span>
+                                                                            <span class="text-xs text-gray-400">{comment.time}</span>
+                                                                        </div>
+                                                                        <p class="text-sm text-gray-600 mt-1">{comment.content}</p>
+                                                                    </div>
                                                                 </div>
-                                                                <p class="text-sm text-gray-600 mt-1">{comment.content}</p>
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                }
-                                            />
-                                        </div>
-                                    }.into_any()
-                                }
-                                Ok(_) => {
-                                    view! {
-                                        <div class="text-center text-gray-400 py-4 text-sm">
-                                            "暂无评论，快来抢沙发吧~"
-                                        </div>
-                                    }.into_any()
-                                }
-                                Err(e) => {
-                                    view! {
-                                        <div class="text-center text-red-500 py-2 text-sm">
-                                            {format!("加载失败: {}", e)}
-                                        </div>
-                                    }.into_any()
-                                }
-                            }
-                        })
-                    }}
-                </Suspense>
+                                                            }
+                                                        }
+                                                    />
+                                                </div>
+                                            }
+                                                .into_any()
+                                        }
+                                        Ok(_) => {
+                                            view! {
+                                                <div class="text-center text-gray-400 py-4 text-sm">
+                                                    "暂无评论，快来抢沙发吧~"
+                                                </div>
+                                            }
+                                                .into_any()
+                                        }
+                                        Err(e) => {
+                                            view! {
+                                                <div class="text-center text-red-500 py-2 text-sm">
+                                                    {format!("加载失败: {}", e)}
+                                                </div>
+                                            }
+                                                .into_any()
+                                        }
+                                    }
+                                })
+                        }}
+                    </Suspense>
                 </div>
             </div>
         </div>

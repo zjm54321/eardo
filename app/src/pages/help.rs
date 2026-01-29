@@ -70,60 +70,54 @@ pub fn HelpPage() -> impl IntoView {
 
                 // FAQ 列表
                 <div class="space-y-6">
-                    {faq_items.into_iter().map(|(question, answers)| {
-                        let show_detail = RwSignal::new(false);
+                    {faq_items
+                        .into_iter()
+                        .map(|(question, answers)| {
+                            let show_detail = RwSignal::new(false);
 
-                        view! {
-                            <div
-                                class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden"
-                            >
-                                // 问题头部 - 可点击展开
-                                <button
-                                    class="w-full px-6 py-4 md:px-8 md:py-5 flex items-start justify-between hover:bg-gray-50 transition-colors duration-200 text-left"
-                                    on:click=move |_| show_detail.set(!show_detail.get())
-                                >
-                                    <h3 class="text-lg md:text-xl font-semibold text-gray-800 pr-4 flex-1">
-                                        {question}
-                                    </h3>
-                                    <i
-                                        class={
-                                            move || {
-                                                if show_detail.get() {
-                                                    "fa fa-chevron-up text-primary flex-shrink-0"
-                                                } else {
-                                                    "fa fa-chevron-down text-gray-400 flex-shrink-0"
-                                                }
-                                            }
-                                        }
-                                    ></i>
-                                </button>
-
-                                // 答案内容 - 展开/收起
-                                <div
-                                    class={
-                                        move || {
+                            view! {
+                                <div class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden">
+                                    // 问题头部 - 可点击展开
+                                    <button
+                                        class="w-full px-6 py-4 md:px-8 md:py-5 flex items-start justify-between hover:bg-gray-50 transition-colors duration-200 text-left"
+                                        on:click=move |_| show_detail.set(!show_detail.get())
+                                    >
+                                        <h3 class="text-lg md:text-xl font-semibold text-gray-800 pr-4 flex-1">
+                                            {question}
+                                        </h3>
+                                        <i class=move || {
                                             if show_detail.get() {
-                                                "max-h-96"
+                                                "fa fa-chevron-up text-primary flex-shrink-0"
                                             } else {
-                                                "max-h-0"
+                                                "fa fa-chevron-down text-gray-400 flex-shrink-0"
                                             }
+                                        }></i>
+                                    </button>
+
+                                    // 答案内容 - 展开/收起
+                                    <div
+                                        class=move || {
+                                            if show_detail.get() { "max-h-96" } else { "max-h-0" }
                                         }
-                                    }
-                                    style="overflow: hidden; transition: max-height 0.3s ease-in-out;"
-                                >
-                                    <div class="px-6 py-6 md:px-8 md:py-6 bg-gray-50 border-t border-gray-200">
-                                        {answers.into_iter().map(|answer| {
-                                            view! {
-                                                <p class="text-gray-700 leading-relaxed mb-3 text-base">
-                                                    {answer}
-                                                </p>
-                                            }
-                                        }).collect::<Vec<_>>()}
+                                        style="overflow: hidden; transition: max-height 0.3s ease-in-out;"
+                                    >
+                                        <div class="px-6 py-6 md:px-8 md:py-6 bg-gray-50 border-t border-gray-200">
+                                            {answers
+                                                .into_iter()
+                                                .map(|answer| {
+                                                    view! {
+                                                        <p class="text-gray-700 leading-relaxed mb-3 text-base">
+                                                            {answer}
+                                                        </p>
+                                                    }
+                                                })
+                                                .collect::<Vec<_>>()}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        }
-                    }).collect::<Vec<_>>()}
+                            }
+                        })
+                        .collect::<Vec<_>>()}
                 </div>
 
                 // 底部提示

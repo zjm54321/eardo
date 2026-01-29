@@ -68,7 +68,9 @@ pub fn LoginPage() -> impl IntoView {
 
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">"用户名"</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            "用户名"
+                        </label>
                         <input
                             type="text"
                             class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
@@ -97,15 +99,21 @@ pub fn LoginPage() -> impl IntoView {
 
                 <button
                     class="w-full bg-primary hover:bg-primary-focus text-white font-bold py-3 rounded-lg transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
-                    on:click=move |_| { login_action.dispatch(()); }
+                    on:click=move |_| {
+                        login_action.dispatch(());
+                    }
                     disabled=move || login_action.pending().get()
                 >
-                    {move || if login_action.pending().get() { "登录中..." } else { "立即登录" }}
+                    {move || {
+                        if login_action.pending().get() { "登录中..." } else { "立即登录" }
+                    }}
                 </button>
 
                 <div class="text-center text-sm text-gray-500">
                     "还没有账号？ "
-                    <A href="/register" attr:class="text-primary hover:underline font-medium">"去注册"</A>
+                    <A href="/register" attr:class="text-primary hover:underline font-medium">
+                        "去注册"
+                    </A>
                 </div>
             </div>
         </div>
@@ -161,7 +169,9 @@ pub fn RegisterPage() -> impl IntoView {
 
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">"用户名"</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            "用户名"
+                        </label>
                         <input
                             type="text"
                             class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
@@ -171,7 +181,9 @@ pub fn RegisterPage() -> impl IntoView {
                         />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">"邮箱 (可选)"</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            "邮箱 (可选)"
+                        </label>
                         <input
                             type="email"
                             class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
@@ -181,7 +193,9 @@ pub fn RegisterPage() -> impl IntoView {
                         />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">"手机号 (可选)"</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            "手机号 (可选)"
+                        </label>
                         <input
                             type="tel"
                             class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
@@ -201,7 +215,9 @@ pub fn RegisterPage() -> impl IntoView {
                         />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">"确认密码"</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            "确认密码"
+                        </label>
                         <input
                             type="password"
                             class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
@@ -220,15 +236,25 @@ pub fn RegisterPage() -> impl IntoView {
 
                 <button
                     class="w-full bg-secondary hover:bg-secondary/90 text-white font-bold py-3 rounded-lg transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
-                    on:click=move |_| { register_action.dispatch(()); }
+                    on:click=move |_| {
+                        register_action.dispatch(());
+                    }
                     disabled=move || register_action.pending().get()
                 >
-                    {move || if register_action.pending().get() { "创建中..." } else { "注册账号" }}
+                    {move || {
+                        if register_action.pending().get() {
+                            "创建中..."
+                        } else {
+                            "注册账号"
+                        }
+                    }}
                 </button>
 
                 <div class="text-center text-sm text-gray-500">
                     "已有账号？ "
-                    <A href="/login" attr:class="text-primary hover:underline font-medium">"去登录"</A>
+                    <A href="/login" attr:class="text-primary hover:underline font-medium">
+                        "去登录"
+                    </A>
                 </div>
             </div>
         </div>
@@ -332,32 +358,43 @@ pub fn ProfilePage() -> impl IntoView {
     view! {
         <div class="min-h-screen bg-base-100 pt-20 px-4 pb-20">
             <div class="container mx-auto max-w-6xl">
-                <Suspense fallback=move || view! { <div class="text-center py-10 text-gray-400">"加载用户信息..."</div> }>
+                <Suspense fallback=move || {
+                    view! {
+                        <div class="text-center py-10 text-gray-400">"加载用户信息..."</div>
+                    }
+                }>
                     {move || {
                         match user_resource.get() {
                             Some(Ok(user)) => {
-                                // 从 meta JSON 解析 bio
                                 let user_bio = serde_json::from_str::<serde_json::Value>(&user.meta)
                                     .ok()
-                                    .and_then(|v| v.get("bio").and_then(|b| b.as_str()).map(|s| s.to_string()))
+                                    .and_then(|v| {
+                                        v.get("bio").and_then(|b| b.as_str()).map(|s| s.to_string())
+                                    })
                                     .unwrap_or_default();
                                 let user_bio_clone = user_bio.clone();
-
-                                let user_nickname = serde_json::from_str::<serde_json::Value>(&user.meta)
+                                let user_nickname = serde_json::from_str::<
+                                    serde_json::Value,
+                                >(&user.meta)
                                     .ok()
-                                    .and_then(|v| v.get("nickname").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                                    .and_then(|v| {
+                                        v.get("nickname")
+                                            .and_then(|n| n.as_str())
+                                            .map(|s| s.to_string())
+                                    })
                                     .unwrap_or_default();
                                 let user_nickname_clone = user_nickname.clone();
                                 let user_username_clone1 = user.username.clone();
                                 let user_username_clone2 = user.username.clone();
-
-                                // 使用 Effect::new 替代 create_effect
                                 Effect::new(move |_| {
                                     if !is_editing.get_untracked() {
                                         set_edit_bio.set(user_bio_clone.clone());
                                         set_edit_nickname.set(user_nickname_clone.clone());
                                     }
                                 });
+                                // 从 meta JSON 解析 bio
+
+                                // 使用 Effect::new 替代 create_effect
 
                                 view! {
                                     <div class="flex flex-col items-center animate-fade-in space-y-12">
@@ -367,7 +404,9 @@ pub fn ProfilePage() -> impl IntoView {
                                             <h1 class="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent tracking-tighter uppercase italic drop-shadow-sm">
                                                 "Forge Your Unique Voice"
                                             </h1>
-                                            <p class="text-gray-400 tracking-[0.5em] text-xs md:text-sm uppercase font-medium">"Create · Share · Inspire"</p>
+                                            <p class="text-gray-400 tracking-[0.5em] text-xs md:text-sm uppercase font-medium">
+                                                "Create · Share · Inspire"
+                                            </p>
                                         </div>
 
                                         // 2. 个人信息卡片
@@ -380,16 +419,28 @@ pub fn ProfilePage() -> impl IntoView {
                                                 <div class="w-32 h-32 md:w-40 md:h-40 rounded-full p-1.5 bg-gradient-to-tr from-primary to-secondary shadow-lg">
                                                     <div class="w-full h-full rounded-full bg-white overflow-hidden relative border-4 border-white">
                                                         // 优先显示新上传的头像预览
-                                                        {move || if let Some(preview) = new_avatar.get() {
-                                                            view! { <img src=preview class="w-full h-full object-cover" /> }.into_any()
-                                                        } else if !user.avatar_url.is_empty() {
-                                                            view! { <img src=user.avatar_url.clone() class="w-full h-full object-cover" /> }.into_any()
-                                                        } else {
-                                                            view! {
-                                                                <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
-                                                                    <i class="fa fa-user text-6xl"></i>
-                                                                </div>
-                                                            }.into_any()
+                                                        {move || {
+                                                            if let Some(preview) = new_avatar.get() {
+                                                                view! {
+                                                                    <img src=preview class="w-full h-full object-cover" />
+                                                                }
+                                                                    .into_any()
+                                                            } else if !user.avatar_url.is_empty() {
+                                                                view! {
+                                                                    <img
+                                                                        src=user.avatar_url.clone()
+                                                                        class="w-full h-full object-cover"
+                                                                    />
+                                                                }
+                                                                    .into_any()
+                                                            } else {
+                                                                view! {
+                                                                    <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
+                                                                        <i class="fa fa-user text-6xl"></i>
+                                                                    </div>
+                                                                }
+                                                                    .into_any()
+                                                            }
                                                         }}
                                                     </div>
                                                 </div>
@@ -398,7 +449,12 @@ pub fn ProfilePage() -> impl IntoView {
                                                 <Show when=move || is_editing.get()>
                                                     <label class="absolute bottom-2 right-2 w-9 h-9 bg-primary text-white rounded-full shadow-md flex items-center justify-center hover:bg-primary-focus transition-all hover:scale-110 border-2 border-white cursor-pointer z-20">
                                                         <i class="fa fa-camera text-sm"></i>
-                                                        <input type="file" accept="image/*" class="hidden" on:change=on_file_change />
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            class="hidden"
+                                                            on:change=on_file_change
+                                                        />
                                                     </label>
                                                 </Show>
                                             </div>
@@ -407,7 +463,8 @@ pub fn ProfilePage() -> impl IntoView {
                                             <div class="flex-grow text-center md:text-left space-y-5 z-10 w-full">
                                                 <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
                                                     <div class="flex-1">
-                                                        <Show when=move || is_editing.get()
+                                                        <Show
+                                                            when=move || is_editing.get()
                                                             fallback=move || {
                                                                 let nickname_display = user_nickname.clone();
                                                                 let username_display = user_username_clone1.clone();
@@ -415,23 +472,24 @@ pub fn ProfilePage() -> impl IntoView {
                                                                     <>
                                                                         <div class="flex items-start gap-2">
                                                                             <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">
-                                                                                {
-                                                                                    if nickname_display.is_empty() {
-                                                                                        "未设置昵称".to_string()
-                                                                                    } else {
-                                                                                        nickname_display
-                                                                                    }
-                                                                                }
+                                                                                {if nickname_display.is_empty() {
+                                                                                    "未设置昵称".to_string()
+                                                                                } else {
+                                                                                    nickname_display
+                                                                                }}
                                                                             </h2>
                                                                             <button
                                                                                 class="text-primary text-sm hover:underline font-medium mt-1"
                                                                                 on:click=move |_| set_is_editing.set(true)
                                                                             >
-                                                                                <i class="fa fa-pencil"></i>"编辑"
+                                                                                <i class="fa fa-pencil"></i>
+                                                                                "编辑"
                                                                             </button>
                                                                         </div>
                                                                         <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
-                                                                            <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">"username: " {username_display}</span>
+                                                                            <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">
+                                                                                "username: " {username_display}
+                                                                            </span>
                                                                         </div>
                                                                     </>
                                                                 }
@@ -442,10 +500,14 @@ pub fn ProfilePage() -> impl IntoView {
                                                                 class="text-3xl md:text-4xl font-bold border border-gray-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-primary/50 w-full md:w-auto"
                                                                 placeholder="设置昵称"
                                                                 prop:value=move || edit_nickname.get()
-                                                                on:input=move |ev| set_edit_nickname.set(event_target_value(&ev))
+                                                                on:input=move |ev| {
+                                                                    set_edit_nickname.set(event_target_value(&ev))
+                                                                }
                                                             />
                                                             <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
-                                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">"username: " {user_username_clone2.clone()}</span>
+                                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">
+                                                                    "username: " {user_username_clone2.clone()}
+                                                                </span>
                                                             </div>
                                                         </Show>
                                                     </div>
@@ -454,7 +516,9 @@ pub fn ProfilePage() -> impl IntoView {
                                                         <Show when=move || !is_editing.get()>
                                                             <button
                                                                 class="px-5 py-2 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm text-sm flex items-center gap-2"
-                                                                on:click=move |_| { logout_action.dispatch(()); }
+                                                                on:click=move |_| {
+                                                                    logout_action.dispatch(());
+                                                                }
                                                             >
                                                                 <i class="fa fa-sign-out"></i>
                                                                 "退出登录"
@@ -467,19 +531,18 @@ pub fn ProfilePage() -> impl IntoView {
                                                 <div class="bg-gray-50/80 rounded-xl p-4 border border-gray-100 text-gray-600 text-sm leading-relaxed text-left relative min-h-[80px]">
                                                     <i class="fa fa-quote-left text-gray-300 absolute -top-2 -left-2 text-xl"></i>
 
-                                                    <Show when=move || is_editing.get()
+                                                    <Show
+                                                        when=move || is_editing.get()
                                                         fallback=move || {
                                                             let bio_display = user_bio.clone();
                                                             view! {
                                                                 <div>
                                                                     <p>
-                                                                        {
-                                                                            if bio_display.is_empty() {
-                                                                                "暂无简介，快来写点什么吧...".to_string()
-                                                                            } else {
-                                                                                bio_display
-                                                                            }
-                                                                        }
+                                                                        {if bio_display.is_empty() {
+                                                                            "暂无简介，快来写点什么吧...".to_string()
+                                                                        } else {
+                                                                            bio_display
+                                                                        }}
                                                                     </p>
                                                                 </div>
                                                             }
@@ -498,17 +561,25 @@ pub fn ProfilePage() -> impl IntoView {
                                                                     class="px-3 py-1 text-xs text-gray-500 hover:bg-gray-200 rounded"
                                                                     on:click=move |_| {
                                                                         set_is_editing.set(false);
-                                                                        set_new_avatar.set(None); // 取消时清除预览
+                                                                        set_new_avatar.set(None);
                                                                     }
                                                                 >
                                                                     "取消"
                                                                 </button>
                                                                 <button
                                                                     class="px-4 py-1 text-xs bg-primary text-white rounded hover:bg-primary-focus disabled:opacity-50"
-                                                                    on:click=move |_| { update_action.dispatch(()); }
+                                                                    on:click=move |_| {
+                                                                        update_action.dispatch(());
+                                                                    }
                                                                     disabled=move || update_action.pending().get()
                                                                 >
-                                                                    {move || if update_action.pending().get() { "保存中..." } else { "保存" }}
+                                                                    {move || {
+                                                                        if update_action.pending().get() {
+                                                                            "保存中..."
+                                                                        } else {
+                                                                            "保存"
+                                                                        }
+                                                                    }}
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -526,51 +597,80 @@ pub fn ProfilePage() -> impl IntoView {
                                                         <span class="w-1.5 h-6 bg-secondary rounded-full mr-2"></span>
                                                         "我的作品"
                                                     </h3>
-                                                    <A href="/voice" attr:class="text-xs text-gray-400 hover:text-secondary"><i class="fa fa-arrow-right"></i></A>
+                                                    <A
+                                                        href="/voice"
+                                                        attr:class="text-xs text-gray-400 hover:text-secondary"
+                                                    >
+                                                        <i class="fa fa-arrow-right"></i>
+                                                    </A>
                                                 </div>
 
                                                 <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden min-h-[320px]">
-                                                    <Suspense fallback=move || view! { <div class="p-4 text-center text-sm text-gray-400">"加载作品..."</div> }>
+                                                    <Suspense fallback=move || {
+                                                        view! {
+                                                            <div class="p-4 text-center text-sm text-gray-400">
+                                                                "加载作品..."
+                                                            </div>
+                                                        }
+                                                    }>
                                                         {move || {
                                                             match works_resource.get() {
-                                                                Some(Ok(works)) if !works.is_empty() => view! {
-                                                                    <ul class="divide-y divide-gray-50">
-                                                                        <For
-                                                                            each=move || works.clone()
-                                                                            key=|w| w.id.clone()
-                                                                            children=move |work| {
-                                                                                let meta = PostMetadata::from_post(&work);
-                                                                                view! {
-                                                                                    <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
-                                                                                        <div class="flex items-center justify-between mb-1">
-                                                                                            <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors truncate pr-2">
-                                                                                                {work.title}
-                                                                                            </span>
-                                                                                            <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">"公开"</span>
-                                                                                        </div>
-                                                                                        <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">{meta.description}</p>
-                                                                                        <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                                                                                            <span><i class="fa fa-commenting-o mr-1"></i>{meta.comments}</span>
-                                                                                            <span><i class="fa fa-heart mr-1"></i>{meta.likes}</span>
-                                                                                            <span class="ml-auto">{meta.time}</span>
-                                                                                        </div>
-                                                                                    </li>
+                                                                Some(Ok(works)) if !works.is_empty() => {
+                                                                    view! {
+                                                                        <ul class="divide-y divide-gray-50">
+                                                                            <For
+                                                                                each=move || works.clone()
+                                                                                key=|w| w.id.clone()
+                                                                                children=move |work| {
+                                                                                    let meta = PostMetadata::from_post(&work);
+                                                                                    view! {
+                                                                                        <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
+                                                                                            <div class="flex items-center justify-between mb-1">
+                                                                                                <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors truncate pr-2">
+                                                                                                    {work.title}
+                                                                                                </span>
+                                                                                                <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
+                                                                                                    "公开"
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">
+                                                                                                {meta.description}
+                                                                                            </p>
+                                                                                            <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                                                                                <span>
+                                                                                                    <i class="fa fa-commenting-o mr-1"></i>
+                                                                                                    {meta.comments}
+                                                                                                </span>
+                                                                                                <span>
+                                                                                                    <i class="fa fa-heart mr-1"></i>
+                                                                                                    {meta.likes}
+                                                                                                </span>
+                                                                                                <span class="ml-auto">{meta.time}</span>
+                                                                                            </div>
+                                                                                        </li>
+                                                                                    }
                                                                                 }
-                                                                            }
-                                                                        />
-                                                                    </ul>
-                                                                }.into_any(),
-                                                                _ => view! {
-                                                                    <div class="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[200px]">
-                                                                        <i class="fa fa-folder-open-o text-4xl mb-2 opacity-50"></i>
-                                                                        <p class="text-sm">"暂无作品"</p>
-                                                                    </div>
-                                                                }.into_any()
+                                                                            />
+                                                                        </ul>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                                _ => {
+                                                                    view! {
+                                                                        <div class="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[200px]">
+                                                                            <i class="fa fa-folder-open-o text-4xl mb-2 opacity-50"></i>
+                                                                            <p class="text-sm">"暂无作品"</p>
+                                                                        </div>
+                                                                    }
+                                                                        .into_any()
+                                                                }
                                                             }
                                                         }}
                                                     </Suspense>
                                                     <div class="p-3 text-center border-t border-gray-50">
-                                                        <button class="text-xs font-medium text-secondary hover:underline">"查看全部作品"</button>
+                                                        <button class="text-xs font-medium text-secondary hover:underline">
+                                                            "查看全部作品"
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -582,24 +682,34 @@ pub fn ProfilePage() -> impl IntoView {
                                                         <span class="w-1.5 h-6 bg-primary rounded-full mr-2"></span>
                                                         "我的声音"
                                                     </h3>
-                                                    <button class="text-xs text-gray-400 hover:text-primary"><i class="fa fa-plus"></i></button>
+                                                    <button class="text-xs text-gray-400 hover:text-primary">
+                                                        <i class="fa fa-plus"></i>
+                                                    </button>
                                                 </div>
 
                                                 <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden min-h-[320px] relative group">
                                                     // 模糊内容
                                                     <div class="filter blur-[4px] opacity-60 select-none pointer-events-none p-2">
                                                         <ul class="divide-y divide-gray-50">
-                                                            {(1..=5).map(|i| view! {
-                                                                <li class="flex items-center p-3">
-                                                                    <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 mr-3 shrink-0">
-                                                                        <i class="fa fa-music text-sm"></i>
-                                                                    </div>
-                                                                    <div class="flex-grow min-w-0">
-                                                                        <div class="font-medium text-dark text-sm truncate">"录音_2025050" {i} ".mp3"</div>
-                                                                        <div class="text-xs text-gray-400 mt-0.5">"00:45 • 1.2MB"</div>
-                                                                    </div>
-                                                                </li>
-                                                            }).collect::<Vec<_>>()}
+                                                            {(1..=5)
+                                                                .map(|i| {
+                                                                    view! {
+                                                                        <li class="flex items-center p-3">
+                                                                            <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 mr-3 shrink-0">
+                                                                                <i class="fa fa-music text-sm"></i>
+                                                                            </div>
+                                                                            <div class="flex-grow min-w-0">
+                                                                                <div class="font-medium text-dark text-sm truncate">
+                                                                                    "录音_2025050" {i} ".mp3"
+                                                                                </div>
+                                                                                <div class="text-xs text-gray-400 mt-0.5">
+                                                                                    "00:45 • 1.2MB"
+                                                                                </div>
+                                                                            </div>
+                                                                        </li>
+                                                                    }
+                                                                })
+                                                                .collect::<Vec<_>>()}
                                                         </ul>
                                                     </div>
 
@@ -608,7 +718,9 @@ pub fn ProfilePage() -> impl IntoView {
                                                         <div class="w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center mb-3 text-primary">
                                                             <i class="fa fa-folder text-xl"></i>
                                                         </div>
-                                                        <h4 class="font-bold text-dark text-sm mb-1">"私有声音库"</h4>
+                                                        <h4 class="font-bold text-dark text-sm mb-1">
+                                                            "私有声音库"
+                                                        </h4>
                                                         <p class="text-gray-500 text-xs">"功能开发中..."</p>
                                                     </div>
                                                 </div>
@@ -647,8 +759,12 @@ pub fn ProfilePage() -> impl IntoView {
                                                         <div class="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mb-5 text-gray-400">
                                                             <i class="fa fa-wrench text-2xl"></i>
                                                         </div>
-                                                        <h4 class="font-bold text-dark text-lg mb-2">"功能开发中"</h4>
-                                                        <p class="text-gray-500 text-sm mb-6 max-w-[200px] leading-relaxed">"正在为您构建专业的 AI 声音分析模型，敬请期待。"</p>
+                                                        <h4 class="font-bold text-dark text-lg mb-2">
+                                                            "功能开发中"
+                                                        </h4>
+                                                        <p class="text-gray-500 text-sm mb-6 max-w-[200px] leading-relaxed">
+                                                            "正在为您构建专业的 AI 声音分析模型，敬请期待。"
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -656,41 +772,61 @@ pub fn ProfilePage() -> impl IntoView {
 
                                         // 4. 返回主页
                                         <div class="pt-4 pb-8">
-                                            <A href="/" attr:class="inline-flex items-center px-6 py-3 bg-white border border-gray-200 rounded-full text-gray-500 hover:text-primary hover:border-primary/30 hover:shadow-md transition-all group font-medium">
+                                            <A
+                                                href="/"
+                                                attr:class="inline-flex items-center px-6 py-3 bg-white border border-gray-200 rounded-full text-gray-500 hover:text-primary hover:border-primary/30 hover:shadow-md transition-all group font-medium"
+                                            >
                                                 <i class="fa fa-arrow-left mr-2 group-hover:-translate-x-1 transition-transform"></i>
                                                 "返回主页"
                                             </A>
                                         </div>
 
                                     </div>
-                                }.into_any()
-                            },
+                                }
+                                    .into_any()
+                            }
                             Some(Err(e)) => {
                                 view! {
                                     <div class="min-h-[60vh] flex flex-col items-center justify-center">
                                         <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
                                             <i class="fa fa-user-lock text-4xl"></i>
                                         </div>
-                                        <h2 class="text-2xl font-bold mb-2 text-dark">"加载失败"</h2>
+                                        <h2 class="text-2xl font-bold mb-2 text-dark">
+                                            "加载失败"
+                                        </h2>
                                         <p class="text-gray-500 mb-8">{format!("错误: {}", e)}</p>
-                                        <A href="/login" attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold">
+                                        <A
+                                            href="/login"
+                                            attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold"
+                                        >
                                             "去登录"
                                         </A>
                                     </div>
-                                }.into_any()
-                            },
-                            _ => view! {
-                                <div class="min-h-[60vh] flex flex-col items-center justify-center">
-                                    <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
-                                        <i class="fa fa-user-lock text-4xl"></i>
+                                }
+                                    .into_any()
+                            }
+                            _ => {
+                                view! {
+                                    <div class="min-h-[60vh] flex flex-col items-center justify-center">
+                                        <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
+                                            <i class="fa fa-user-lock text-4xl"></i>
+                                        </div>
+                                        <h2 class="text-2xl font-bold mb-2 text-dark">
+                                            "未登录"
+                                        </h2>
+                                        <p class="text-gray-500 mb-8">
+                                            "请登录以查看您的个人主页"
+                                        </p>
+                                        <A
+                                            href="/login"
+                                            attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold"
+                                        >
+                                            "去登录"
+                                        </A>
                                     </div>
-                                    <h2 class="text-2xl font-bold mb-2 text-dark">"未登录"</h2>
-                                    <p class="text-gray-500 mb-8">"请登录以查看您的个人主页"</p>
-                                    <A href="/login" attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold">
-                                        "去登录"
-                                    </A>
-                                </div>
-                            }.into_any()
+                                }
+                                    .into_any()
+                            }
                         }
                     }}
                 </Suspense>

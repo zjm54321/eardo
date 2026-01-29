@@ -206,7 +206,11 @@ pub fn HomePage() -> impl IntoView {
                             selected_param=param_signal
                             selected_voice=voice_signal
                             initial_voice_id=initial_voice_id.clone()
-                            initial_param=VoiceParams { pitch: initial_pitch, speed: initial_speed, emotion: initial_emotion }
+                            initial_param=VoiceParams {
+                                pitch: initial_pitch,
+                                speed: initial_speed,
+                                emotion: initial_emotion,
+                            }
                             open_filter_share=set_show_filter_share
                         />
                         // 2. 输出结果 (核心功能)
@@ -300,7 +304,9 @@ pub fn HomePage() -> impl IntoView {
                                     rows="8"
                                     placeholder="请输入作品描述..."
                                     prop:value=move || share_content.get()
-                                    on:input=move |ev| set_share_content.set(event_target_value(&ev))
+                                    on:input=move |ev| {
+                                        set_share_content.set(event_target_value(&ev))
+                                    }
                                 ></textarea>
                             </div>
 
@@ -328,20 +334,21 @@ pub fn HomePage() -> impl IntoView {
                                     let content = share_content.get();
                                     let voice_id = generated_voice_id.get();
                                     let audio_data = generated_audio_data.get();
-
                                     if title.trim().is_empty() || content.trim().is_empty() {
                                         return;
                                     }
-
-                                    // 使用 Action 来处理创建请求
-                                    create_post_action.dispatch(CreatePostPayload {
-                                        title,
-                                        content,
-                                        voice_id,
-                                        audio_data,
-                                    });
+                                    create_post_action
+                                        .dispatch(CreatePostPayload {
+                                            title,
+                                            content,
+                                            voice_id,
+                                            audio_data,
+                                        });
                                 }
-                                disabled=move || share_title.get().trim().is_empty() || share_content.get().trim().is_empty()
+                                disabled=move || {
+                                    share_title.get().trim().is_empty()
+                                        || share_content.get().trim().is_empty()
+                                }
                             >
                                 "创建"
                             </button>
@@ -362,7 +369,10 @@ pub fn HomePage() -> impl IntoView {
                     >
                         <div class="flex justify-between items-center p-6 border-b border-gray-200">
                             <h2 class="text-2xl font-bold text-gray-800">"分享声音滤镜"</h2>
-                            <button class="text-gray-400 hover:text-gray-600" on:click=move |_| set_show_filter_share.set(false)>
+                            <button
+                                class="text-gray-400 hover:text-gray-600"
+                                on:click=move |_| set_show_filter_share.set(false)
+                            >
                                 <i class="fa fa-times text-xl"></i>
                             </button>
                         </div>
@@ -371,7 +381,9 @@ pub fn HomePage() -> impl IntoView {
                             // 标题与介绍（限制 60 字）
                             <div class="grid grid-cols-1 gap-4">
                                 <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">"标题（最多60字）"</label>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        "标题（最多60字）"
+                                    </label>
                                     <input
                                         type="text"
                                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -379,14 +391,22 @@ pub fn HomePage() -> impl IntoView {
                                         prop:value=move || filter_share_title.get()
                                         on:input=move |ev| {
                                             let mut v = event_target_value(&ev);
-                                            if v.chars().count() > 60 { v = v.chars().take(60).collect(); }
+                                            if v.chars().count() > 60 {
+                                                v = v.chars().take(60).collect();
+                                            }
                                             set_filter_share_title.set(v);
                                         }
                                     />
-                                    <div class="text-xs text-gray-400 text-right mt-1">{move || format!("{}/60", filter_share_title.get().chars().count())}</div>
+                                    <div class="text-xs text-gray-400 text-right mt-1">
+                                        {move || {
+                                            format!("{}/60", filter_share_title.get().chars().count())
+                                        }}
+                                    </div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">"介绍（最多60字）"</label>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        "介绍（最多60字）"
+                                    </label>
                                     <input
                                         type="text"
                                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -394,22 +414,42 @@ pub fn HomePage() -> impl IntoView {
                                         prop:value=move || filter_share_intro.get()
                                         on:input=move |ev| {
                                             let mut v = event_target_value(&ev);
-                                            if v.chars().count() > 60 { v = v.chars().take(60).collect(); }
+                                            if v.chars().count() > 60 {
+                                                v = v.chars().take(60).collect();
+                                            }
                                             set_filter_share_intro.set(v);
                                         }
                                     />
-                                    <div class="text-xs text-gray-400 text-right mt-1">{move || format!("{}/60", filter_share_intro.get().chars().count())}</div>
+                                    <div class="text-xs text-gray-400 text-right mt-1">
+                                        {move || {
+                                            format!("{}/60", filter_share_intro.get().chars().count())
+                                        }}
+                                    </div>
                                 </div>
                             </div>
 
                             // 参数预览
                             <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                <h4 class="text-sm font-semibold text-gray-700 mb-3">"具体参数"</h4>
+                                <h4 class="text-sm font-semibold text-gray-700 mb-3">
+                                    "具体参数"
+                                </h4>
                                 <div class="grid grid-cols-2 gap-3 text-sm text-gray-600">
-                                    <div><span class="text-gray-400">"声线："</span>{move || voice_signal.get()}</div>
-                                    <div><span class="text-gray-400">"音高："</span>{move || format!("{:.2}", param_signal.get().pitch)}</div>
-                                    <div><span class="text-gray-400">"语速："</span>{move || format!("{:.2}", param_signal.get().speed)}</div>
-                                    <div><span class="text-gray-400">"情绪："</span>{move || param_signal.get().emotion.to_string()}</div>
+                                    <div>
+                                        <span class="text-gray-400">"声线："</span>
+                                        {move || voice_signal.get()}
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-400">"音高："</span>
+                                        {move || format!("{:.2}", param_signal.get().pitch)}
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-400">"语速："</span>
+                                        {move || format!("{:.2}", param_signal.get().speed)}
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-400">"情绪："</span>
+                                        {move || param_signal.get().emotion.to_string()}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -418,21 +458,20 @@ pub fn HomePage() -> impl IntoView {
                             <button
                                 class="px-6 py-2 bg-secondary hover:bg-secondary/90 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                 on:click=move |_| {
-                                    // 将当前声线与参数保存到数据库
                                     let title = filter_share_title.get();
                                     let intro = filter_share_intro.get();
                                     let p = param_signal.get();
                                     let v = voice_signal.get();
                                     spawn_local(async move {
                                         match share_voice_filter_to_db(
-                                            title,
-                                            intro,
-                                            v,
-                                            p.pitch,
-                                            p.speed,
-                                            p.emotion.to_string(),
-                                        )
-                                        .await
+                                                title,
+                                                intro,
+                                                v,
+                                                p.pitch,
+                                                p.speed,
+                                                p.emotion.to_string(),
+                                            )
+                                            .await
                                         {
                                             Ok(_id) => {
                                                 leptos::logging::debug_log!("滤镜分享已入库");
@@ -444,7 +483,10 @@ pub fn HomePage() -> impl IntoView {
                                     });
                                     set_show_filter_share.set(false);
                                 }
-                                disabled=move || filter_share_title.get().trim().is_empty() || filter_share_intro.get().trim().is_empty()
+                                disabled=move || {
+                                    filter_share_title.get().trim().is_empty()
+                                        || filter_share_intro.get().trim().is_empty()
+                                }
                             >
                                 <i class="fa fa-share mr-2"></i>
                                 "分享"
@@ -637,26 +679,29 @@ pub fn TextInputCard(
             </h3>
 
             // 输入区域容器 (相对定位用于放置右下角按钮)
-            <div class="relative w-full transition-all duration-300 bg-white rounded-lg shadow-sm"
-                 // 全屏时占满剩余空间，但可以留一点边距
-                 class:flex-grow=move || is_fullscreen.get()
-                 class:h-auto=move || is_fullscreen.get()
-                 // 全屏时给容器加一个最大宽度，防止在大屏上太宽难以阅读
-                 class:mx-auto=move || is_fullscreen.get()
+            <div
+                class="relative w-full transition-all duration-300 bg-white rounded-lg shadow-sm"
+                // 全屏时占满剩余空间，但可以留一点边距
+                class:flex-grow=move || is_fullscreen.get()
+                class:h-auto=move || is_fullscreen.get()
+                // 全屏时给容器加一个最大宽度，防止在大屏上太宽难以阅读
+                class:mx-auto=move || is_fullscreen.get()
             >
                 <textarea
                     id="text-input"
                     class="w-full p-4 border border-gray-200 rounded-lg \
-                           focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
-                           transition-all duration-300 resize-none font-sans text-gray-700 placeholder-gray-400"
+                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
+                     transition-all duration-300 resize-none font-sans text-gray-700 placeholder-gray-400"
                     // 动态高度
                     class:h-32=move || !is_fullscreen.get()
-                    class:h-full=move || is_fullscreen.get() // 全屏时占满父容器高度
+                    // 全屏时占满父容器高度
+                    class:h-full=move || is_fullscreen.get()
 
                     // 全屏时字体和行高优化
                     class:text-lg=move || is_fullscreen.get()
                     class:leading-loose=move || is_fullscreen.get()
-                    class:p-5=move || is_fullscreen.get() // 全屏时增加内边距
+                    // 全屏时增加内边距
+                    class:p-5=move || is_fullscreen.get()
 
                     placeholder="请输入你想转换的文字...\n例如：你好，欢迎使用白昼聆夏"
 
@@ -671,9 +716,10 @@ pub fn TextInputCard(
                     on:click=move |_| is_fullscreen.update(|v| *v = !*v)
                     title=move || if is_fullscreen.get() { "退出全屏" } else { "全屏编辑" }
                 >
-                    <i class="fa transition-transform duration-300 group-hover:scale-110 text-sm"
-                       class:fa-expand=move || !is_fullscreen.get()
-                       class:fa-compress=move || is_fullscreen.get()
+                    <i
+                        class="fa transition-transform duration-300 group-hover:scale-110 text-sm"
+                        class:fa-expand=move || !is_fullscreen.get()
+                        class:fa-compress=move || is_fullscreen.get()
                     ></i>
                 </button>
             </div>
@@ -781,7 +827,9 @@ pub fn VoiceSelectorCard(
                                                         // 从 metadata JSON 中提取 description
                                                         <div class="text-sm text-gray-500">
                                                             {move || {
-                                                                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&voice.metadata) {
+                                                                if let Ok(meta) = serde_json::from_str::<
+                                                                    serde_json::Value,
+                                                                >(&voice.metadata) {
                                                                     meta.get("description")
                                                                         .and_then(|v| v.as_str())
                                                                         .unwrap_or("暂无描述")
@@ -1172,24 +1220,27 @@ pub fn AudioResultCard(
                             .into_any()
                     }
                     (false, Some(Ok(audio_bytes))) => {
-                        // 将二进制音频数据转换为 Blob URL
                         #[cfg(target_arch = "wasm32")]
                         let audio_url = {
                             use wasm_bindgen::JsCast;
-                            let blob = web_sys::Blob::new_with_u8_array_sequence(&wasm_bindgen::JsValue::from(&web_sys::js_sys::Array::of1(
+                            let blob = web_sys::Blob::new_with_u8_array_sequence(
                                 &wasm_bindgen::JsValue::from(
-                                    js_sys::Uint8Array::from(audio_bytes.as_slice())
-                                )
-                            )));
+                                    &web_sys::js_sys::Array::of1(
+                                        &wasm_bindgen::JsValue::from(
+                                            js_sys::Uint8Array::from(audio_bytes.as_slice()),
+                                        ),
+                                    ),
+                                ),
+                            );
                             if let Ok(blob) = blob {
                                 web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default()
                             } else {
                                 String::new()
                             }
                         };
-
                         #[cfg(not(target_arch = "wasm32"))]
                         let audio_url = String::new();
+                        // 将二进制音频数据转换为 Blob URL
 
                         view! {
                             // 使用 Flex 布局垂直排列 Canvas 和 Controls
@@ -1216,16 +1267,24 @@ pub fn AudioResultCard(
                                                 {
                                                     let bytes = audio_bytes.clone();
                                                     use wasm_bindgen::JsCast;
-                                                    if let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(&wasm_bindgen::JsValue::from(&web_sys::js_sys::Array::of1(
+                                                    if let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(
                                                         &wasm_bindgen::JsValue::from(
-                                                            js_sys::Uint8Array::from(bytes.as_slice())
-                                                        )
-                                                    ))) {
-                                                        if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
+                                                            &web_sys::js_sys::Array::of1(
+                                                                &wasm_bindgen::JsValue::from(
+                                                                    js_sys::Uint8Array::from(bytes.as_slice()),
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ) {
+                                                        if let Ok(url) = web_sys::Url::create_object_url_with_blob(
+                                                            &blob,
+                                                        ) {
                                                             let a = web_sys::window()
                                                                 .and_then(|w| w.document())
                                                                 .and_then(|d| d.create_element("a").ok())
-                                                                .and_then(|a| a.dyn_into::<web_sys::HtmlAnchorElement>().ok());
+                                                                .and_then(|a| {
+                                                                    a.dyn_into::<web_sys::HtmlAnchorElement>().ok()
+                                                                });
                                                             if let Some(a) = a {
                                                                 a.set_href(&url);
                                                                 a.set_download("tts_audio.mp3");
@@ -1236,7 +1295,8 @@ pub fn AudioResultCard(
                                                 }
                                             }
                                         >
-                                            <i class="fa fa-download mr-1"></i> "下载"
+                                            <i class="fa fa-download mr-1"></i>
+                                            "下载"
                                         </button>
                                     </div>
                                     <audio
@@ -1270,7 +1330,9 @@ pub fn AudioResultCard(
                             <div class="w-full h-full min-h-[300px] flex flex-col items-center justify-center text-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200 p-8">
                                 <i class="fa fa-headphones text-6xl mb-4 opacity-30"></i>
                                 <p class="text-base font-medium">"等待生成"</p>
-                                <p class="text-sm mt-2 opacity-70">"在上方输入文本并点击生成按钮"</p>
+                                <p class="text-sm mt-2 opacity-70">
+                                    "在上方输入文本并点击生成按钮"
+                                </p>
                             </div>
                         }
                             .into_any()
