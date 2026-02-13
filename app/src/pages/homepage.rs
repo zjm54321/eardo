@@ -835,7 +835,7 @@ pub fn TextInputCard(
                     on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
                 >
                     <div class="flex justify-between items-center p-6 border-b border-gray-200">
-                        <h2 class="text-xl font-bold text-gray-800">"表达助手（可选）"</h2>
+                        <h2 class="text-xl font-bold text-gray-800">"表达助手"</h2>
                         <button
                             class="text-gray-400 hover:text-gray-600"
                             on:click=move |_| show_ai_modal.set(false)
