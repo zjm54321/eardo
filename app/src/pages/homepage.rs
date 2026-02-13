@@ -1,5 +1,5 @@
 use crate::api;
-use crate::api::{Emotion, VoiceParams};
+use crate::api::VoiceParams;
 use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -102,24 +102,11 @@ pub fn HomePage() -> impl IntoView {
     let initial_pitch = get_f32_param("pitch", 1.0);
     let initial_speed = get_f32_param("speed", 1.0);
     let initial_volume = get_f32_param("volume", 1.0);
-    let emotion_str = get_str_param("emotion", "normal");
-
-    let initial_emotion = match emotion_str.as_str() {
-        "生气" => Emotion::Angry,
-        "冷静" => Emotion::Calm,
-        "激动" => Emotion::Excited,
-        "开心" => Emotion::Happy,
-        "平静" => Emotion::Peaceful,
-        "悲伤" => Emotion::Sad,
-        "惊讶" => Emotion::Suprised,
-        _ => Emotion::Normal,
-    };
 
     let param_signal = RwSignal::new(VoiceParams {
         pitch: initial_pitch,
         speed: initial_speed,
         volume: initial_volume,
-        emotion: initial_emotion.clone(),
     });
 
     // 保存生成成功的数据用于分享
@@ -145,7 +132,6 @@ pub fn HomePage() -> impl IntoView {
         let pitch = param_signal.get().pitch;
         let speed = param_signal.get().speed;
         let volume = param_signal.get().volume;
-        let emotion = param_signal.get().emotion.clone();
 
         async move {
             // 创建 VoiceMetaInfo 对象
@@ -157,7 +143,6 @@ pub fn HomePage() -> impl IntoView {
                     pitch,
                     speed,
                     volume,
-                    emotion: emotion.clone(),
                 }),
                 author: String::new(),
                 description: String::new(),
@@ -170,12 +155,11 @@ pub fn HomePage() -> impl IntoView {
             };
 
             debug_log!(
-                "生成音频: voice_id={}, text={}, pitch={}, speed={}, emotion={}",
+                "生成音频: voice_id={}, text={}, pitch={}, speed={}",
                 voice_id,
                 text,
                 pitch,
-                speed,
-                emotion
+                speed
             );
 
             let result = api::generate_audio(voice_meta.clone(), text.clone()).await;
@@ -282,7 +266,6 @@ pub fn HomePage() -> impl IntoView {
                                 pitch: initial_pitch,
                                 speed: initial_speed,
                                 volume: initial_volume,
-                                emotion: initial_emotion,
                             }
                             open_filter_share=set_show_filter_share
                         />
@@ -519,10 +502,6 @@ pub fn HomePage() -> impl IntoView {
                                         <span class="text-gray-400">"语速："</span>
                                         {move || format!("{:.2}", param_signal.get().speed)}
                                     </div>
-                                    <div>
-                                        <span class="text-gray-400">"情绪："</span>
-                                        {move || param_signal.get().emotion.to_string()}
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -542,7 +521,6 @@ pub fn HomePage() -> impl IntoView {
                                                 v,
                                                 p.pitch,
                                                 p.speed,
-                                                p.emotion.to_string(),
                                             )
                                             .await
                                         {
@@ -629,7 +607,6 @@ pub async fn share_voice_filter_to_db(
     base_model_id: String,
     pitch: f32,
     speed: f32,
-    emotion: String,
 ) -> Result<String, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
@@ -675,9 +652,9 @@ pub async fn share_voice_filter_to_db(
         sqlx::query(
             r#"INSERT INTO voice_meta_infos
                (id, user_id, name, description, base_model_id,
-                pitch, speed, volume, emotion, usage_count,
+              pitch, speed, volume, usage_count,
                 is_public, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'normal', CURRENT_TIMESTAMP)"#,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'normal', CURRENT_TIMESTAMP)"#,
         )
         .bind(&id)
         .bind(&user_id)
@@ -687,7 +664,6 @@ pub async fn share_voice_filter_to_db(
         .bind(pitch as f64)
         .bind(speed as f64)
         .bind(1.0_f64) // 默认音量
-        .bind(&emotion)
         .execute(&pool)
         .await
         .context("创建声音滤镜失败")
@@ -1231,8 +1207,7 @@ pub fn ParameterControlCard(
         let p = selected_param.get();
         let dv = v != initial_voice_id;
         let dp = (p.pitch - initial_param.pitch).abs() > 1e-4
-            || (p.speed - initial_param.speed).abs() > 1e-4
-            || p.emotion != initial_param.emotion;
+            || (p.speed - initial_param.speed).abs() > 1e-4;
         dv || dp
     });
 
@@ -1310,72 +1285,6 @@ pub fn ParameterControlCard(
                     </div>
                 </div>
 
-                // --- 3. 情绪 (Emotion) ---
-                <div class="pt-4">
-                    <div class="flex justify-between mb-3">
-                        <label class="font-medium text-gray-700">"情感 (Emotion)"</label>
-
-                    </div>
-
-                    // 滚动容器
-                    <div class="relative group/scroll">
-                        // 左右渐变遮罩 (提示可滚动)
-                        <div class="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
-                        <div class="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
-
-                        <div class="flex overflow-x-auto pb-4 pt-1 px-1 gap-3 scrollbar-hide snap-x">
-                            {Emotion::all()
-                                .into_iter()
-                                .map(|emo| {
-                                    let emo_store = StoredValue::new(emo);
-
-                                    view! {
-                                        <button
-                                            class="flex-shrink-0 px-4 py-2 rounded-full border transition-all duration-200 snap-start text-sm font-medium"
-                                            // 直接在每个属性中使用独立的闭包
-                                            class:bg-primary=move || {
-                                                selected_param.get().emotion == emo_store.get_value()
-                                            }
-                                            class:text-white=move || {
-                                                selected_param.get().emotion == emo_store.get_value()
-                                            }
-                                            class:border-primary=move || {
-                                                selected_param.get().emotion == emo_store.get_value()
-                                            }
-                                            class:shadow-md=move || {
-                                                selected_param.get().emotion == emo_store.get_value()
-                                            }
-
-                                            class:bg-white=move || {
-                                                selected_param.get().emotion != emo_store.get_value()
-                                            }
-                                            class:text-gray-600=move || {
-                                                selected_param.get().emotion != emo_store.get_value()
-                                            }
-                                            class:border-gray-200=move || {
-                                                selected_param.get().emotion != emo_store.get_value()
-                                            }
-                                            class:hover:border-primary=move || {
-                                                selected_param.get().emotion != emo_store.get_value()
-                                            }
-                                            class:hover:text-primary=move || {
-                                                selected_param.get().emotion != emo_store.get_value()
-                                            }
-
-                                            on:click=move |_| {
-                                                selected_param
-                                                    .update(|p| p.emotion = emo_store.get_value());
-                                            }
-                                        >
-                                            // 这里可以根据情绪添加不同的 emoji，暂时只显示文字
-                                            {emo_store.get_value().to_string()}
-                                        </button>
-                                    }
-                                })
-                                .collect::<Vec<_>>()}
-                        </div>
-                    </div>
-                </div>
             </div>
         </section>
     }

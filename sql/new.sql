@@ -120,7 +120,6 @@ CREATE TABLE IF NOT EXISTS voice_meta_infos (
     pitch REAL DEFAULT 0.0,
     speed REAL DEFAULT 1.0,
     volume REAL DEFAULT 1.0,
-    emotion TEXT DEFAULT 'normal',
     
     usage_count INTEGER DEFAULT 0,
     is_public BOOLEAN DEFAULT 1,

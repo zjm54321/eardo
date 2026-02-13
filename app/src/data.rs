@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssr")]
 use sqlx::prelude::FromRow;
 
-use crate::api::{Emotion, VoiceParams};
+use crate::api::VoiceParams;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VoiceData {
@@ -54,7 +54,6 @@ pub struct VoiceFilterDb {
     pub voice_id: String,
     pub pitch: f32,
     pub speed: f32,
-    pub emotion: String,
     pub tags: String,
     pub usage_count: i32,
     pub author: String,
@@ -74,7 +73,6 @@ impl VoiceFilterDb {
                     pitch: self.pitch,
                     speed: self.speed,
                     volume: 1.0,
-                    emotion: Emotion::from(self.emotion.clone()),
                 },
             },
             tags: self

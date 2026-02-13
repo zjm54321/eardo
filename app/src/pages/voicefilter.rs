@@ -12,7 +12,6 @@ struct DisplayFilter {
     pitch: f64,
     speed: f64,
     volume: f64,
-    emotion: String,
     usage_count: i32,
     tags: Vec<String>,
     author: String,
@@ -21,14 +20,13 @@ struct DisplayFilter {
 
 impl DisplayFilter {
     fn from_voice_meta(meta: VoiceMetaInfo) -> Self {
-        let (pitch, speed, volume, emotion) = match &meta.metadata {
+        let (pitch, speed, volume) = match &meta.metadata {
             VoiceMetadata::Parametric(params) => (
                 params.pitch as f64,
                 params.speed as f64,
                 params.volume as f64,
-                params.emotion.to_string(),
             ),
-            VoiceMetadata::Instruction(_) => (0.0, 1.0, 1.0, "normal".to_string()),
+            VoiceMetadata::Instruction(_) => (0.0, 1.0, 1.0),
         };
 
         DisplayFilter {
@@ -39,7 +37,6 @@ impl DisplayFilter {
             pitch,
             speed,
             volume,
-            emotion,
             usage_count: meta.usage_count,
             tags: meta.tags,
             author: meta.author,
@@ -62,8 +59,8 @@ pub fn VoiceFilterPage() -> impl IntoView {
     // 处理“使用滤镜”点击
     let apply_filter = move |filter: DisplayFilter| {
         let url = format!(
-            "/home?voice_id={}&pitch={}&speed={}&emotion={}",
-            filter.base_model_id, filter.pitch, filter.speed, filter.emotion
+            "/home?voice_id={}&pitch={}&speed={}",
+            filter.base_model_id, filter.pitch, filter.speed
         );
         navigate(&url, Default::default());
     };

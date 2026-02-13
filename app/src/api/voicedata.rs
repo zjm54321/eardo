@@ -2,7 +2,6 @@
 use sqlx::Sqlite;
 
 use crate::api::*;
-use crate::api::{Emotion, VoiceParams};
 
 #[cfg(feature = "ssr")]
 #[async_trait::async_trait]
@@ -110,7 +109,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             f64,            // pitch
             f64,            // speed
             f64,            // volume
-            String,         // emotion
             i64,            // usage_count
             i64,            // is_public
             String,         // status
@@ -119,7 +117,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,         // created_at
         )> = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
-                      vm.pitch, vm.speed, vm.volume, vm.emotion,
+                      vm.pitch, vm.speed, vm.volume,
                       vm.usage_count, vm.is_public, vm.status,
                       u.nickname, ua.username, vm.created_at
                  FROM voice_meta_infos vm
@@ -142,7 +140,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
                     pitch,
                     speed,
                     volume,
-                    emotion,
                     usage,
                     is_public,
                     status,
@@ -155,7 +152,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
                         pitch: pitch as f32,
                         speed: speed as f32,
                         volume: volume as f32,
-                        emotion: Emotion::from(emotion),
                     });
                     VoiceMetaInfo {
                         id,
@@ -186,7 +182,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             f64,
             f64,
             f64,
-            String,
             i64,
             i64,
             String,
@@ -195,7 +190,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,
         ) = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
-                      vm.pitch, vm.speed, vm.volume, vm.emotion,
+                      vm.pitch, vm.speed, vm.volume,
                       vm.usage_count, vm.is_public, vm.status,
                       u.nickname, ua.username, vm.created_at
                  FROM voice_meta_infos vm
@@ -215,7 +210,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             pitch,
             speed,
             volume,
-            emotion,
             usage,
             is_public,
             status,
@@ -228,7 +222,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             pitch: pitch as f32,
             speed: speed as f32,
             volume: volume as f32,
-            emotion: Emotion::from(emotion),
         });
 
         Ok(VoiceMetaInfo {
@@ -252,23 +245,13 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         let base_model_id = metadata.base_model_id.as_str();
         let is_public = metadata.is_public;
 
-        let (pitch, speed, volume, emotion) = match &metadata.metadata {
+        let (pitch, speed, volume) = match &metadata.metadata {
             VoiceMetadata::Parametric(params) => (
                 params.pitch as f64,
                 params.speed as f64,
                 params.volume as f64,
-                match params.emotion {
-                    Emotion::Normal => "normal".to_string(),
-                    Emotion::Angry => "angry".to_string(),
-                    Emotion::Calm => "calm".to_string(),
-                    Emotion::Excited => "excited".to_string(),
-                    Emotion::Happy => "happy".to_string(),
-                    Emotion::Peaceful => "peaceful".to_string(),
-                    Emotion::Sad => "sad".to_string(),
-                    Emotion::Suprised => "suprised".to_string(),
-                },
             ),
-            VoiceMetadata::Instruction(_) => (0.0, 1.0, 1.0, "normal".to_string()),
+            VoiceMetadata::Instruction(_) => (0.0, 1.0, 1.0),
         };
 
         // 约束范围：pitch/speed/volume between 0.5~2.5
@@ -280,7 +263,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         sqlx::query(
             r#"UPDATE voice_meta_infos
                SET name = ?, description = ?, base_model_id = ?,
-                   pitch = ?, speed = ?, volume = ?, emotion = ?, is_public = ?
+                   pitch = ?, speed = ?, volume = ?, is_public = ?
                WHERE id = ?"#,
         )
         .bind(&metadata.name)
@@ -289,7 +272,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         .bind(pitch)
         .bind(speed)
         .bind(volume)
-        .bind(emotion)
         .bind(if is_public { 1 } else { 0 })
         .bind(&metadata.id)
         .execute(&self.pool)
