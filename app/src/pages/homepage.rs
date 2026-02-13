@@ -22,6 +22,53 @@ pub struct CreatePostPayload {
     audio_data: Vec<u8>,
 }
 
+#[server]
+pub async fn ai_rewrite_text(input: String) -> Result<String, ServerFnError> {
+    let api_url = std::env::var("OPENAI_API_BASE")
+        .unwrap_or_else(|_| "https://api.placeholder.com/v1/chat/completions".to_string());
+    let api_token = std::env::var("OPENAI_API_KEY")
+        .unwrap_or_else(|_| "YOUR_API_TOKEN".to_string());
+
+    let payload = serde_json::json!({
+        "model": "DeepSeek-V3.1",
+        "messages": [{ "role": "user", "content": input }]
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(api_url)
+        .bearer_auth(api_token)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| ServerFnError::new(format!("AI 请求失败: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(ServerFnError::new(format!(
+            "AI 返回错误: {} - {}",
+            status, body
+        )));
+    }
+
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| ServerFnError::new(format!("AI 响应解析失败: {}", e)))?;
+
+    let content = value
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    Ok(content)
+}
+
 #[component]
 pub fn HomePage() -> impl IntoView {
     // 状态
@@ -191,17 +238,18 @@ pub fn HomePage() -> impl IntoView {
                     </p>
                 </section>
 
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
 
-                    // --- 左侧栏 (输入 + 声线) ---
-                    <div class="lg:col-span-1 space-y-8">
-                        <TextInputCard text=text_signal />
+                    // --- 左侧栏 (声线) ---
+                    <div class="lg:col-span-1 space-y-8 h-full">
                         <VoiceSelectorCard selected_voice=voice_signal />
                     </div>
 
-                    // --- 右侧栏 (参数 + 结果) ---
+                    // --- 右侧栏 (输入 + 参数 + 结果) ---
                     <div class="lg:col-span-2 space-y-8">
-                        // 1. 参数调节 + 分享按钮
+                        // 1. 文字输入
+                        <TextInputCard text=text_signal />
+                        // 2. 参数调节 + 分享按钮
                         <ParameterControlCard
                             selected_param=param_signal
                             selected_voice=voice_signal
@@ -213,7 +261,7 @@ pub fn HomePage() -> impl IntoView {
                             }
                             open_filter_share=set_show_filter_share
                         />
-                        // 2. 输出结果 (核心功能)
+                        // 3. 输出结果 (核心功能)
                         <AudioResultCard generate_action=generate_action />
                     </div>
                 </div>
@@ -640,6 +688,49 @@ pub fn TextInputCard(
 ) -> impl IntoView {
     // 内部状态：控制是否全屏
     let is_fullscreen = RwSignal::new(false);
+    let show_ai_modal = RwSignal::new(false);
+    let scene = RwSignal::new("汇报".to_string());
+    let audience = RwSignal::new("老师".to_string());
+    let duration = RwSignal::new("3".to_string());
+    let output_text = RwSignal::new(String::new());
+    let original_text = RwSignal::new(String::new());
+    let active_tab = RwSignal::new("assistant".to_string());
+    let status_text = RwSignal::new(String::new());
+
+    let ai_action = Action::new(move |action: &String| {
+        let action = action.clone();
+        let input = text.get();
+        let scene = scene.get();
+        let audience = audience.get();
+        let duration = duration.get();
+        async move {
+            let prompt = format!(
+                "你是表达助手。请严格遵守：\n\
+                1) 不生成违法、暴力、仇恨、色情、诈骗、隐私泄露等有害内容；\n\
+                2) 若用户意图不当，给出拒绝并建议合法替代方案；\n\
+                3) 输出应清晰、可编辑、面向口播；\n\
+                4) 只输出结果内容，不要附加解释。\n\n\
+                任务：{action}\n\
+                场景：{scene}\n\
+                受众：{audience}\n\
+                时长：{duration}分钟\n\n\
+                原始文本：\n{input}",
+            );
+
+            ai_rewrite_text(prompt).await
+        }
+    });
+
+    Effect::new(move |_| {
+        if let Some(Ok(result)) = ai_action.value().get() {
+            output_text.set(result);
+            active_tab.set("assistant".to_string());
+            status_text.set("生成成功".to_string());
+        } else if let Some(Err(err)) = ai_action.value().get() {
+            status_text.set(format!("生成失败：{}", err));
+            debug_error!("AI 处理失败: {}", err);
+        }
+    });
 
     view! {
         // 卡片容器
@@ -690,8 +781,8 @@ pub fn TextInputCard(
                 <textarea
                     id="text-input"
                     class="w-full p-4 border border-gray-200 rounded-lg \
-                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
-                     transition-all duration-300 resize-none font-sans text-gray-700 placeholder-gray-400"
+                    focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary \
+                    transition-all duration-300 resize-none font-sans text-gray-700 placeholder-gray-400"
                     // 动态高度
                     class:h-32=move || !is_fullscreen.get()
                     // 全屏时占满父容器高度
@@ -709,18 +800,19 @@ pub fn TextInputCard(
                     on:input=move |ev| text.set(event_target_value(&ev))
                 ></textarea>
 
-                // 全屏切换按钮 (悬浮在 Textarea 右下角内部)
-                // 修改：调小尺寸，调整位置，增加透明度避免太抢眼
+                // AI 按钮 (悬浮在 Textarea 右下角内部)
                 <button
-                    class="absolute bottom-3 right-3 p-2 bg-white/80 hover:bg-white backdrop-blur-sm rounded-md text-gray-400 hover:text-primary hover:border-primary transition-all shadow-sm group z-10"
-                    on:click=move |_| is_fullscreen.update(|v| *v = !*v)
-                    title=move || if is_fullscreen.get() { "退出全屏" } else { "全屏编辑" }
+                    class="absolute bottom-3 right-3 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-all shadow-sm group z-10 text-sm font-semibold"
+                    on:click=move |_| {
+                        original_text.set(text.get());
+                        output_text.set(String::new());
+                        status_text.set(String::new());
+                        active_tab.set("assistant".to_string());
+                        show_ai_modal.set(true);
+                    }
+                    title="表达助手"
                 >
-                    <i
-                        class="fa transition-transform duration-300 group-hover:scale-110 text-sm"
-                        class:fa-expand=move || !is_fullscreen.get()
-                        class:fa-compress=move || is_fullscreen.get()
-                    ></i>
+                    "AI"
                 </button>
             </div>
 
@@ -731,6 +823,236 @@ pub fn TextInputCard(
                 </p>
             </Show>
         </section>
+
+        // 表达助手弹窗（可选）
+        <Show when=move || show_ai_modal.get()>
+            <div
+                class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+                on:click=move |_| show_ai_modal.set(false)
+            >
+                <div
+                    class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+                    on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                >
+                    <div class="flex justify-between items-center p-6 border-b border-gray-200">
+                        <h2 class="text-xl font-bold text-gray-800">"表达助手（可选）"</h2>
+                        <button
+                            class="text-gray-400 hover:text-gray-600"
+                            on:click=move |_| show_ai_modal.set(false)
+                        >
+                            <i class="fa fa-times text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-6 space-y-5">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    "场景"
+                                </label>
+                                <select
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    on:change=move |ev| scene.set(event_target_value(&ev))
+                                >
+                                    <option selected=move || {
+                                        scene.get() == "汇报"
+                                    }>"汇报"</option>
+                                    <option selected=move || {
+                                        scene.get() == "科普"
+                                    }>"科普"</option>
+                                    <option selected=move || {
+                                        scene.get() == "答辩"
+                                    }>"答辩"</option>
+                                    <option selected=move || {
+                                        scene.get() == "其他"
+                                    }>"其他"</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    "受众"
+                                </label>
+                                <select
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    on:change=move |ev| audience.set(event_target_value(&ev))
+                                >
+                                    <option selected=move || {
+                                        audience.get() == "老师"
+                                    }>"老师"</option>
+                                    <option selected=move || {
+                                        audience.get() == "同学"
+                                    }>"同学"</option>
+                                    <option selected=move || {
+                                        audience.get() == "公众"
+                                    }>"公众"</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    "时长"
+                                </label>
+                                <div class="inline-flex w-full rounded-lg border border-gray-300 overflow-hidden">
+                                    <button
+                                        class="flex-1 py-2 text-sm"
+                                        class:bg-primary=move || duration.get() == "1"
+                                        class:text-white=move || duration.get() == "1"
+                                        class:text-gray-700=move || duration.get() != "1"
+                                        on:click=move |_| duration.set("1".to_string())
+                                    >
+                                        "1分钟"
+                                    </button>
+                                    <button
+                                        class="flex-1 py-2 text-sm border-l border-gray-300"
+                                        class:bg-primary=move || duration.get() == "3"
+                                        class:text-white=move || duration.get() == "3"
+                                        class:text-gray-700=move || duration.get() != "3"
+                                        on:click=move |_| duration.set("3".to_string())
+                                    >
+                                        "3分钟"
+                                    </button>
+                                    <button
+                                        class="flex-1 py-2 text-sm border-l border-gray-300"
+                                        class:bg-primary=move || duration.get() == "5"
+                                        class:text-white=move || duration.get() == "5"
+                                        class:text-gray-700=move || duration.get() != "5"
+                                        on:click=move |_| duration.set("5".to_string())
+                                    >
+                                        "5分钟"
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-3">
+                            <button
+                                class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors text-sm font-medium"
+                                on:click=move |_| {
+                                    status_text.set("生成中...".to_string());
+                                    let _ = ai_action.dispatch("生成提纲".to_string());
+                                }
+                                disabled=move || ai_action.pending().get()
+                            >
+                                "生成提纲"
+                            </button>
+                            <button
+                                class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors text-sm font-medium"
+                                on:click=move |_| {
+                                    status_text.set("生成中...".to_string());
+                                    let _ = ai_action.dispatch("口播改写".to_string());
+                                }
+                                disabled=move || ai_action.pending().get()
+                            >
+                                "口播改写"
+                            </button>
+                            <button
+                                class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors text-sm font-medium"
+                                on:click=move |_| {
+                                    status_text.set("生成中...".to_string());
+                                    let _ = ai_action.dispatch("术语轻解释".to_string());
+                                }
+                                disabled=move || ai_action.pending().get()
+                            >
+                                "术语轻解释"
+                            </button>
+                        </div>
+
+                        <div class="border rounded-lg">
+                            <div class="flex border-b">
+                                <button
+                                    class="px-4 py-2 text-sm font-medium"
+                                    class:text-primary=move || active_tab.get() == "assistant"
+                                    class:bg-primary-50=move || active_tab.get() == "assistant"
+                                    on:click=move |_| active_tab.set("assistant".to_string())
+                                >
+                                    "助手文本"
+                                </button>
+                                <button
+                                    class="px-4 py-2 text-sm font-medium border-l"
+                                    class:text-primary=move || active_tab.get() == "original"
+                                    class:bg-primary-50=move || active_tab.get() == "original"
+                                    on:click=move |_| active_tab.set("original".to_string())
+                                >
+                                    "原始文本"
+                                </button>
+                            </div>
+                            <div class="p-3">
+                                <textarea
+                                    class="w-full min-h-[180px] resize-y border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    prop:value=move || {
+                                        if active_tab.get() == "assistant" {
+                                            output_text.get()
+                                        } else {
+                                            original_text.get()
+                                        }
+                                    }
+                                    on:input=move |ev| {
+                                        let v = event_target_value(&ev);
+                                        if active_tab.get() == "assistant" {
+                                            output_text.set(v);
+                                        } else {
+                                            original_text.set(v);
+                                        }
+                                    }
+                                ></textarea>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-3">
+                            <button
+                                class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-medium"
+                                on:click=move |_| {
+                                    text.set(output_text.get());
+                                    show_ai_modal.set(false);
+                                }
+                            >
+                                "一键填入"
+                            </button>
+                            <button
+                                class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-medium"
+                                on:click=move |_| {
+                                    text.set(output_text.get());
+                                }
+                            >
+                                "覆盖"
+                            </button>
+                            <button
+                                class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-medium"
+                                on:click=move |_| {
+                                    let mut v = text.get();
+                                    let add = output_text.get();
+                                    if !v.trim().is_empty() && !add.trim().is_empty() {
+                                        v.push_str("\n\n");
+                                    }
+                                    v.push_str(&add);
+                                    text.set(v);
+                                }
+                            >
+                                "追加"
+                            </button>
+                        </div>
+
+                        <div class="text-sm">
+                            <Show
+                                when=move || !status_text.get().is_empty()
+                                fallback=move || view! { <span class="text-gray-400">""</span> }
+                            >
+                                <span
+                                    class="text-gray-600"
+                                    class:text-primary=move || status_text.get() == "生成成功"
+                                    class:text-red-500=move || {
+                                        status_text.get().starts_with("生成失败")
+                                    }
+                                >
+                                    {move || status_text.get()}
+                                </span>
+                            </Show>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Show>
     }
 }
 
@@ -743,13 +1065,13 @@ pub fn VoiceSelectorCard(
     let voices_resource = Resource::new(|| (), |_| api::list_voice_models());
 
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
+        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
             <h3 class="text-lg font-semibold mb-4 flex items-center">
                 <i class="fa fa-user-circle text-primary mr-2"></i>
                 "声线选择"
             </h3>
 
-            <div id="voice-selector" class="grid grid-cols-1 gap-3">
+            <div id="voice-selector" class="flex-1 min-h-0">
                 <Suspense fallback=move || {
                     view! {
                         <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
@@ -787,7 +1109,7 @@ pub fn VoiceSelectorCard(
                             view! {
                                 // 添加 max-h-[300px] 和 overflow-y-auto 来实现滚动条
                                 // pr-2 是为了防止滚动条遮挡内容
-                                <div class="grid grid-cols-1 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                <div class="flex flex-col gap-3 max-h-[300px] lg:max-h-none overflow-y-auto pr-2 custom-scrollbar flex-1 min-h-0">
                                     <For
                                         each=move || voices.clone()
                                         key=|voice| voice.id.clone()
