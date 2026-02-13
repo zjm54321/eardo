@@ -1,5 +1,5 @@
 use crate::api;
-use crate::data::{Emotion, VoiceParams};
+use crate::api::{Emotion, VoiceParams};
 use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -101,6 +101,7 @@ pub fn HomePage() -> impl IntoView {
     // 初始化参数
     let initial_pitch = get_f32_param("pitch", 1.0);
     let initial_speed = get_f32_param("speed", 1.0);
+    let initial_volume = get_f32_param("volume", 1.0);
     let emotion_str = get_str_param("emotion", "normal");
 
     let initial_emotion = match emotion_str.as_str() {
@@ -117,6 +118,7 @@ pub fn HomePage() -> impl IntoView {
     let param_signal = RwSignal::new(VoiceParams {
         pitch: initial_pitch,
         speed: initial_speed,
+        volume: initial_volume,
         emotion: initial_emotion.clone(),
     });
 
@@ -142,20 +144,29 @@ pub fn HomePage() -> impl IntoView {
         let voice_id = voice_signal.get();
         let pitch = param_signal.get().pitch;
         let speed = param_signal.get().speed;
-        let emotion = param_signal.get().emotion.to_string();
+        let volume = param_signal.get().volume;
+        let emotion = param_signal.get().emotion.clone();
 
         async move {
             // 创建 VoiceMetaInfo 对象
             let voice_meta = api::VoiceMetaInfo {
                 id: voice_id.clone(),
                 name: voice_id.clone(),
-                metadata: serde_json::json!({
-                    "base_model_id": voice_id.clone(),
-                    "pitch": pitch,
-                    "speed": speed,
-                    "emotion": emotion,
-                })
-                .to_string(),
+                base_model_id: voice_id.clone(),
+                metadata: api::VoiceMetadata::Parametric(VoiceParams {
+                    pitch,
+                    speed,
+                    volume,
+                    emotion: emotion.clone(),
+                }),
+                author: String::new(),
+                description: String::new(),
+                tags: vec![],
+                usage_count: 0,
+                is_public: true,
+                is_official: false,
+                created_at: String::new(),
+                updated_at: String::new(),
             };
 
             debug_log!(
@@ -270,6 +281,7 @@ pub fn HomePage() -> impl IntoView {
                             initial_param=VoiceParams {
                                 pitch: initial_pitch,
                                 speed: initial_speed,
+                                volume: initial_volume,
                                 emotion: initial_emotion,
                             }
                             open_filter_share=set_show_filter_share

@@ -1,38 +1,6 @@
-use crate::api::{list_voice_metadata, VoiceMetaInfo};
+use crate::api::{list_voice_metadata, VoiceMetaInfo, VoiceMetadata};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
-use serde::{Deserialize, Serialize};
-
-// 定义 metadata JSON 的结构
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct VoiceFilterMetadata {
-    #[serde(default)]
-    description: String,
-    #[serde(default)]
-    base_model_id: String,
-    #[serde(default)]
-    pitch: f64,
-    #[serde(default = "default_speed")]
-    speed: f64,
-    #[serde(default)]
-    volume: f64,
-    #[serde(default)]
-    emotion: String,
-    #[serde(default)]
-    usage_count: i32,
-    #[serde(default)]
-    is_public: bool,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    author: String,
-    #[serde(default)]
-    is_official: bool,
-}
-
-fn default_speed() -> f64 {
-    1.0
-}
 
 // 用于显示的滤镜结构
 #[derive(Debug, Clone)]
@@ -53,34 +21,29 @@ struct DisplayFilter {
 
 impl DisplayFilter {
     fn from_voice_meta(meta: VoiceMetaInfo) -> Self {
-        let metadata: VoiceFilterMetadata =
-            serde_json::from_str(&meta.metadata).unwrap_or_else(|_| VoiceFilterMetadata {
-                description: String::new(),
-                base_model_id: String::new(),
-                pitch: 0.0,
-                speed: 1.0,
-                volume: 1.0,
-                emotion: "normal".to_string(),
-                usage_count: 0,
-                is_public: true,
-                tags: vec![],
-                author: "未知".to_string(),
-                is_official: false,
-            });
+        let (pitch, speed, volume, emotion) = match &meta.metadata {
+            VoiceMetadata::Parametric(params) => (
+                params.pitch as f64,
+                params.speed as f64,
+                params.volume as f64,
+                params.emotion.to_string(),
+            ),
+            VoiceMetadata::Instruction(_) => (0.0, 1.0, 1.0, "normal".to_string()),
+        };
 
         DisplayFilter {
             id: meta.id,
             name: meta.name,
-            description: metadata.description,
-            base_model_id: metadata.base_model_id,
-            pitch: metadata.pitch,
-            speed: metadata.speed,
-            volume: metadata.volume,
-            emotion: metadata.emotion,
-            usage_count: metadata.usage_count,
-            tags: metadata.tags,
-            author: metadata.author,
-            is_official: metadata.is_official,
+            description: meta.description,
+            base_model_id: meta.base_model_id,
+            pitch,
+            speed,
+            volume,
+            emotion,
+            usage_count: meta.usage_count,
+            tags: meta.tags,
+            author: meta.author,
+            is_official: meta.is_official,
         }
     }
 }

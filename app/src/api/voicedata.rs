@@ -2,6 +2,7 @@
 use sqlx::Sqlite;
 
 use crate::api::*;
+use crate::api::{Emotion, VoiceParams};
 
 #[cfg(feature = "ssr")]
 #[async_trait::async_trait]
@@ -115,11 +116,12 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,         // status
             Option<String>, // nickname
             Option<String>, // username
+            String,         // created_at
         )> = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
                       vm.pitch, vm.speed, vm.volume, vm.emotion,
                       vm.usage_count, vm.is_public, vm.status,
-                      u.nickname, ua.username
+                      u.nickname, ua.username, vm.created_at
                  FROM voice_meta_infos vm
                  JOIN users u ON vm.user_id = u.id
                  JOIN user_auth ua ON ua.user_id = u.id
@@ -146,25 +148,28 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
                     status,
                     nickname,
                     username,
+                    created_at,
                 )| {
                     let author = nickname.or(username).unwrap_or_else(|| "未知".to_string());
-                    let meta = serde_json::json!({
-                        "description": description.unwrap_or_default(),
-                        "base_model_id": base_model_id,
-                        "pitch": pitch,
-                        "speed": speed,
-                        "volume": volume,
-                        "emotion": emotion,
-                        "usage_count": usage as i32,
-                        "is_public": is_public == 1,
-                        "tags": [],
-                        "author": author,
-                        "is_official": status == "official"
+                    let metadata = VoiceMetadata::Parametric(VoiceParams {
+                        pitch: pitch as f32,
+                        speed: speed as f32,
+                        volume: volume as f32,
+                        emotion: Emotion::from(emotion),
                     });
                     VoiceMetaInfo {
                         id,
                         name,
-                        metadata: meta.to_string(),
+                        base_model_id,
+                        metadata,
+                        author,
+                        description: description.unwrap_or_default(),
+                        tags: vec![],
+                        usage_count: usage as i32,
+                        is_public: is_public == 1,
+                        is_official: status == "official",
+                        created_at: created_at.clone(),
+                        updated_at: created_at,
                     }
                 },
             )
@@ -187,11 +192,12 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,
             Option<String>,
             Option<String>,
+            String,
         ) = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
                       vm.pitch, vm.speed, vm.volume, vm.emotion,
                       vm.usage_count, vm.is_public, vm.status,
-                      u.nickname, ua.username
+                      u.nickname, ua.username, vm.created_at
                  FROM voice_meta_infos vm
                  JOIN users u ON vm.user_id = u.id
                  JOIN user_auth ua ON ua.user_id = u.id
@@ -215,51 +221,55 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             status,
             nickname,
             username,
+            created_at,
         ) = row;
         let author = nickname.or(username).unwrap_or_else(|| "未知".to_string());
-        let meta = serde_json::json!({
-            "description": description.unwrap_or_default(),
-            "base_model_id": base_model_id,
-            "pitch": pitch,
-            "speed": speed,
-            "volume": volume,
-            "emotion": emotion,
-            "usage_count": usage as i32,
-            "is_public": is_public == 1,
-            "tags": [],
-            "author": author,
-            "is_official": status == "official"
+        let metadata = VoiceMetadata::Parametric(VoiceParams {
+            pitch: pitch as f32,
+            speed: speed as f32,
+            volume: volume as f32,
+            emotion: Emotion::from(emotion),
         });
 
         Ok(VoiceMetaInfo {
             id,
             name,
-            metadata: meta.to_string(),
+            base_model_id,
+            metadata,
+            author,
+            description: description.unwrap_or_default(),
+            tags: vec![],
+            usage_count: usage as i32,
+            is_public: is_public == 1,
+            is_official: status == "official",
+            created_at: created_at.clone(),
+            updated_at: created_at,
         })
     }
 
     async fn update_voice_metadata(&self, metadata: &VoiceMetaInfo) -> anyhow::Result<()> {
-        // 从 metadata JSON 提取字段并更新
-        let meta: serde_json::Value = serde_json::from_str(&metadata.metadata).unwrap_or_default();
-        let description = meta
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let base_model_id = meta
-            .get("base_model_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let pitch = meta.get("pitch").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let speed = meta.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
-        let volume = meta.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
-        let emotion = meta
-            .get("emotion")
-            .and_then(|v| v.as_str())
-            .unwrap_or("normal");
-        let is_public = meta
-            .get("is_public")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+        let description = metadata.description.as_str();
+        let base_model_id = metadata.base_model_id.as_str();
+        let is_public = metadata.is_public;
+
+        let (pitch, speed, volume, emotion) = match &metadata.metadata {
+            VoiceMetadata::Parametric(params) => (
+                params.pitch as f64,
+                params.speed as f64,
+                params.volume as f64,
+                match params.emotion {
+                    Emotion::Normal => "normal".to_string(),
+                    Emotion::Angry => "angry".to_string(),
+                    Emotion::Calm => "calm".to_string(),
+                    Emotion::Excited => "excited".to_string(),
+                    Emotion::Happy => "happy".to_string(),
+                    Emotion::Peaceful => "peaceful".to_string(),
+                    Emotion::Sad => "sad".to_string(),
+                    Emotion::Suprised => "suprised".to_string(),
+                },
+            ),
+            VoiceMetadata::Instruction(_) => (0.0, 1.0, 1.0, "normal".to_string()),
+        };
 
         // 约束范围：pitch/speed/volume between 0.5~2.5
         let clamp = |v: f64| v.max(0.5).min(2.5);
@@ -300,16 +310,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         voice_info: &VoiceMetaInfo,
         text: &str,
     ) -> anyhow::Result<Vec<u8>> {
-        // 从 metadata 解析所需参数
-        let meta: serde_json::Value =
-            serde_json::from_str(&voice_info.metadata).unwrap_or_default();
-
-        leptos::logging::debug_log!("generate_voice metadata: {}", voice_info.metadata);
-
-        let base_model_id = meta
-            .get("base_model_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let base_model_id = voice_info.base_model_id.as_str();
 
         // 如果 base_model_id 为空，尝试使用默认语音
         let voice_id = if base_model_id.is_empty() {
@@ -319,8 +320,10 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             base_model_id
         };
 
-        let pitch = meta.get("pitch").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-        let speed = meta.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+        let (pitch, speed) = match &voice_info.metadata {
+            VoiceMetadata::Parametric(params) => (params.pitch, params.speed),
+            VoiceMetadata::Instruction(_) => (1.0, 1.0),
+        };
 
         leptos::logging::debug_log!(
             "Calling CosyVoice with voice_id={}, pitch={}, speed={}",

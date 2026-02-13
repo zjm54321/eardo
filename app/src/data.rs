@@ -3,89 +3,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssr")]
 use sqlx::prelude::FromRow;
-use std::fmt;
+
+use crate::api::{Emotion, VoiceParams};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VoiceData {
     pub voice_id: String,
     pub voice_params: VoiceParams,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct VoiceParams {
-    pub pitch: f32,
-    pub speed: f32,
-    pub emotion: Emotion,
-}
-
-impl Default for VoiceParams {
-    fn default() -> Self {
-        VoiceParams {
-            pitch: 0.0,
-            speed: 1.0,
-            emotion: Emotion::Normal,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "ssr", derive(sqlx::Type))]
-#[cfg_attr(feature = "ssr", sqlx(type_name = "TEXT", rename_all = "snake_case"))]
-pub enum Emotion {
-    Normal,
-    Angry,
-    Calm,
-    Excited,
-    Happy,
-    Peaceful,
-    Sad,
-    Suprised,
-}
-
-impl From<String> for Emotion {
-    fn from(s: String) -> Self {
-        match s.as_str() {
-            "angry" => Emotion::Angry,
-            "calm" => Emotion::Calm,
-            "excited" => Emotion::Excited,
-            "happy" => Emotion::Happy,
-            "peaceful" => Emotion::Peaceful,
-            "sad" => Emotion::Sad,
-            "suprised" => Emotion::Suprised,
-            _ => Emotion::Normal,
-        }
-    }
-}
-
-impl fmt::Display for Emotion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Emotion::Normal => "正常",
-            Emotion::Angry => "生气",
-            Emotion::Calm => "冷静",
-            Emotion::Excited => "激动",
-            Emotion::Happy => "开心",
-            Emotion::Peaceful => "平静",
-            Emotion::Sad => "悲伤",
-            Emotion::Suprised => "惊讶",
-        }
-        .fmt(f)
-    }
-}
-
-impl Emotion {
-    pub fn all() -> Vec<Emotion> {
-        vec![
-            Emotion::Normal,
-            Emotion::Angry,
-            Emotion::Calm,
-            Emotion::Excited,
-            Emotion::Happy,
-            Emotion::Peaceful,
-            Emotion::Sad,
-            Emotion::Suprised,
-        ]
-    }
 }
 
 // --- 应用层模型 ---
@@ -149,6 +73,7 @@ impl VoiceFilterDb {
                 voice_params: VoiceParams {
                     pitch: self.pitch,
                     speed: self.speed,
+                    volume: 1.0,
                     emotion: Emotion::from(self.emotion.clone()),
                 },
             },

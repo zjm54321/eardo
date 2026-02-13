@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 #[cfg(feature = "ssr")]
 pub struct ServiceProvider<DB>
@@ -87,11 +87,116 @@ pub trait VoiceModelService: Send + Sync {
 }
 pub type VoiceModelProvider = Arc<dyn VoiceModelService>;
 
+// --- 语音参数结构 ---
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VoiceParams {
+    pub pitch: f32,
+    pub speed: f32,
+    pub volume: f32,
+    pub emotion: Emotion,
+}
+
+impl Default for VoiceParams {
+    fn default() -> Self {
+        VoiceParams {
+            pitch: 0.0,
+            speed: 1.0,
+            volume: 1.0,
+            emotion: Emotion::Normal,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ssr", derive(sqlx::Type))]
+#[cfg_attr(feature = "ssr", sqlx(type_name = "TEXT", rename_all = "snake_case"))]
+pub enum Emotion {
+    Normal,
+    Angry,
+    Calm,
+    Excited,
+    Happy,
+    Peaceful,
+    Sad,
+    Suprised,
+}
+
+impl From<String> for Emotion {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "angry" => Emotion::Angry,
+            "calm" => Emotion::Calm,
+            "excited" => Emotion::Excited,
+            "happy" => Emotion::Happy,
+            "peaceful" => Emotion::Peaceful,
+            "sad" => Emotion::Sad,
+            "suprised" => Emotion::Suprised,
+            _ => Emotion::Normal,
+        }
+    }
+}
+
+impl fmt::Display for Emotion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Emotion::Normal => "正常",
+            Emotion::Angry => "生气",
+            Emotion::Calm => "冷静",
+            Emotion::Excited => "激动",
+            Emotion::Happy => "开心",
+            Emotion::Peaceful => "平静",
+            Emotion::Sad => "悲伤",
+            Emotion::Suprised => "惊讶",
+        }
+        .fmt(f)
+    }
+}
+
+impl Emotion {
+    pub fn all() -> Vec<Emotion> {
+        vec![
+            Emotion::Normal,
+            Emotion::Angry,
+            Emotion::Calm,
+            Emotion::Excited,
+            Emotion::Happy,
+            Emotion::Peaceful,
+            Emotion::Sad,
+            Emotion::Suprised,
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceMetaInfo {
     pub id: String,
     pub name: String,
-    pub metadata: String, // JSON 格式的元数据
+    pub base_model_id: String,
+    pub metadata: VoiceMetadata,  // 枚举类型：控制方式
+    pub author: String,           // 作者
+    pub description: String,      // 描述
+    pub tags: Vec<String>,        // 标签
+    pub usage_count: i32,         // 使用次数
+    pub is_public: bool,          // 是否公开
+    pub is_official: bool,        // 是否官方
+    pub created_at: String,       // 创建日期
+    pub updated_at: String,       // 更新日期
+}
+
+// VoiceMetadata 枚举：支持参数控制和指令控制两种方式
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum VoiceMetadata {
+    // 参数控制：使用 VoiceParams 的方式
+    Parametric(VoiceParams),
+    // 指令控制：使用自然语言指令的方式
+    Instruction(String),
+}
+
+impl Default for VoiceMetadata {
+    fn default() -> Self {
+        VoiceMetadata::Parametric(VoiceParams::default())
+    }
 }
 /// 语音元数据(声音滤镜)管理接口
 #[async_trait]
