@@ -112,7 +112,37 @@ pub type VoiceMetadataProvider = Arc<dyn VoiceMetadataService>;
 pub struct PostInfo {
     pub id: String,
     pub title: String,
-    pub metadata: String, // JSON 格式的帖子元数据
+    pub author: AuthorInfo,
+    pub content: PostContent,
+    pub meta: PostMeta,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthorInfo {
+    pub name: String,
+    pub avatar: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostContent {
+    pub description: Option<String>,
+    pub audio_url: Option<String>,
+    pub audio_data: Option<Vec<u8>>,  // 用于创建帖子时传递音频数据
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostMeta {
+    pub likes: i32,
+    pub comments: i32,
+    pub is_liked: bool,
+    pub time: String,
+    pub voice_info: VoiceInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceInfo {
+    pub voice_type: String,
+    pub voice_meta_id: Option<String>,  // 用于创建帖子时指定voice meta
 }
 /// 帖子管理接口
 #[async_trait]

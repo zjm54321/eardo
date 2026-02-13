@@ -1,5 +1,4 @@
 use crate::api;
-use base64::{Engine as _, engine::general_purpose};
 use leptos::logging::debug_log;
 use leptos::prelude::*;
 use uuid::Uuid;
@@ -88,21 +87,28 @@ pub fn ShareModal(
             // Create post info
             let post_id = Uuid::new_v4().to_string();
 
-            // Encode audio data to base64
-            let audio_b64 = general_purpose::STANDARD.encode(&audio_data_val);
-
-            // Build metadata JSON
-            let metadata = serde_json::json!({
-                "description": content_val,
-                "audio_data": audio_b64,
-                "voice_meta_id": voice_id_val,
-            })
-            .to_string();
-
             let post_info = api::PostInfo {
                 id: post_id,
                 title: title_val,
-                metadata,
+                author: api::AuthorInfo {
+                    name: String::new(),
+                    avatar: String::new(),
+                },
+                content: api::PostContent {
+                    description: Some(content_val),
+                    audio_url: None,
+                    audio_data: Some(audio_data_val),
+                },
+                meta: api::PostMeta {
+                    likes: 0,
+                    comments: 0,
+                    is_liked: false,
+                    time: String::new(),
+                    voice_info: api::VoiceInfo {
+                        voice_type: String::new(),
+                        voice_meta_id: Some(voice_id_val),
+                    },
+                },
             };
 
             api::create_post(post_info).await

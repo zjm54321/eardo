@@ -7,7 +7,6 @@ use crate::api::*;
 use {
     anyhow::{Context, anyhow},
     axum_extra::extract::cookie::Cookie,
-    base64::{Engine as _, engine::general_purpose},
     http::HeaderMap,
     leptos::prelude::use_context,
     uuid::Uuid,
@@ -123,26 +122,30 @@ impl PostService for ServiceProvider<Sqlite> {
 
             // 使用nickname如果存在，否则使用username
             let display_name = nickname.unwrap_or(username);
-            let avatar_url = user_id.as_ref().map(|id| format!("/api/avatar/{}", id));
-
-            // 构建metadata JSON
-            let metadata = serde_json::json!({
-                "author": display_name,
-                "avatar": avatar_url,
-                "time": created_at,
-                "description": content,
-                "likes": likes_count,
-                "comments": comments_count,
-                "voice_type": voice_name,
-                "audio_url": format!("/api/post/audio/{}", id),
-                "is_liked": is_liked
-            })
-            .to_string();
+            let avatar_url = user_id.as_ref().map(|id| format!("/api/avatar/{}", id)).unwrap_or_default();
 
             result.push(PostInfo {
-                id,
+                id: id.clone(),
                 title,
-                metadata,
+                author: AuthorInfo {
+                    name: display_name,
+                    avatar: avatar_url,
+                },
+                content: PostContent {
+                    description: Some(content),
+                    audio_url: Some(format!("/api/post/audio/{}", id)),
+                    audio_data: None,
+                },
+                meta: PostMeta {
+                    likes: likes_count as i32,
+                    comments: comments_count as i32,
+                    is_liked,
+                    time: created_at,
+                    voice_info: VoiceInfo {
+                        voice_type: voice_name,
+                        voice_meta_id: None,
+                    },
+                },
             });
         }
 
@@ -259,25 +262,30 @@ impl PostService for ServiceProvider<Sqlite> {
         };
 
         let display_name = nickname.unwrap_or(username);
-        let avatar_url = user_id.as_ref().map(|id| format!("/api/avatar/{}", id));
-
-        let metadata = serde_json::json!({
-            "author": display_name,
-            "avatar": avatar_url,
-            "time": created_at,
-            "description": content,
-            "likes": likes_count,
-            "comments": comments_count,
-            "voice_type": voice_name,
-            "audio_url": format!("/api/post/audio/{}", id),
-            "is_liked": is_liked
-        })
-        .to_string();
+        let avatar_url = user_id.as_ref().map(|id| format!("/api/avatar/{}", id)).unwrap_or_default();
 
         Ok(PostInfo {
-            id,
+            id: id.clone(),
             title,
-            metadata,
+            author: AuthorInfo {
+                name: display_name,
+                avatar: avatar_url,
+            },
+            content: PostContent {
+                description: Some(content),
+                audio_url: Some(format!("/api/post/audio/{}", id)),
+                audio_data: None,
+            },
+            meta: PostMeta {
+                likes: likes_count as i32,
+                comments: comments_count as i32,
+                is_liked,
+                time: created_at,
+                voice_info: VoiceInfo {
+                    voice_type: voice_name,
+                    voice_meta_id: None,
+                },
+            },
         })
     }
 
@@ -302,28 +310,15 @@ impl PostService for ServiceProvider<Sqlite> {
             }
         };
 
-        // 从 metadata 中解析所需数据
-        let metadata: serde_json::Value =
-            serde_json::from_str(&post.metadata).context("Invalid metadata JSON")?;
+        // 直接从 post 嵌套结构中获取数据
+        let content = post.content.description.clone();
 
-        let content = metadata
-            .get("description")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let audio_data = metadata
-            .get("audio_data")
-            .and_then(|v| v.as_str())
-            .and_then(|s| general_purpose::STANDARD.decode(s).ok())
-            .unwrap_or_default();
+        let audio_data = post.content.audio_data.clone().unwrap_or_default();
 
         leptos::logging::debug_log!("音频数据长度: {} bytes", audio_data.len());
 
-        // 从 metadata 中获取 base_model_id，然后查询数据库获取对应的 voice_meta_id
-        let base_model_id = metadata
-            .get("voice_meta_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("default");
+        // 从 post.meta.voice_info.voice_meta_id 获取 base_model_id
+        let base_model_id = post.meta.voice_info.voice_meta_id.as_deref().unwrap_or("default");
 
         let voice_meta_id: Option<String> =
             sqlx::query_scalar("SELECT id FROM voice_meta_infos WHERE base_model_id = ? LIMIT 1")
@@ -381,11 +376,8 @@ impl PostService for ServiceProvider<Sqlite> {
             return Err(anyhow!("无权限修改此帖子"));
         }
 
-        // 从 metadata 中解析内容
-        let metadata: serde_json::Value =
-            serde_json::from_str(&post.metadata).context("Invalid metadata JSON")?;
-
-        let content = metadata.get("description").and_then(|v| v.as_str());
+        // 直接使用 post 嵌套结构字段
+        let content = post.content.description.as_deref();
 
         sqlx::query("UPDATE posts SET title = ?, content = ? WHERE id = ?")
             .bind(&post.title)

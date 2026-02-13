@@ -192,12 +192,25 @@ pub fn HomePage() -> impl IntoView {
             let post = api::PostInfo {
                 id: String::new(), // 服务器端生成 UUID
                 title: payload.title,
-                metadata: serde_json::json!({
-                    "description": payload.content,
-                    "audio_data": base64_encode(&payload.audio_data),
-                    "voice_meta_id": payload.voice_id,
-                })
-                .to_string(),
+                author: api::AuthorInfo {
+                    name: String::new(),
+                    avatar: String::new(),
+                },
+                content: api::PostContent {
+                    description: Some(payload.content),
+                    audio_url: None,
+                    audio_data: Some(payload.audio_data),
+                },
+                meta: api::PostMeta {
+                    likes: 0,
+                    comments: 0,
+                    is_liked: false,
+                    time: String::new(),
+                    voice_info: api::VoiceInfo {
+                        voice_type: String::new(),
+                        voice_meta_id: Some(payload.voice_id),
+                    },
+                },
             };
             api::create_post(post).await
         }

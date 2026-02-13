@@ -75,7 +75,7 @@ pub async fn add_post_comment(post_id: String, content: String) -> Result<(), Se
         .map_err(|e| ServerFnError::new(format!("发表评论失败: {}", e)))
 }
 
-// 用于解析 PostInfo 的 metadata JSON
+// 用于在页面中使用的扁平化的 PostMetadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostMetadata {
     pub author: String,
@@ -90,22 +90,16 @@ pub struct PostMetadata {
 
 impl PostMetadata {
     pub fn from_post(post: &PostInfo) -> Self {
-        let mut meta: PostMetadata = match serde_json::from_str(&post.metadata) {
-            Ok(meta) => meta,
-            Err(_) => Self {
-                author: "未知".to_string(),
-                avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=unknown".to_string(),
-                time: "刚刚".to_string(),
-                description: String::new(),
-                likes: 0,
-                comments: 0,
-                voice_type: "未知".to_string(),
-                audio_url: String::new(),
-            },
-        };
-
-        meta.time = format_local_time(&meta.time);
-        meta
+        Self {
+            author: post.author.name.clone(),
+            avatar: post.author.avatar.clone(),
+            time: format_local_time(&post.meta.time),
+            description: post.content.description.clone().unwrap_or_default(),
+            likes: post.meta.likes,
+            comments: post.meta.comments,
+            voice_type: post.meta.voice_info.voice_type.clone(),
+            audio_url: post.content.audio_url.clone().unwrap_or_default(),
+        }
     }
 }
 
@@ -343,11 +337,8 @@ fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
     let post_id = work.id.clone();
     let post_id_for_comment = work.id.clone();
 
-    // 从metadata中获取is_liked状态
-    let initial_liked = serde_json::from_str::<serde_json::Value>(&work.metadata)
-        .ok()
-        .and_then(|v| v.get("is_liked").and_then(|l| l.as_bool()))
-        .unwrap_or(false);
+    // 从 work.meta 中获取 is_liked 状态
+    let initial_liked = work.meta.is_liked;
 
     let (liked, set_liked) = signal(initial_liked);
     let (like_count, set_like_count) = signal(meta.likes);
