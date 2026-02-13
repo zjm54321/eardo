@@ -75,7 +75,8 @@ pub struct VoiceModelInfo {
     pub id: String,
     pub name: String,
     pub icon_url: String,
-    pub metadata: String, // JSON 格式的模型元数据
+    pub category: String,
+    pub description: String,
 }
 /// 语音模型管理接口
 #[async_trait]

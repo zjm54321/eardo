@@ -26,11 +26,8 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
                     "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
                     id
                 ),
-                metadata: serde_json::json!({
-                    "category": category,
-                    "description": description.unwrap_or_default()
-                })
-                .to_string(),
+                category,
+                description: description.unwrap_or_default(),
             })
             .collect();
         Ok(models)
@@ -55,31 +52,20 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
                 "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
                 id
             ),
-            metadata: serde_json::json!({
-                "category": category,
-                "description": description.unwrap_or_default()
-            })
-            .to_string(),
+            category,
+            description: description.unwrap_or_default(),
         })
     }
 
     async fn update_voice_model(&self, voice: &VoiceModelInfo) -> anyhow::Result<()> {
-        // 从 metadata 中提取可更新字段
-        let meta: serde_json::Value = serde_json::from_str(&voice.metadata).unwrap_or_default();
-        let category = meta.get("category").and_then(|v| v.as_str()).unwrap_or("");
-        let description = meta
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
         sqlx::query(
             r#"UPDATE voice_models
                SET name = ?, category = ?, description = ?
                WHERE id = ?"#,
         )
         .bind(&voice.name)
-        .bind(category)
-        .bind(description)
+        .bind(&voice.category)
+        .bind(&voice.description)
         .bind(&voice.id)
         .execute(&self.pool)
         .await?;

@@ -1147,18 +1147,13 @@ pub fn VoiceSelectorCard(
                                                         <div class="font-medium group-hover:text-primary transition-colors">
                                                             {voice.name.clone()}
                                                         </div>
-                                                        // 从 metadata JSON 中提取 description
                                                         <div class="text-sm text-gray-500">
                                                             {move || {
-                                                                if let Ok(meta) = serde_json::from_str::<
-                                                                    serde_json::Value,
-                                                                >(&voice.metadata) {
-                                                                    meta.get("description")
-                                                                        .and_then(|v| v.as_str())
-                                                                        .unwrap_or("暂无描述")
-                                                                        .to_string()
-                                                                } else {
+                                                                let desc = voice.description.clone();
+                                                                if desc.is_empty() {
                                                                     "暂无描述".to_string()
+                                                                } else {
+                                                                    desc
                                                                 }
                                                             }}
                                                         </div>
