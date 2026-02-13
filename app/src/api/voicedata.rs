@@ -280,13 +280,11 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
     ) -> anyhow::Result<Vec<u8>> {
         let base_model_id = voice_info.base_model_id.as_str();
 
-        // 如果 base_model_id 为空，尝试使用默认语音
-        let voice_id = if base_model_id.is_empty() {
-            leptos::logging::error!("base_model_id is empty, using default voice");
-            "longanhuan" // 使用默认语音
-        } else {
-            base_model_id
-        };
+        // 如果 base_model_id 为空，返回错误
+        if base_model_id.is_empty() {
+            return Err(anyhow::anyhow!("base_model_id is empty"));
+        }
+        let voice_id = base_model_id;
 
         let (pitch, speed) = match &voice_info.metadata {
             VoiceMetadata::Parametric(params) => (params.pitch, params.speed),
