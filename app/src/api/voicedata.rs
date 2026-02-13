@@ -3,6 +3,23 @@ use sqlx::Sqlite;
 
 use crate::api::*;
 
+fn parse_voice_category(raw: &str, model_name: &str) -> VoiceModelCategory {
+    match raw.to_lowercase().as_str() {
+        "official" | "官方" => VoiceModelCategory::Official(model_name.to_string()),
+        "user_designed" | "user" | "用户设计" => VoiceModelCategory::UserDesigned,
+        "voice_generated" | "generated" | "声音生成" => VoiceModelCategory::VoiceGenerated,
+        _ => VoiceModelCategory::UserDesigned,
+    }
+}
+
+fn category_to_db(category: &VoiceModelCategory) -> &'static str {
+    match category {
+        VoiceModelCategory::Official(_) => "official",
+        VoiceModelCategory::UserDesigned => "user_designed",
+        VoiceModelCategory::VoiceGenerated => "voice_generated",
+    }
+}
+
 #[cfg(feature = "ssr")]
 #[async_trait::async_trait]
 impl VoiceModelService for ServiceProvider<Sqlite> {
@@ -18,16 +35,19 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
 
         let models = rows
             .into_iter()
-            .map(|(id, name, category, description)| VoiceModelInfo {
-                id: id.clone(),
-                name,
-                // 使用 DiceBear 生成占位图标，避免额外静态资源依赖
-                icon_url: format!(
-                    "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
-                    id
-                ),
-                category,
-                description: description.unwrap_or_default(),
+            .map(|(id, name, category, description)| {
+                let model_category = parse_voice_category(&category, &name);
+                VoiceModelInfo {
+                    id: id.clone(),
+                    name,
+                    // 使用 DiceBear 生成占位图标，避免额外静态资源依赖
+                    icon_url: format!(
+                        "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
+                        id
+                    ),
+                    category: model_category,
+                    description: description.unwrap_or_default(),
+                }
             })
             .collect();
         Ok(models)
@@ -45,6 +65,7 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
         .map_err(|_| anyhow::anyhow!("Voice model not found: {}", voice_id))?;
 
         let (id, name, category, description) = row;
+        let model_category = parse_voice_category(&category, &name);
         Ok(VoiceModelInfo {
             id: id.clone(),
             name,
@@ -52,7 +73,7 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
                 "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
                 id
             ),
-            category,
+            category: model_category,
             description: description.unwrap_or_default(),
         })
     }
@@ -64,7 +85,7 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
                WHERE id = ?"#,
         )
         .bind(&voice.name)
-        .bind(&voice.category)
+        .bind(category_to_db(&voice.category))
         .bind(&voice.description)
         .bind(&voice.id)
         .execute(&self.pool)
@@ -85,13 +106,16 @@ impl VoiceModelService for ServiceProvider<Sqlite> {
 #[cfg(feature = "ssr")]
 #[async_trait::async_trait]
 impl VoiceMetadataService for ServiceProvider<Sqlite> {
-    async fn list_voice_metadata(&self) -> anyhow::Result<Vec<VoiceMetaInfo>> {
+    async fn list_voice_metadata(&self) -> anyhow::Result<Vec<VoiceMetaPost>> {
         // 公开且正常的滤镜，按使用量倒序
         let rows: Vec<(
             String,         // id
             String,         // name
             Option<String>, // description
             String,         // base_model_id
+            String,         // model_name
+            String,         // model_category
+            Option<String>, // model_description
             f64,            // pitch
             f64,            // speed
             f64,            // volume
@@ -103,10 +127,12 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,         // created_at
         )> = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
+                      m.name as model_name, m.category as model_category, m.description as model_description,
                       vm.pitch, vm.speed, vm.volume,
                       vm.usage_count, vm.is_public, vm.status,
                       u.nickname, ua.username, vm.created_at
                  FROM voice_meta_infos vm
+                 JOIN voice_models m ON vm.base_model_id = m.id
                  JOIN users u ON vm.user_id = u.id
                  JOIN user_auth ua ON ua.user_id = u.id
                  WHERE (vm.status = 'normal' OR vm.status = 'official') AND vm.is_public = 1
@@ -123,6 +149,9 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
                     name,
                     description,
                     base_model_id,
+                    model_name,
+                    model_category,
+                    model_description,
                     pitch,
                     speed,
                     volume,
@@ -139,10 +168,21 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
                         speed: speed as f32,
                         volume: volume as f32,
                     });
-                    VoiceMetaInfo {
+                    let model_category = parse_voice_category(&model_category, &model_name);
+                    let base_model = VoiceModelInfo {
+                        id: base_model_id.clone(),
+                        name: model_name,
+                        icon_url: format!(
+                            "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
+                            base_model_id
+                        ),
+                        category: model_category,
+                        description: model_description.unwrap_or_default(),
+                    };
+                    VoiceMetaPost {
                         id,
                         name,
-                        base_model_id,
+                        base_model,
                         metadata,
                         author,
                         description: description.unwrap_or_default(),
@@ -159,12 +199,15 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         Ok(list)
     }
 
-    async fn get_voice_metadata(&self, voice_id: &str) -> anyhow::Result<VoiceMetaInfo> {
+    async fn get_voice_metadata(&self, voice_id: &str) -> anyhow::Result<VoiceMetaPost> {
         let row: (
             String,
             String,
             Option<String>,
             String,
+            String,
+            String,
+            Option<String>,
             f64,
             f64,
             f64,
@@ -176,10 +219,12 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             String,
         ) = sqlx::query_as(
             r#"SELECT vm.id, vm.name, vm.description, vm.base_model_id,
+                      m.name as model_name, m.category as model_category, m.description as model_description,
                       vm.pitch, vm.speed, vm.volume,
                       vm.usage_count, vm.is_public, vm.status,
                       u.nickname, ua.username, vm.created_at
                  FROM voice_meta_infos vm
+                 JOIN voice_models m ON vm.base_model_id = m.id
                  JOIN users u ON vm.user_id = u.id
                  JOIN user_auth ua ON ua.user_id = u.id
                  WHERE vm.id = ? LIMIT 1"#,
@@ -193,6 +238,9 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             name,
             description,
             base_model_id,
+            model_name,
+            model_category,
+            model_description,
             pitch,
             speed,
             volume,
@@ -209,11 +257,22 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             speed: speed as f32,
             volume: volume as f32,
         });
+        let model_category = parse_voice_category(&model_category, &model_name);
+        let base_model = VoiceModelInfo {
+            id: base_model_id.clone(),
+            name: model_name,
+            icon_url: format!(
+                "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
+                base_model_id
+            ),
+            category: model_category,
+            description: model_description.unwrap_or_default(),
+        };
 
-        Ok(VoiceMetaInfo {
+        Ok(VoiceMetaPost {
             id,
             name,
-            base_model_id,
+            base_model,
             metadata,
             author,
             description: description.unwrap_or_default(),
@@ -226,9 +285,9 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         })
     }
 
-    async fn update_voice_metadata(&self, metadata: &VoiceMetaInfo) -> anyhow::Result<()> {
+    async fn update_voice_metadata(&self, metadata: &VoiceMetaPost) -> anyhow::Result<()> {
         let description = metadata.description.as_str();
-        let base_model_id = metadata.base_model_id.as_str();
+        let base_model_id = metadata.base_model.id.as_str();
         let is_public = metadata.is_public;
 
         let (pitch, speed, volume) = match &metadata.metadata {
@@ -278,7 +337,7 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         voice_info: &VoiceMetaInfo,
         text: &str,
     ) -> anyhow::Result<Vec<u8>> {
-        let base_model_id = voice_info.base_model_id.as_str();
+        let base_model_id = voice_info.base_model.id.as_str();
 
         // 如果 base_model_id 为空，返回错误
         if base_model_id.is_empty() {
@@ -286,19 +345,15 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         }
         let voice_id = base_model_id;
 
-        let (pitch, speed) = match &voice_info.metadata {
-            VoiceMetadata::Parametric(params) => (params.pitch, params.speed),
-            VoiceMetadata::Instruction(_) => (1.0, 1.0),
-        };
-
         leptos::logging::log!(
-            "Calling Voice with voice_id={}, pitch={}, speed={}",
-            voice_id,
-            pitch,
-            speed
+            "使用以下参数创建了音频请求：\n {:?}",
+            voice_info
         );
 
-        // 调用 CosyVoice 后端生成，失败直接返回错误
-        crate::api::voice_backend_api::cosyvoice_generate(text, voice_id, speed, pitch).await
+        crate::api::voice_backend_api::qwen_generate(
+            voice_info,
+            text,
+        )
+        .await
     }
 }

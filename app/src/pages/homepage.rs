@@ -136,22 +136,21 @@ pub fn HomePage() -> impl IntoView {
         async move {
             // 创建 VoiceMetaInfo 对象
             let voice_meta = api::VoiceMetaInfo {
-                id: voice_id.clone(),
-                name: voice_id.clone(),
-                base_model_id: voice_id.clone(),
+                base_model: api::VoiceModelInfo {
+                    id: voice_id.clone(),
+                    name: voice_id.clone(),
+                    icon_url: format!(
+                        "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
+                        voice_id
+                    ),
+                    category: api::VoiceModelCategory::Official(voice_id.clone()),
+                    description: String::new(),
+                },
                 metadata: api::VoiceMetadata::Parametric(VoiceParams {
                     pitch,
                     speed,
                     volume,
                 }),
-                author: String::new(),
-                description: String::new(),
-                tags: vec![],
-                usage_count: 0,
-                is_public: true,
-                is_official: false,
-                created_at: String::new(),
-                updated_at: String::new(),
             };
 
             debug_log!(

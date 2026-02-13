@@ -1,4 +1,4 @@
-use crate::api::{list_voice_metadata, VoiceMetaInfo, VoiceMetadata};
+use crate::api::{list_voice_metadata, VoiceMetaPost, VoiceMetadata};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
@@ -19,7 +19,7 @@ struct DisplayFilter {
 }
 
 impl DisplayFilter {
-    fn from_voice_meta(meta: VoiceMetaInfo) -> Self {
+    fn from_voice_meta(meta: VoiceMetaPost) -> Self {
         let (pitch, speed, volume) = match &meta.metadata {
             VoiceMetadata::Parametric(params) => (
                 params.pitch as f64,
@@ -33,7 +33,7 @@ impl DisplayFilter {
             id: meta.id,
             name: meta.name,
             description: meta.description,
-            base_model_id: meta.base_model_id,
+            base_model_id: meta.base_model.id,
             pitch,
             speed,
             volume,

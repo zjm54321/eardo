@@ -75,8 +75,16 @@ pub struct VoiceModelInfo {
     pub id: String,
     pub name: String,
     pub icon_url: String,
-    pub category: String,
+    pub category: VoiceModelCategory,
     pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum VoiceModelCategory {
+    Official(String),
+    UserDesigned,
+    VoiceGenerated,
 }
 /// 语音模型管理接口
 #[async_trait]
@@ -106,11 +114,19 @@ impl Default for VoiceParams {
     }
 }
 
+/// 用于声音生成的最小信息集合（仅包含生成所需的参数）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceMetaInfo {
+    pub base_model: VoiceModelInfo,
+    pub metadata: VoiceMetadata,  // 枚举类型：控制方式
+}
+
+/// 用于声音滤镜列表/详情展示（包含POST所需的完整信息）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceMetaPost {
     pub id: String,
     pub name: String,
-    pub base_model_id: String,
+    pub base_model: VoiceModelInfo,
     pub metadata: VoiceMetadata,  // 枚举类型：控制方式
     pub author: String,           // 作者
     pub description: String,      // 描述
@@ -140,9 +156,9 @@ impl Default for VoiceMetadata {
 /// 语音元数据(声音滤镜)管理接口
 #[async_trait]
 pub trait VoiceMetadataService: Send + Sync {
-    async fn list_voice_metadata(&self) -> anyhow::Result<Vec<VoiceMetaInfo>>;
-    async fn get_voice_metadata(&self, voice_id: &str) -> anyhow::Result<VoiceMetaInfo>;
-    async fn update_voice_metadata(&self, metadata: &VoiceMetaInfo) -> anyhow::Result<()>;
+    async fn list_voice_metadata(&self) -> anyhow::Result<Vec<VoiceMetaPost>>;
+    async fn get_voice_metadata(&self, voice_id: &str) -> anyhow::Result<VoiceMetaPost>;
+    async fn update_voice_metadata(&self, metadata: &VoiceMetaPost) -> anyhow::Result<()>;
     async fn delete_voice_metadata(&self, voice_id: &str) -> anyhow::Result<()>;
     async fn generate_voice(
         &self,
@@ -304,7 +320,7 @@ pub async fn delete_voice_model(voice_id: String) -> Result<(), ServerFnError> {
 // === 语音元数据模块 ===
 
 #[server]
-pub async fn list_voice_metadata() -> Result<Vec<VoiceMetaInfo>, ServerFnError> {
+pub async fn list_voice_metadata() -> Result<Vec<VoiceMetaPost>, ServerFnError> {
     use_context::<VoiceMetadataProvider>()
         .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
         .list_voice_metadata()
@@ -313,7 +329,7 @@ pub async fn list_voice_metadata() -> Result<Vec<VoiceMetaInfo>, ServerFnError> 
 }
 
 #[server]
-pub async fn get_voice_metadata(voice_id: String) -> Result<VoiceMetaInfo, ServerFnError> {
+pub async fn get_voice_metadata(voice_id: String) -> Result<VoiceMetaPost, ServerFnError> {
     use_context::<VoiceMetadataProvider>()
         .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
         .get_voice_metadata(&voice_id)
@@ -322,7 +338,7 @@ pub async fn get_voice_metadata(voice_id: String) -> Result<VoiceMetaInfo, Serve
 }
 
 #[server]
-pub async fn update_voice_metadata(metadata: VoiceMetaInfo) -> Result<(), ServerFnError> {
+pub async fn update_voice_metadata(metadata: VoiceMetaPost) -> Result<(), ServerFnError> {
     use_context::<VoiceMetadataProvider>()
         .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
         .update_voice_metadata(&metadata)

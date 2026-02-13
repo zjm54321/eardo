@@ -1,8 +1,13 @@
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
+use crate::api::{VoiceMetaInfo, VoiceMetadata};
+
 #[cfg(feature = "ssr")]
 use leptos::logging::{debug_log, error};
+
+#[cfg(feature = "ssr")]
+use base64::Engine;
 
 #[cfg(feature = "ssr")]
 use uuid::Uuid;
@@ -69,6 +74,53 @@ struct CosyMessage {
     payload: CosyPayload,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct DashScopeTtsRequest {
+    model: String,
+    input: DashScopeTtsPayload,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct DashScopeTtsPayload {
+    text: String,
+    voice: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instructions: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    optimize_instructions: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct DashScopeTtsAudio {
+    #[serde(default)]
+    data: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct DashScopeTtsOutput {
+    #[serde(default)]
+    finish_reason: Option<String>,
+    #[serde(default)]
+    audio: Option<DashScopeTtsAudio>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct DashScopeTtsResponse {
+    status_code: i32,
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    output: Option<DashScopeTtsOutput>,
+}
+
 /// Generate audio bytes via CosyVoice WebSocket API
 pub async fn cosyvoice_generate(
     input_text: &str,
@@ -83,7 +135,9 @@ pub async fn cosyvoice_generate(
 
     #[cfg(feature = "ssr")]
     {
-        let api_key = std::env::var("ALIYUN_API_KEY").unwrap_or_default();
+        let api_key = std::env::var("ALIYUN_API_KEY")
+            .or_else(|_| std::env::var("DASHSCOPE_API_KEY"))
+            .unwrap_or_default();
         if api_key.is_empty() {
             return Err(anyhow!("ALIYUN_API_KEY missing"));
         }
@@ -246,3 +300,125 @@ pub async fn cosyvoice_generate(
         Ok(audio_buffer)
     }
 }
+
+/// Generate audio bytes via Qwen TTS HTTP API
+pub async fn qwen_generate(
+    voice_info: &VoiceMetaInfo,
+    text: &str,
+) -> Result<Vec<u8>> {
+    #[cfg(not(feature = "ssr"))]
+    {
+        return Err(anyhow!("DashScope TTS generation not available on client"));
+    }
+
+    #[cfg(feature = "ssr")]
+    {
+        let api_key = std::env::var("DASHSCOPE_API_KEY")
+            .or_else(|_| std::env::var("ALIYUN_API_KEY"))
+            .unwrap_or_default();
+        if api_key.is_empty() {
+            return Err(anyhow!("DASHSCOPE_API_KEY missing"));
+        }
+
+        let model = std::env::var("DASHSCOPE_TTS_MODEL")
+            .unwrap_or_else(|_| "qwen3-tts-flash".to_string());
+
+        let base_url =
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+
+        let client = reqwest::Client::new();
+        let request = client
+            .post(base_url)
+            .bearer_auth(api_key)
+            .header("Content-Type", "application/json");
+
+        let voice_id = voice_info.base_model.id.as_str();
+        if voice_id.is_empty() {
+            return Err(anyhow!("base_model_id is empty"));
+        }
+
+        let instructions = match &voice_info.metadata {
+            VoiceMetadata::Instruction(value) => Some(value.clone()),
+            _ => None,
+        };
+        let optimize_instructions = if instructions.is_some() && model.contains("instruct") {
+            Some(true)
+        } else {
+            None
+        };
+
+        let payload = DashScopeTtsRequest {
+            model: model.clone(),
+            input: DashScopeTtsPayload {
+                text: text.to_string(),
+                voice: voice_id.to_string(),
+                language_type: Some("Auto".to_string()),
+                instructions,
+                optimize_instructions,
+            },
+        };
+
+        let response = request
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| anyhow!("DashScope request failed: {}", e))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| anyhow!("DashScope read response failed: {}", e))?;
+
+        let parsed: DashScopeTtsResponse = serde_json::from_str(&body)
+            .map_err(|e| anyhow!("DashScope parse response failed: {}, body: {}", e, body))?;
+
+        if !status.is_success() || parsed.status_code != 200 {
+            let code = parsed.code.unwrap_or_else(|| "unknown".to_string());
+            let message = parsed.message.unwrap_or_else(|| "unknown error".to_string());
+            return Err(anyhow!(
+                "DashScope error: status={}, code={}, message={}",
+                parsed.status_code,
+                code,
+                message
+            ));
+        }
+
+        let audio = parsed
+            .output
+            .and_then(|output| output.audio)
+            .ok_or_else(|| anyhow!("DashScope response missing audio"))?;
+
+        if let Some(url) = audio.url {
+            debug_log!("DashScope audio url: {}", url);
+            let audio_response = client
+                .get(url)
+                .send()
+                .await
+                .map_err(|e| anyhow!("DashScope audio fetch failed: {}", e))?;
+            let audio_status = audio_response.status();
+            if !audio_status.is_success() {
+                return Err(anyhow!(
+                    "DashScope audio fetch failed with status {}",
+                    audio_status
+                ));
+            }
+            let bytes = audio_response
+                .bytes()
+                .await
+                .map_err(|e| anyhow!("DashScope audio read failed: {}", e))?;
+            return Ok(bytes.to_vec());
+        }
+
+        if let Some(data) = audio.data {
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(data.as_bytes())
+                .map_err(|e| anyhow!("DashScope audio decode failed: {}", e))?;
+            return Ok(decoded);
+        }
+
+        error!("DashScope response missing audio url/data");
+        Err(anyhow!("DashScope response missing audio content"))
+    }
+}
+
