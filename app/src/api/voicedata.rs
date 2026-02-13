@@ -291,8 +291,8 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             VoiceMetadata::Instruction(_) => (1.0, 1.0),
         };
 
-        leptos::logging::debug_log!(
-            "Calling CosyVoice with voice_id={}, pitch={}, speed={}",
+        leptos::logging::log!(
+            "Calling Voice with voice_id={}, pitch={}, speed={}",
             voice_id,
             pitch,
             speed
