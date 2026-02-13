@@ -112,7 +112,7 @@ pub fn VoiceFilterPage() -> impl IntoView {
                 // --- 1. 顶部标题 & 搜索 ---
                 <section class="text-center mb-12">
                     <h2 class="text-3xl font-bold mb-4 text-dark flex items-center justify-center">
-                        <i class="fa fa-magic text-secondary mr-3"></i>
+                        <i class="fa-solid fa-wand-magic-sparkles text-secondary mr-3"></i>
                         "声音滤镜库"
                     </h2>
                     <p class="text-gray-500 mb-8">
@@ -127,14 +127,14 @@ pub fn VoiceFilterPage() -> impl IntoView {
                             prop:value=move || search.get()
                             on:input=move |ev| set_search.set(event_target_value(&ev))
                         />
-                        <i class="fa fa-search absolute left-5 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                        <i class="fa-solid fa-magnifying-glass absolute left-5 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
                         <Show when=move || !search.get().is_empty()>
                             <button
                                 class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 px-2"
                                 on:click=move |_| set_search.set(String::new())
                                 title="清除"
                             >
-                                <i class="fa fa-times"></i>
+                                <i class="fa-solid fa-xmark"></i>
                             </button>
                         </Show>
                     </div>
@@ -282,11 +282,11 @@ where
                                 <div class="flex items-center justify-between mt-auto">
                                     <div class="text-xs text-gray-400 space-x-2">
                                         <span>
-                                            <i class="fa fa-signal mr-1"></i>
+                                            <i class="fa-solid fa-signal mr-1"></i>
                                             {filter.pitch}
                                         </span>
                                         <span>
-                                            <i class="fa fa-tachometer mr-1"></i>
+                                            <i class="fa-solid fa-gauge mr-1"></i>
                                             {filter.speed}
                                             "x"
                                         </span>
@@ -298,7 +298,7 @@ where
                                             on_apply(filter_clone.clone());
                                         }
                                     >
-                                        <i class="fa fa-check mr-2"></i>
+                                        <i class="fa-solid fa-check mr-2"></i>
                                         "使用"
                                     </button>
                                 </div>

@@ -29,7 +29,7 @@ pub fn Header() -> impl IntoView {
                     attr:class="flex items-center space-x-2 group text-decoration-none cursor-pointer"
                 >
                     // 旋转动画效果
-                    <i class="fa fa-headphones text-primary text-2xl group-hover:rotate-12 transition-transform duration-300"></i>
+                    <i class="fa-solid fa-headphones text-primary text-2xl group-hover:rotate-12 transition-transform duration-300"></i>
                     <h1 class="text-xl md:text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                         "耳朵"
                     </h1>
@@ -44,7 +44,7 @@ pub fn Header() -> impl IntoView {
                         href="/home"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
                     >
-                        <i class="fa fa-home text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <i class="fa-solid fa-house text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
                             "首页"
                         </span>
@@ -55,7 +55,7 @@ pub fn Header() -> impl IntoView {
                         href="/voice"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
                     >
-                        <i class="fa fa-music text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <i class="fa-solid fa-music text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
                             "声音广场"
                         </span>
@@ -66,7 +66,7 @@ pub fn Header() -> impl IntoView {
                         href="/filters"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
                     >
-                        <i class="fa fa-sliders text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <i class="fa-solid fa-sliders text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
                             "声音滤镜"
                         </span>
@@ -77,7 +77,7 @@ pub fn Header() -> impl IntoView {
                         href="/help"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
                     >
-                        <i class="fa fa-question-circle text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <i class="fa-solid fa-circle-question text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
                             "帮助"
                         </span>
@@ -111,7 +111,8 @@ pub fn Header() -> impl IntoView {
                                                         }
                                                             .into_any()
                                                     } else {
-                                                        view! { <i class="fa fa-user text-lg"></i> }.into_any()
+                                                        view! { <i class="fa-solid fa-user text-lg"></i> }
+                                                            .into_any()
                                                     }}
                                                 </div>
                                             </button>

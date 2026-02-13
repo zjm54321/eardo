@@ -436,7 +436,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                             } else {
                                                                 view! {
                                                                     <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
-                                                                        <i class="fa fa-user text-6xl"></i>
+                                                                        <i class="fa-solid fa-user text-6xl"></i>
                                                                     </div>
                                                                 }
                                                                     .into_any()
@@ -448,7 +448,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                 // 编辑模式下的上传按钮
                                                 <Show when=move || is_editing.get()>
                                                     <label class="absolute bottom-2 right-2 w-9 h-9 bg-primary text-white rounded-full shadow-md flex items-center justify-center hover:bg-primary-focus transition-all hover:scale-110 border-2 border-white cursor-pointer z-20">
-                                                        <i class="fa fa-camera text-sm"></i>
+                                                        <i class="fa-solid fa-camera text-sm"></i>
                                                         <input
                                                             type="file"
                                                             accept="image/*"
@@ -482,7 +482,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                                                 class="text-primary text-sm hover:underline font-medium mt-1"
                                                                                 on:click=move |_| set_is_editing.set(true)
                                                                             >
-                                                                                <i class="fa fa-pencil"></i>
+                                                                                <i class="fa-solid fa-pen"></i>
                                                                                 "编辑"
                                                                             </button>
                                                                         </div>
@@ -520,7 +520,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                                     logout_action.dispatch(());
                                                                 }
                                                             >
-                                                                <i class="fa fa-sign-out"></i>
+                                                                <i class="fa-solid fa-right-from-bracket"></i>
                                                                 "退出登录"
                                                             </button>
                                                         </Show>
@@ -529,7 +529,7 @@ pub fn ProfilePage() -> impl IntoView {
 
                                                 // 简介展示与编辑
                                                 <div class="bg-gray-50/80 rounded-xl p-4 border border-gray-100 text-gray-600 text-sm leading-relaxed text-left relative min-h-[80px]">
-                                                    <i class="fa fa-quote-left text-gray-300 absolute -top-2 -left-2 text-xl"></i>
+                                                    <i class="fa-solid fa-quote-left text-gray-300 absolute -top-2 -left-2 text-xl"></i>
 
                                                     <Show
                                                         when=move || is_editing.get()
@@ -601,7 +601,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                         href="/voice"
                                                         attr:class="text-xs text-gray-400 hover:text-secondary"
                                                     >
-                                                        <i class="fa fa-arrow-right"></i>
+                                                        <i class="fa-solid fa-arrow-right"></i>
                                                     </A>
                                                 </div>
 
@@ -638,11 +638,11 @@ pub fn ProfilePage() -> impl IntoView {
                                                                                             </p>
                                                                                             <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
                                                                                                 <span>
-                                                                                                    <i class="fa fa-commenting-o mr-1"></i>
+                                                                                                    <i class="fa-solid fa-comments mr-1"></i>
                                                                                                     {meta.comments}
                                                                                                 </span>
                                                                                                 <span>
-                                                                                                    <i class="fa fa-heart mr-1"></i>
+                                                                                                    <i class="fa-solid fa-heart mr-1"></i>
                                                                                                     {meta.likes}
                                                                                                 </span>
                                                                                                 <span class="ml-auto">{meta.time}</span>
@@ -658,7 +658,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                                 _ => {
                                                                     view! {
                                                                         <div class="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[200px]">
-                                                                            <i class="fa fa-folder-open-o text-4xl mb-2 opacity-50"></i>
+                                                                            <i class="fa-regular fa-folder-open text-4xl mb-2 opacity-50"></i>
                                                                             <p class="text-sm">"暂无作品"</p>
                                                                         </div>
                                                                     }
@@ -683,7 +683,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                         "我的声音"
                                                     </h3>
                                                     <button class="text-xs text-gray-400 hover:text-primary">
-                                                        <i class="fa fa-plus"></i>
+                                                        <i class="fa-solid fa-plus"></i>
                                                     </button>
                                                 </div>
 
@@ -696,7 +696,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                                     view! {
                                                                         <li class="flex items-center p-3">
                                                                             <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 mr-3 shrink-0">
-                                                                                <i class="fa fa-music text-sm"></i>
+                                                                                <i class="fa-solid fa-music text-sm"></i>
                                                                             </div>
                                                                             <div class="flex-grow min-w-0">
                                                                                 <div class="font-medium text-dark text-sm truncate">
@@ -716,7 +716,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                     // 覆盖层
                                                     <div class="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[1px] p-6 text-center z-10">
                                                         <div class="w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center mb-3 text-primary">
-                                                            <i class="fa fa-folder text-xl"></i>
+                                                            <i class="fa-solid fa-folder text-xl"></i>
                                                         </div>
                                                         <h4 class="font-bold text-dark text-sm mb-1">
                                                             "私有声音库"
@@ -757,7 +757,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                     // 覆盖层 - 未完成提示
                                                     <div class="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[2px] p-6 text-center z-10 transition-all">
                                                         <div class="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mb-5 text-gray-400">
-                                                            <i class="fa fa-wrench text-2xl"></i>
+                                                            <i class="fa-solid fa-wrench text-2xl"></i>
                                                         </div>
                                                         <h4 class="font-bold text-dark text-lg mb-2">
                                                             "功能开发中"
@@ -776,7 +776,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                 href="/"
                                                 attr:class="inline-flex items-center px-6 py-3 bg-white border border-gray-200 rounded-full text-gray-500 hover:text-primary hover:border-primary/30 hover:shadow-md transition-all group font-medium"
                                             >
-                                                <i class="fa fa-arrow-left mr-2 group-hover:-translate-x-1 transition-transform"></i>
+                                                <i class="fa-solid fa-arrow-left mr-2 group-hover:-translate-x-1 transition-transform"></i>
                                                 "返回主页"
                                             </A>
                                         </div>
@@ -789,7 +789,7 @@ pub fn ProfilePage() -> impl IntoView {
                                 view! {
                                     <div class="min-h-[60vh] flex flex-col items-center justify-center">
                                         <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
-                                            <i class="fa fa-user-lock text-4xl"></i>
+                                            <i class="fa-solid fa-lock text-4xl"></i>
                                         </div>
                                         <h2 class="text-2xl font-bold mb-2 text-dark">
                                             "加载失败"
@@ -809,7 +809,7 @@ pub fn ProfilePage() -> impl IntoView {
                                 view! {
                                     <div class="min-h-[60vh] flex flex-col items-center justify-center">
                                         <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
-                                            <i class="fa fa-user-lock text-4xl"></i>
+                                            <i class="fa-solid fa-lock text-4xl"></i>
                                         </div>
                                         <h2 class="text-2xl font-bold mb-2 text-dark">
                                             "未登录"

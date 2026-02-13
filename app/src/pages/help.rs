@@ -87,9 +87,9 @@ pub fn HelpPage() -> impl IntoView {
                                         </h3>
                                         <i class=move || {
                                             if show_detail.get() {
-                                                "fa fa-chevron-up text-primary flex-shrink-0"
+                                                "fa-solid fa-chevron-up text-primary flex-shrink-0"
                                             } else {
-                                                "fa fa-chevron-down text-gray-400 flex-shrink-0"
+                                                "fa-solid fa-chevron-down text-gray-400 flex-shrink-0"
                                             }
                                         }></i>
                                     </button>

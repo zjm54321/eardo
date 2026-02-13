@@ -279,7 +279,7 @@ pub fn HomePage() -> impl IntoView {
                             class="text-gray-400 hover:text-gray-600 transition-colors"
                             on:click=move |_| set_show_share_popup.set(false)
                         >
-                            <i class="fa fa-times"></i>
+                            <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
                     <p class="text-sm text-gray-500 mb-4">
@@ -322,7 +322,7 @@ pub fn HomePage() -> impl IntoView {
                                 class="text-gray-400 hover:text-gray-600 transition-colors"
                                 on:click=move |_| set_show_share_modal.set(false)
                             >
-                                <i class="fa fa-times text-xl"></i>
+                                <i class="fa-solid fa-xmark text-xl"></i>
                             </button>
                         </div>
 
@@ -361,7 +361,7 @@ pub fn HomePage() -> impl IntoView {
                             // 提示信息
                             <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                 <p class="text-xs text-blue-700">
-                                    <i class="fa fa-info-circle mr-2"></i>
+                                    <i class="fa-solid fa-circle-info mr-2"></i>
                                     "分享后将在社区中显示，所有用户都可以欣赏和互动"
                                 </p>
                             </div>
@@ -421,7 +421,7 @@ pub fn HomePage() -> impl IntoView {
                                 class="text-gray-400 hover:text-gray-600"
                                 on:click=move |_| set_show_filter_share.set(false)
                             >
-                                <i class="fa fa-times text-xl"></i>
+                                <i class="fa-solid fa-xmark text-xl"></i>
                             </button>
                         </div>
 
@@ -536,7 +536,7 @@ pub fn HomePage() -> impl IntoView {
                                         || filter_share_intro.get().trim().is_empty()
                                 }
                             >
-                                <i class="fa fa-share mr-2"></i>
+                                <i class="fa-solid fa-share mr-2"></i>
                                 "分享"
                             </button>
                         </div>
@@ -753,7 +753,7 @@ pub fn TextInputCard(
             // 标题区域
             <h3 class="text-lg font-semibold mb-4 flex items-center shrink-0 justify-between">
                 <div class="flex items-center">
-                    <i class="fa fa-comment text-primary mr-2"></i>
+                    <i class="fa-solid fa-comment text-primary mr-2"></i>
                     "文本输入"
                 </div>
 
@@ -764,7 +764,7 @@ pub fn TextInputCard(
                         on:click=move |_| is_fullscreen.set(false)
                         title="退出全屏"
                     >
-                        <i class="fa fa-times text-xl"></i>
+                        <i class="fa-solid fa-xmark text-xl"></i>
                     </button>
                 </Show>
             </h3>
@@ -800,9 +800,9 @@ pub fn TextInputCard(
                     on:input=move |ev| text.set(event_target_value(&ev))
                 ></textarea>
 
-                // AI 按钮 (悬浮在 Textarea 右下角内部)
+                // AI 按钮 (悬浮在 Textarea 右下角内部，高斯模糊背景)
                 <button
-                    class="absolute bottom-3 right-3 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-all shadow-sm group z-10 text-sm font-semibold"
+                    class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md text-gray-700 hover:text-gray-800 shadow-lg hover:shadow-xl transition-all duration-300 group z-10 flex items-center justify-center"
                     on:click=move |_| {
                         original_text.set(text.get());
                         output_text.set(String::new());
@@ -812,7 +812,7 @@ pub fn TextInputCard(
                     }
                     title="表达助手"
                 >
-                    "AI"
+                    <i class="fa-solid fa-wand-magic-sparkles text-lg group-hover:scale-110 transition-transform duration-300"></i>
                 </button>
             </div>
 
@@ -840,7 +840,7 @@ pub fn TextInputCard(
                             class="text-gray-400 hover:text-gray-600"
                             on:click=move |_| show_ai_modal.set(false)
                         >
-                            <i class="fa fa-times text-xl"></i>
+                            <i class="fa-solid fa-xmark text-xl"></i>
                         </button>
                     </div>
 
@@ -1067,7 +1067,7 @@ pub fn VoiceSelectorCard(
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
             <h3 class="text-lg font-semibold mb-4 flex items-center">
-                <i class="fa fa-user-circle text-primary mr-2"></i>
+                <i class="fa-solid fa-circle-user text-primary mr-2"></i>
                 "声线选择"
             </h3>
 
@@ -1075,7 +1075,7 @@ pub fn VoiceSelectorCard(
                 <Suspense fallback=move || {
                     view! {
                         <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
-                            <i class="fa fa-spinner fa-spin mr-2"></i>
+                            <i class="fa-solid fa-spinner fa-spin mr-2"></i>
                             "加载声线库..."
                         </div>
                     }
@@ -1085,7 +1085,7 @@ pub fn VoiceSelectorCard(
                             // 1. 加载中 (虽然 Suspense 会处理，但 Resource 初始可能为 None)
                             view! {
                                 <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
-                                    <i class="fa fa-spinner fa-spin mr-2"></i>
+                                    <i class="fa-solid fa-spinner fa-spin mr-2"></i>
                                     "加载声线库..."
                                 </div>
                             }
@@ -1097,7 +1097,7 @@ pub fn VoiceSelectorCard(
                             // 2. 加载失败
                             view! {
                                 <div class="text-red-500 text-center py-4 border border-red-200 rounded bg-red-50">
-                                    <i class="fa fa-exclamation-circle mr-2"></i>
+                                    <i class="fa-solid fa-circle-exclamation mr-2"></i>
                                     "加载失败，请刷新重试"
                                 </div>
                             }
@@ -1170,7 +1170,7 @@ pub fn VoiceSelectorCard(
                                                             selected_voice.get() != stored_voice_id.get_value()
                                                         }
                                                     >
-                                                        <i class="fa fa-check-circle text-xl"></i>
+                                                        <i class="fa-solid fa-circle-check text-xl"></i>
                                                     </div>
                                                 </div>
                                             }
@@ -1216,7 +1216,7 @@ pub fn ParameterControlCard(
             // 标题
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-semibold flex items-center">
-                    <i class="fa fa-sliders text-primary mr-2"></i>
+                    <i class="fa-solid fa-sliders text-primary mr-2"></i>
                     "参数调节"
                 </h3>
                 <Show when=move || is_modified.get()>
@@ -1225,7 +1225,7 @@ pub fn ParameterControlCard(
                         on:click=move |_| open_filter_share.set(true)
                         title="分享当前声线与参数"
                     >
-                        <i class="fa fa-share mr-2"></i>
+                        <i class="fa-solid fa-share mr-2"></i>
                         "分享"
                     </button>
                 </Show>
@@ -1493,7 +1493,7 @@ pub fn AudioResultCard(
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover text-dark border border-gray-100">
             <h3 class="text-lg font-semibold mb-4 flex items-center text-dark">
-                <i class="fa fa-volume-up text-primary mr-2"></i>
+                <i class="fa-solid fa-volume-high text-primary mr-2"></i>
                 "输出结果"
             </h3>
 
@@ -1511,7 +1511,7 @@ pub fn AudioResultCard(
                         if is_pending.get() {
                             view! {
                                 <>
-                                    <i class="fa fa-circle-o-notch fa-spin mr-2"></i>
+                                    <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>
                                     "正在生成..."
                                 </>
                             }
@@ -1519,7 +1519,7 @@ pub fn AudioResultCard(
                         } else {
                             view! {
                                 <>
-                                    <i class="fa fa-magic mr-2"></i>
+                                    <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
                                     "生成音频"
                                 </>
                             }
@@ -1617,7 +1617,7 @@ pub fn AudioResultCard(
                                                 }
                                             }
                                         >
-                                            <i class="fa fa-download mr-1"></i>
+                                            <i class="fa-solid fa-download mr-1"></i>
                                             "下载"
                                         </button>
                                     </div>
@@ -1640,7 +1640,7 @@ pub fn AudioResultCard(
                         debug_error!("生成音频失败: {:?}", e);
                         view! {
                             <div class="text-center py-8 text-red-500 bg-red-50 rounded-xl border border-red-200">
-                                <i class="fa fa-exclamation-triangle text-4xl mb-3 opacity-50"></i>
+                                <i class="fa-solid fa-triangle-exclamation text-4xl mb-3 opacity-50"></i>
                                 <p>"生成失败"</p>
                                 <p class="text-sm opacity-70">{e.to_string()}</p>
                             </div>
@@ -1650,7 +1650,7 @@ pub fn AudioResultCard(
                     _ => {
                         view! {
                             <div class="w-full h-full min-h-[300px] flex flex-col items-center justify-center text-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200 p-8">
-                                <i class="fa fa-headphones text-6xl mb-4 opacity-30"></i>
+                                <i class="fa-solid fa-headphones text-6xl mb-4 opacity-30"></i>
                                 <p class="text-base font-medium">"等待生成"</p>
                                 <p class="text-sm mt-2 opacity-70">
                                     "在上方输入文本并点击生成按钮"

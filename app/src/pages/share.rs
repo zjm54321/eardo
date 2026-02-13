@@ -25,7 +25,7 @@ pub fn SharePopup(
                                 class="text-gray-400 hover:text-gray-600 transition-colors"
                                 on:click=move |_| on_close()
                             >
-                                <i class="fa fa-times"></i>
+                                <i class="fa-solid fa-xmark"></i>
                             </button>
                         </div>
                         <p class="text-sm text-gray-500 mb-4">
@@ -160,7 +160,7 @@ pub fn ShareModal(
                                     class="text-gray-400 hover:text-gray-600 transition-colors"
                                     on:click=move |_| on_close()
                                 >
-                                    <i class="fa fa-times text-xl"></i>
+                                    <i class="fa-solid fa-xmark text-xl"></i>
                                 </button>
                             </div>
 
@@ -197,7 +197,7 @@ pub fn ShareModal(
                                 // Info box
                                 <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                     <p class="text-xs text-blue-700">
-                                        <i class="fa fa-info-circle mr-2"></i>
+                                        <i class="fa-solid fa-circle-info mr-2"></i>
                                         "After sharing, your work will be visible to all users"
                                     </p>
                                 </div>

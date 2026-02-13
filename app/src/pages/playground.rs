@@ -179,7 +179,7 @@ pub fn Playground() -> impl IntoView {
                 // --- 1. 顶部标题 ---
                 <section class="text-center mb-12">
                     <h2 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold mb-4 text-shadow flex items-center justify-center">
-                        <i class="fa fa-users text-secondary mr-2"></i>
+                        <i class="fa-solid fa-users text-secondary mr-2"></i>
                         "声音广场"
                     </h2>
                     <p class="text-gray-600 max-w-2xl mx-auto">
@@ -206,13 +206,13 @@ pub fn Playground() -> impl IntoView {
                                                     class="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-primary hover:text-primary transition-all duration-300"
                                                     on:click=move |_| prev_slide(total)
                                                 >
-                                                    <i class="fa fa-chevron-left"></i>
+                                                    <i class="fa-solid fa-chevron-left"></i>
                                                 </button>
                                                 <button
                                                     class="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-primary hover:text-primary transition-all duration-300"
                                                     on:click=move |_| next_slide(total)
                                                 >
-                                                    <i class="fa fa-chevron-right"></i>
+                                                    <i class="fa-solid fa-chevron-right"></i>
                                                 </button>
                                             </div>
                                         </div>
@@ -416,7 +416,7 @@ fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
                     <div class="flex items-center justify-between mb-2 px-1">
                         <p class="text-xs text-gray-500">"作品音频"</p>
                         <span class="text-xs text-primary cursor-pointer hover:underline">
-                            <i class="fa fa-refresh mr-1"></i>
+                            <i class="fa-solid fa-arrows-rotate mr-1"></i>
                             "替换"
                         </span>
                     </div>
@@ -437,9 +437,9 @@ fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
                         >
                             {move || {
                                 if liked.get() {
-                                    view! { <i class="fa fa-heart mr-1"></i> }
+                                    view! { <i class="fa-solid fa-heart mr-1"></i> }
                                 } else {
-                                    view! { <i class="fa fa-heart-o mr-1"></i> }
+                                    view! { <i class="fa-regular fa-heart mr-1"></i> }
                                 }
                             }}
                             <span>{move || like_count.get()}</span>
@@ -448,7 +448,7 @@ fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
                             class="flex items-center hover:text-primary transition-colors duration-200"
                             on:click=move |_| set_show_comments.update(|v| *v = !*v)
                         >
-                            <i class="fa fa-comment mr-1"></i>
+                            <i class="fa-solid fa-comment mr-1"></i>
                             <span>{move || comment_count.get()}</span>
                         </button>
                     </div>

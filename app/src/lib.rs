@@ -21,7 +21,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 
                 <Stylesheet id="leptos" href="/pkg/eardo.css" />
                 <link
-                    href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css"
+                    href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6/css/all.min.css"
                     rel="stylesheet"
                 />
 
