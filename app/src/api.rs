@@ -50,13 +50,17 @@ pub enum UserStatus {
     Deleted,
     Banned,
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserInfo {
     pub id: String,
     pub username: String,
     pub avatar_url: String,
     pub status: UserStatus,
-    pub meta: String, // JSON 格式的用户元数据
+    pub nickname: String,
+    pub bio: String,
+    pub level: i64,
+    pub role: String,
 }
 /// 用户资料管理接口
 #[async_trait]

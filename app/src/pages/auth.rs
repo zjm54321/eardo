@@ -309,7 +309,10 @@ pub fn ProfilePage() -> impl IntoView {
                 username: "".to_string(),  // 保持原用户名
                 avatar_url,
                 status: crate::api::UserStatus::Normal,
-                meta: serde_json::json!({ "bio": bio, "nickname": nickname }).to_string(),
+                nickname,
+                bio,
+                level: 0,
+                role: "user".to_string(),
             };
             match update_user_profile(user_info).await {
                 Ok(_) => {
@@ -366,23 +369,9 @@ pub fn ProfilePage() -> impl IntoView {
                     {move || {
                         match user_resource.get() {
                             Some(Ok(user)) => {
-                                let user_bio = serde_json::from_str::<serde_json::Value>(&user.meta)
-                                    .ok()
-                                    .and_then(|v| {
-                                        v.get("bio").and_then(|b| b.as_str()).map(|s| s.to_string())
-                                    })
-                                    .unwrap_or_default();
+                                let user_bio = user.bio.clone();
                                 let user_bio_clone = user_bio.clone();
-                                let user_nickname = serde_json::from_str::<
-                                    serde_json::Value,
-                                >(&user.meta)
-                                    .ok()
-                                    .and_then(|v| {
-                                        v.get("nickname")
-                                            .and_then(|n| n.as_str())
-                                            .map(|s| s.to_string())
-                                    })
-                                    .unwrap_or_default();
+                                let user_nickname = user.nickname.clone();
                                 let user_nickname_clone = user_nickname.clone();
                                 let user_username_clone1 = user.username.clone();
                                 let user_username_clone2 = user.username.clone();
@@ -392,9 +381,6 @@ pub fn ProfilePage() -> impl IntoView {
                                         set_edit_nickname.set(user_nickname_clone.clone());
                                     }
                                 });
-                                // 从 meta JSON 解析 bio
-
-                                // 使用 Effect::new 替代 create_effect
 
                                 view! {
                                     <div class="flex flex-col items-center animate-fade-in space-y-12">

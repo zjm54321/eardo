@@ -290,15 +290,6 @@ impl UserService for ServiceProvider<Sqlite> {
             format!("https://api.dicebear.com/7.x/avataaars/svg?seed={}", id)
         };
 
-        // 5. 构建元数据
-        let meta = serde_json::json!({
-            "bio": bio.unwrap_or_default(),
-            "nickname": nickname.unwrap_or_default(),
-            "level": level,
-            "role": role,
-        })
-        .to_string();
-
         Ok(UserInfo {
             id,
             username,
@@ -308,7 +299,10 @@ impl UserService for ServiceProvider<Sqlite> {
                 "banned" => UserStatus::Banned,
                 _ => UserStatus::Normal,
             },
-            meta,
+            nickname: nickname.unwrap_or_default(),
+            bio: bio.unwrap_or_default(),
+            level,
+            role,
         })
     }
 
@@ -316,20 +310,14 @@ impl UserService for ServiceProvider<Sqlite> {
         // 1. 获取当前用户 ID
         let user_id = get_user_id_from_session(&self.pool).await?;
 
-        // 2. 解析元数据
-        let meta: serde_json::Value = serde_json::from_str(&user.meta).context("元数据格式错误")?;
-
-        let bio = meta.get("bio").and_then(|v| v.as_str()).unwrap_or("");
-        let nickname = meta.get("nickname").and_then(|v| v.as_str()).unwrap_or("");
-
-        // 3. 更新用户信息（直接使用 session 中的 user_id，无需验证前端传来的 id）
+        // 2. 更新用户信息（直接使用 session 中的 user_id，无需验证前端传来的 id）
         sqlx::query(
             "UPDATE users 
              SET nickname = ?, bio = ?, updated_at = datetime('now')
              WHERE id = ?",
         )
-        .bind(nickname)
-        .bind(bio)
+        .bind(&user.nickname)
+        .bind(&user.bio)
         .bind(&user_id)
         .execute(&self.pool)
         .await
