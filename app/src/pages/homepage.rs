@@ -128,6 +128,9 @@ pub fn HomePage() -> impl IntoView {
     let is_instruction_mode = RwSignal::new(true);
     let instruction_text = RwSignal::new(String::new());
 
+    // Resource 用于异步获取数据
+    let voices_resource = Resource::new(|| (), |_| api::list_voice_models());
+
     // 创建 Action 处理生成请求
     // Action 自动管理 pending (加载中) 和 value (返回值) 状态
     let generate_action = Action::new(move |_| {
@@ -261,7 +264,10 @@ pub fn HomePage() -> impl IntoView {
 
                     // --- 左侧栏 (声线) ---
                     <div class="lg:col-span-1 space-y-8 h-full">
-                        <VoiceSelectorCard selected_voice=voice_signal />
+                        <VoiceSelectorCard
+                            selected_voice=voice_signal
+                            voices_resource=voices_resource
+                        />
                     </div>
 
                     // --- 右侧栏 (输入 + 参数 + 结果) ---
@@ -281,6 +287,7 @@ pub fn HomePage() -> impl IntoView {
                             open_filter_share=set_show_filter_share
                             is_instruction_mode=is_instruction_mode
                             instruction_text=instruction_text
+                            voices_resource=voices_resource
                         />
                         // 3. 输出结果 (核心功能)
                         <AudioResultCard generate_action=generate_action />
@@ -1074,10 +1081,9 @@ pub fn TextInputCard(
 pub fn VoiceSelectorCard(
     /// 当前选中的声线 ID (双向绑定)
     selected_voice: RwSignal<String>,
+    /// 声线列表资源
+    voices_resource: Resource<Result<Vec<api::VoiceModelInfo>, ServerFnError>>,
 ) -> impl IntoView {
-    // Resource 用于异步获取数据
-    let voices_resource = Resource::new(|| (), |_| api::list_voice_models());
-
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
             <h3 class="text-lg font-semibold mb-4 flex items-center">
@@ -1197,6 +1203,86 @@ pub fn VoiceSelectorCard(
 }
 
 #[component]
+pub fn TraditionalParams(
+    selected_param: RwSignal<VoiceParams>,
+) -> impl IntoView {
+    view! {
+        <div>
+            <div class="flex justify-between mb-2">
+                <label class="font-medium text-gray-700">"音高 (Pitch)"</label>
+                <span class="text-sm text-primary font-bold">
+                    {move || format!("{}", selected_param.get().pitch)}
+                </span>
+            </div>
+            <div class="relative flex items-center">
+                <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0.5"</span>
+                <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.01"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
+                    // 双向绑定逻辑
+                    prop:value=move || selected_param.get().pitch
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(0.0);
+                        selected_param.update(|p| p.pitch = val);
+                    }
+                />
+                <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0"</span>
+            </div>
+        </div>
+
+        // --- 2. 语速 (Speed) ---
+        <div class="mt-8">
+            <div class="flex justify-between mb-2">
+                <label class="font-medium text-gray-700">"语速 (Speed)"</label>
+                <span class="text-sm text-primary font-bold">
+                    {move || format!("{:.2}x", selected_param.get().speed)}
+                </span>
+            </div>
+            <div class="relative flex items-center">
+                <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0.5x"</span>
+                <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.01"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
+                    prop:value=move || selected_param.get().speed
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
+                        selected_param.update(|p| p.speed = val);
+                    }
+                />
+                <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0x"</span>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn InstructionParams(
+    instruction_text: RwSignal<String>,
+) -> impl IntoView {
+    view! {
+        <div>
+            <textarea
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none"
+                rows="4"
+                placeholder="例如：用温柔的语气，语速稍微慢一点..."
+                prop:value=move || instruction_text.get()
+                on:input=move |ev| { instruction_text.set(event_target_value(&ev)) }
+            ></textarea>
+            <p class="text-xs text-gray-500 mt-2">
+                <i class="fa-solid fa-circle-info mr-1"></i>
+                "使用自然语言描述你想要的声音效果，AI 将自动为你调整。"
+            </p>
+        </div>
+    }
+}
+
+#[component]
 pub fn ParameterControlCard(
     /// 选中的参数 (双向绑定)
     selected_param: RwSignal<VoiceParams>,
@@ -1212,6 +1298,8 @@ pub fn ParameterControlCard(
     is_instruction_mode: RwSignal<bool>,
     /// 指令文本
     instruction_text: RwSignal<String>,
+    /// 声线列表资源
+    voices_resource: Resource<Result<Vec<api::VoiceModelInfo>, ServerFnError>>,
 ) -> impl IntoView {
     // 判定是否有改动
     let is_modified = Memo::new(move |_| {
@@ -1221,6 +1309,18 @@ pub fn ParameterControlCard(
         let dp = (p.pitch - initial_param.pitch).abs() > 1e-4
             || (p.speed - initial_param.speed).abs() > 1e-4;
         dv || dp
+    });
+
+    let selected_category = Memo::new(move |_| {
+        let voice_id = selected_voice.get();
+        if let Some(Ok(voices)) = voices_resource.get() {
+            if let Some(voice) = voices.iter().find(|v| v.id == voice_id) {
+                if let api::VoiceModelCategory::Official(ref cat) = voice.category {
+                    return cat.clone();
+                }
+            }
+        }
+        String::new()
     });
 
     view! {
@@ -1233,19 +1333,29 @@ pub fn ParameterControlCard(
                 </h3>
                 <div class="flex items-center gap-3">
                     // 切换按钮
-                    <button
-                        class="text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center"
-                        class:bg-primary=move || is_instruction_mode.get()
-                        class:text-white=move || is_instruction_mode.get()
-                        class:bg-gray-100=move || !is_instruction_mode.get()
-                        class:text-gray-600=move || !is_instruction_mode.get()
-                        on:click=move |_| is_instruction_mode.update(|m| *m = !*m)
-                    >
-                        <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
-                        {move || {
-                            if is_instruction_mode.get() { "指令参数" } else { "传统参数" }
-                        }}
-                    </button>
+                    <Show when=move || {
+                        let cat = selected_category.get();
+                        cat != "qwen3-tts" && cat != "cosyvoice-v3" && cat != "cosyvoice-v3-flash"
+                            && cat != "qwen3-tts-flash"
+                    }>
+                        <button
+                            class="text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center"
+                            class:bg-primary=move || is_instruction_mode.get()
+                            class:text-white=move || is_instruction_mode.get()
+                            class:bg-gray-100=move || !is_instruction_mode.get()
+                            class:text-gray-600=move || !is_instruction_mode.get()
+                            on:click=move |_| is_instruction_mode.update(|m| *m = !*m)
+                        >
+                            <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
+                            {move || {
+                                if is_instruction_mode.get() {
+                                    "指令参数"
+                                } else {
+                                    "传统参数"
+                                }
+                            }}
+                        </button>
+                    </Show>
                     <Show when=move || is_modified.get()>
                         <button
                             class="text-sm px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
@@ -1261,97 +1371,34 @@ pub fn ParameterControlCard(
 
             // 内容区域
             <div class="space-y-8">
-                <Show
-                    when=move || is_instruction_mode.get()
-                    fallback=move || {
+                {move || {
+                    let cat = selected_category.get();
+                    if cat == "qwen3-tts" {
+                        view! { <InstructionParams instruction_text=instruction_text /> }.into_any()
+                    } else if cat == "cosyvoice-v3" || cat == "cosyvoice-v3-flash" {
+                        view! { <TraditionalParams selected_param=selected_param /> }.into_any()
+                    } else if cat == "qwen3-tts-flash" {
                         view! {
-                            // 传统参数模式
-                            <div>
-                                <div class="flex justify-between mb-2">
-                                    <label class="font-medium text-gray-700">
-                                        "音高 (Pitch)"
-                                    </label>
-                                    <span class="text-sm text-primary font-bold">
-                                        {move || format!("{}", selected_param.get().pitch)}
-                                    </span>
-                                </div>
-                                <div class="relative flex items-center">
-                                    <span class="text-xs text-gray-400 absolute left-0 -bottom-5">
-                                        "0.5"
-                                    </span>
-                                    <input
-                                        type="range"
-                                        min="0.5"
-                                        max="2.0"
-                                        step="0.01"
-                                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
-                                        // 双向绑定逻辑
-                                        prop:value=move || selected_param.get().pitch
-                                        on:input=move |ev| {
-                                            let val = event_target_value(&ev)
-                                                .parse::<f32>()
-                                                .unwrap_or(0.0);
-                                            selected_param.update(|p| p.pitch = val);
-                                        }
-                                    />
-                                    <span class="text-xs text-gray-400 absolute right-0 -bottom-5">
-                                        "2.0"
-                                    </span>
-                                </div>
-                            </div>
-
-                            // --- 2. 语速 (Speed) ---
-                            <div class="mt-8">
-                                <div class="flex justify-between mb-2">
-                                    <label class="font-medium text-gray-700">
-                                        "语速 (Speed)"
-                                    </label>
-                                    <span class="text-sm text-primary font-bold">
-                                        {move || format!("{:.2}x", selected_param.get().speed)}
-                                    </span>
-                                </div>
-                                <div class="relative flex items-center">
-                                    <span class="text-xs text-gray-400 absolute left-0 -bottom-5">
-                                        "0.5x"
-                                    </span>
-                                    <input
-                                        type="range"
-                                        min="0.5"
-                                        max="2.0"
-                                        step="0.01"
-                                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
-                                        prop:value=move || selected_param.get().speed
-                                        on:input=move |ev| {
-                                            let val = event_target_value(&ev)
-                                                .parse::<f32>()
-                                                .unwrap_or(1.0);
-                                            selected_param.update(|p| p.speed = val);
-                                        }
-                                    />
-                                    <span class="text-xs text-gray-400 absolute right-0 -bottom-5">
-                                        "2.0x"
-                                    </span>
-                                </div>
+                            <div class="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-200">
+                                <i class="fa-solid fa-circle-info text-4xl mb-3 opacity-50"></i>
+                                <p>"此模型不支持参数调节"</p>
                             </div>
                         }
+                            .into_any()
+                    } else {
+                        view! {
+                            <Show
+                                when=move || is_instruction_mode.get()
+                                fallback=move || {
+                                    view! { <TraditionalParams selected_param=selected_param /> }
+                                }
+                            >
+                                <InstructionParams instruction_text=instruction_text />
+                            </Show>
+                        }
+                            .into_any()
                     }
-                >
-                    // 指令参数模式
-                    <div>
-                        <label class="block font-medium text-gray-700 mb-2">"输入指令"</label>
-                        <textarea
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none"
-                            rows="4"
-                            placeholder="例如：用温柔的语气，语速稍微慢一点..."
-                            prop:value=move || instruction_text.get()
-                            on:input=move |ev| instruction_text.set(event_target_value(&ev))
-                        ></textarea>
-                        <p class="text-xs text-gray-500 mt-2">
-                            <i class="fa-solid fa-circle-info mr-1"></i>
-                            "使用自然语言描述你想要的声音效果，AI 将自动为你调整。"
-                        </p>
-                    </div>
-                </Show>
+                }}
             </div>
         </section>
     }
