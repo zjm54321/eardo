@@ -1234,7 +1234,7 @@ pub fn TraditionalParams(
         </div>
 
         // --- 2. 语速 (Speed) ---
-        <div class="mt-8">
+        <div class="mt-8 pb-8">
             <div class="flex justify-between mb-2">
                 <label class="font-medium text-gray-700">"语速 (Speed)"</label>
                 <span class="text-sm text-primary font-bold">
