@@ -1323,43 +1323,45 @@ pub fn ParameterControlCard(
         String::new()
     };
 
+    create_effect(move |_| {
+        let cat = selected_category();
+        if cat == "qwen3-tts" {
+            is_instruction_mode.set(true);
+        } else if cat == "cosyvoice-v3" || cat == "cosyvoice-v3-flash" {
+            is_instruction_mode.set(false);
+        }
+    });
+
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
             // 标题
             <div class="flex items-center justify-between mb-6">
-                <h3 class="text-lg font-semibold flex items-center">
-                    <i class="fa-solid fa-sliders text-primary mr-2"></i>
-                    "参数调节"
-                </h3>
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <h3 class="text-lg font-semibold flex items-center">
+                        <i class="fa-solid fa-sliders text-primary mr-2"></i>
+                        "参数调节"
+                    </h3>
                     // 切换按钮
                     <Suspense fallback=move || {
-                        view! { <div class="w-20 h-8 bg-gray-100 rounded-lg animate-pulse"></div> }
+                        view! { <div class="w-6 h-6 bg-gray-100 rounded-full animate-pulse"></div> }
                     }>
+                        // cat == "qwen3-tts"
+                        // 目前先隐藏切换按钮，后续根据模型支持情况再决定是否显示
                         <Show when=move || {
                             let cat = selected_category();
-                            cat != "qwen3-tts" && cat != "cosyvoice-v3"
-                                && cat != "cosyvoice-v3-flash" && cat != "qwen3-tts-flash"
+                            false
                         }>
                             <button
-                                class="text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center"
-                                class:bg-primary=move || is_instruction_mode.get()
-                                class:text-white=move || is_instruction_mode.get()
-                                class:bg-gray-100=move || !is_instruction_mode.get()
-                                class:text-gray-600=move || !is_instruction_mode.get()
+                                class="text-gray-400 hover:text-primary transition-colors flex items-center justify-center w-6 h-6 rounded-full"
                                 on:click=move |_| is_instruction_mode.update(|m| *m = !*m)
+                                title="切换参数模式"
                             >
-                                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
-                                {move || {
-                                    if is_instruction_mode.get() {
-                                        "指令参数"
-                                    } else {
-                                        "传统参数"
-                                    }
-                                }}
+                                <i class="fa-solid fa-arrows-rotate"></i>
                             </button>
                         </Show>
                     </Suspense>
+                </div>
+                <div class="flex items-center gap-3">
                     <Show when=move || is_modified.get()>
                         <button
                             class="text-sm px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
@@ -1380,20 +1382,9 @@ pub fn ParameterControlCard(
                 <div class="space-y-8">
                     {move || {
                         let cat = selected_category();
-                        if cat == "qwen3-tts" {
-                            view! { <InstructionParams instruction_text=instruction_text /> }
-                                .into_any()
-                        } else if cat == "cosyvoice-v3" || cat == "cosyvoice-v3-flash" {
-                            view! { <TraditionalParams selected_param=selected_param /> }.into_any()
-                        } else if cat == "qwen3-tts-flash" {
-                            view! {
-                                <div class="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-200">
-                                    <i class="fa-solid fa-circle-info text-4xl mb-3 opacity-50"></i>
-                                    <p>"此模型不支持参数调节"</p>
-                                </div>
-                            }
-                                .into_any()
-                        } else {
+                        if cat == "qwen3-tts" || cat == "cosyvoice-v3"
+                            || cat == "cosyvoice-v3-flash"
+                        {
                             view! {
                                 <Show
                                     when=move || is_instruction_mode.get()
@@ -1405,6 +1396,14 @@ pub fn ParameterControlCard(
                                 >
                                     <InstructionParams instruction_text=instruction_text />
                                 </Show>
+                            }
+                                .into_any()
+                        } else {
+                            view! {
+                                <div class="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-200">
+                                    <i class="fa-solid fa-circle-info text-4xl mb-3 opacity-50"></i>
+                                    <p>"此模型不支持参数调节"</p>
+                                </div>
                             }
                                 .into_any()
                         }
