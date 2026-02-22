@@ -3,20 +3,19 @@ use sqlx::Sqlite;
 
 use crate::api::*;
 
-fn parse_voice_category(raw: &str, model_name: &str) -> VoiceModelCategory {
+fn parse_voice_category(raw: &str, _model_name: &str) -> VoiceModelCategory {
     match raw.to_lowercase().as_str() {
-        "official" | "官方" => VoiceModelCategory::Official(model_name.to_string()),
         "user_designed" | "user" | "用户设计" => VoiceModelCategory::UserDesigned,
         "voice_generated" | "generated" | "声音生成" => VoiceModelCategory::VoiceGenerated,
-        _ => VoiceModelCategory::UserDesigned,
+        _ => VoiceModelCategory::Official(raw.to_string()),
     }
 }
 
-fn category_to_db(category: &VoiceModelCategory) -> &'static str {
+fn category_to_db(category: &VoiceModelCategory) -> String {
     match category {
-        VoiceModelCategory::Official(_) => "official",
-        VoiceModelCategory::UserDesigned => "user_designed",
-        VoiceModelCategory::VoiceGenerated => "voice_generated",
+        VoiceModelCategory::Official(content) => content.clone(),
+        VoiceModelCategory::UserDesigned => "user_designed".to_string(),
+        VoiceModelCategory::VoiceGenerated => "voice_generated".to_string(),
     }
 }
 
