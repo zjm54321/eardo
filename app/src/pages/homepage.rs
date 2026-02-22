@@ -1265,18 +1265,69 @@ pub fn TraditionalParams(
 pub fn InstructionParams(
     instruction_text: RwSignal<String>,
 ) -> impl IntoView {
+    let is_loading = RwSignal::new(false);
+    
+    let ai_action = Action::new(move |input: &String| {
+        let input = input.clone();
+        async move {
+            let prompt = format!(
+                "你是语音指令优化助手。请根据以下原则，将用户的简单描述改写为高质量的语音合成指令：\n\
+                1) 具体而非模糊：使用描绘具体声音特质的词语（如低沉、清脆、语速偏快）。\n\
+                2) 多维而非单一：结合音调、语速、情感、特点等多个维度。\n\
+                3) 客观而非主观：专注于声音本身的物理和感知特征。\n\
+                4) 简洁而非冗余：确保每个词都有意义。\n\
+                5) 只输出改写后的指令文本，不要附加任何解释、问候或多余内容。\n\n\
+                用户原始描述：\n{}",
+                input
+            );
+            ai_rewrite_text(prompt).await
+        }
+    });
+
+    Effect::new(move |_| {
+        if let Some(Ok(result)) = ai_action.value().get() {
+            instruction_text.set(result);
+            is_loading.set(false);
+        } else if let Some(Err(err)) = ai_action.value().get() {
+            debug_error!("AI 指令优化失败: {}", err);
+            is_loading.set(false);
+        }
+    });
+
     view! {
         <div>
-            <textarea
-                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none"
-                rows="4"
-                placeholder="例如：用温柔的语气，语速稍微慢一点..."
-                prop:value=move || instruction_text.get()
-                on:input=move |ev| { instruction_text.set(event_target_value(&ev)) }
-            ></textarea>
+            <div class="relative">
+                <textarea
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none"
+                    rows="4"
+                    placeholder="例如：用温柔的语气，语速稍微慢一点..."
+                    prop:value=move || instruction_text.get()
+                    on:input=move |ev| { instruction_text.set(event_target_value(&ev)) }
+                    disabled=move || is_loading.get()
+                ></textarea>
+
+                <button
+                    class="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-white/50 hover:bg-white/80 backdrop-blur-sm text-primary hover:text-primary-focus shadow-sm hover:shadow transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    on:click=move |_| {
+                        if !instruction_text.get().trim().is_empty() {
+                            is_loading.set(true);
+                            ai_action.dispatch(instruction_text.get());
+                        }
+                    }
+                    disabled=move || is_loading.get() || instruction_text.get().trim().is_empty()
+                    title="AI 优化指令"
+                >
+                    <Show
+                        when=move || is_loading.get()
+                        fallback=move || view! { <i class="fa-solid fa-wand-magic-sparkles"></i> }
+                    >
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                    </Show>
+                </button>
+            </div>
             <p class="text-xs text-gray-500 mt-2">
                 <i class="fa-solid fa-circle-info mr-1"></i>
-                "使用自然语言描述你想要的声音效果，AI 将自动为你调整。"
+                "使用自然语言描述你想要的声音效果。"
             </p>
         </div>
     }
