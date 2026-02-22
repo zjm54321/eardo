@@ -318,6 +318,8 @@ pub async fn qwen_generate(
 
     #[cfg(feature = "ssr")]
     {
+        use serde::de;
+
         let api_key = std::env::var("DASHSCOPE_API_KEY")
             .or_else(|_| std::env::var("ALIYUN_API_KEY"))
             .unwrap_or_default();
@@ -325,8 +327,18 @@ pub async fn qwen_generate(
             return Err(anyhow!("DASHSCOPE_API_KEY missing"));
         }
 
-        let model = std::env::var("DASHSCOPE_TTS_MODEL")
-            .unwrap_or_else(|_| "qwen3-tts-flash".to_string());
+        let mut model = String::new();
+        if let crate::api::VoiceModelCategory::Official(ref model_name) = voice_info.base_model.category {
+            if model_name.contains("qwen") {
+                model = match model_name.as_str() {
+                    "qwen3-tts-instruct-flash"
+                    | "qwen3-tts-vd-2026-01-26"
+                    | "qwen3-tts-vc-2026-01-22"
+                    | "qwen3-tts-flash" => model_name.clone(),
+                    _ => "qwen3-tts-instruct-flash".to_string(),
+                };
+            }
+        }
 
         let base_url =
             "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
@@ -362,6 +374,8 @@ pub async fn qwen_generate(
                 optimize_instructions,
             },
         };
+
+        debug_log!("DashScope TTS request payload: {:?}", payload);
 
         let response = request
             .json(&payload)

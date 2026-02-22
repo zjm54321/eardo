@@ -124,6 +124,10 @@ pub fn HomePage() -> impl IntoView {
     let (filter_share_title, set_filter_share_title) = signal(String::new());
     let (filter_share_intro, set_filter_share_intro) = signal(String::new());
 
+    // 指令参数状态
+    let is_instruction_mode = RwSignal::new(true);
+    let instruction_text = RwSignal::new(String::new());
+
     // 创建 Action 处理生成请求
     // Action 自动管理 pending (加载中) 和 value (返回值) 状态
     let generate_action = Action::new(move |_| {
@@ -132,6 +136,8 @@ pub fn HomePage() -> impl IntoView {
         let pitch = param_signal.get().pitch;
         let speed = param_signal.get().speed;
         let volume = param_signal.get().volume;
+        let is_instruction = is_instruction_mode.get();
+        let instruction = instruction_text.get();
 
         async move {
             // 获取基础模型信息
@@ -144,13 +150,19 @@ pub fn HomePage() -> impl IntoView {
             };
 
             // 创建 VoiceMetaInfo 对象
-            let voice_meta = api::VoiceMetaInfo {
-                base_model,
-                metadata: api::VoiceMetadata::Parametric(VoiceParams {
+            let metadata = if is_instruction {
+                api::VoiceMetadata::Instruction(instruction)
+            } else {
+                api::VoiceMetadata::Parametric(VoiceParams {
                     pitch,
                     speed,
                     volume,
-                }),
+                })
+            };
+
+            let voice_meta = api::VoiceMetaInfo {
+                base_model,
+                metadata,
             };
 
             debug_log!(
@@ -267,6 +279,8 @@ pub fn HomePage() -> impl IntoView {
                                 volume: initial_volume,
                             }
                             open_filter_share=set_show_filter_share
+                            is_instruction_mode=is_instruction_mode
+                            instruction_text=instruction_text
                         />
                         // 3. 输出结果 (核心功能)
                         <AudioResultCard generate_action=generate_action />
@@ -1194,6 +1208,10 @@ pub fn ParameterControlCard(
     initial_param: VoiceParams,
     /// 触发分享弹窗
     open_filter_share: WriteSignal<bool>,
+    /// 是否为指令模式
+    is_instruction_mode: RwSignal<bool>,
+    /// 指令文本
+    instruction_text: RwSignal<String>,
 ) -> impl IntoView {
     // 判定是否有改动
     let is_modified = Memo::new(move |_| {
@@ -1213,72 +1231,127 @@ pub fn ParameterControlCard(
                     <i class="fa-solid fa-sliders text-primary mr-2"></i>
                     "参数调节"
                 </h3>
-                <Show when=move || is_modified.get()>
+                <div class="flex items-center gap-3">
+                    // 切换按钮
                     <button
-                        class="text-sm px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
-                        on:click=move |_| open_filter_share.set(true)
-                        title="分享当前声线与参数"
+                        class="text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center"
+                        class:bg-primary=move || is_instruction_mode.get()
+                        class:text-white=move || is_instruction_mode.get()
+                        class:bg-gray-100=move || !is_instruction_mode.get()
+                        class:text-gray-600=move || !is_instruction_mode.get()
+                        on:click=move |_| is_instruction_mode.update(|m| *m = !*m)
                     >
-                        <i class="fa-solid fa-share mr-2"></i>
-                        "分享"
+                        <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
+                        {move || {
+                            if is_instruction_mode.get() { "指令参数" } else { "传统参数" }
+                        }}
                     </button>
-                </Show>
+                    <Show when=move || is_modified.get()>
+                        <button
+                            class="text-sm px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
+                            on:click=move |_| open_filter_share.set(true)
+                            title="分享当前声线与参数"
+                        >
+                            <i class="fa-solid fa-share mr-2"></i>
+                            "分享"
+                        </button>
+                    </Show>
+                </div>
             </div>
 
-            // 模拟的内容（模糊处理）
+            // 内容区域
             <div class="space-y-8">
-                <div>
-                    <div class="flex justify-between mb-2">
-                        <label class="font-medium text-gray-700">"音高 (Pitch)"</label>
-                        <span class="text-sm text-primary font-bold">
-                            {move || format!("{}", selected_param.get().pitch)}
-                        </span>
-                    </div>
-                    <div class="relative flex items-center">
-                        <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0.5"</span>
-                        <input
-                            type="range"
-                            min="0.5"
-                            max="2.0"
-                            step="0.01"
-                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
-                            // 双向绑定逻辑
-                            prop:value=move || selected_param.get().pitch
-                            on:input=move |ev| {
-                                let val = event_target_value(&ev).parse::<f32>().unwrap_or(0.0);
-                                selected_param.update(|p| p.pitch = val);
-                            }
-                        />
-                        <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0"</span>
-                    </div>
-                </div>
+                <Show
+                    when=move || is_instruction_mode.get()
+                    fallback=move || {
+                        view! {
+                            // 传统参数模式
+                            <div>
+                                <div class="flex justify-between mb-2">
+                                    <label class="font-medium text-gray-700">
+                                        "音高 (Pitch)"
+                                    </label>
+                                    <span class="text-sm text-primary font-bold">
+                                        {move || format!("{}", selected_param.get().pitch)}
+                                    </span>
+                                </div>
+                                <div class="relative flex items-center">
+                                    <span class="text-xs text-gray-400 absolute left-0 -bottom-5">
+                                        "0.5"
+                                    </span>
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="2.0"
+                                        step="0.01"
+                                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
+                                        // 双向绑定逻辑
+                                        prop:value=move || selected_param.get().pitch
+                                        on:input=move |ev| {
+                                            let val = event_target_value(&ev)
+                                                .parse::<f32>()
+                                                .unwrap_or(0.0);
+                                            selected_param.update(|p| p.pitch = val);
+                                        }
+                                    />
+                                    <span class="text-xs text-gray-400 absolute right-0 -bottom-5">
+                                        "2.0"
+                                    </span>
+                                </div>
+                            </div>
 
-                // --- 2. 语速 (Speed) ---
-                <div>
-                    <div class="flex justify-between mb-2">
-                        <label class="font-medium text-gray-700">"语速 (Speed)"</label>
-                        <span class="text-sm text-primary font-bold">
-                            {move || format!("{:.2}x", selected_param.get().speed)}
-                        </span>
+                            // --- 2. 语速 (Speed) ---
+                            <div class="mt-8">
+                                <div class="flex justify-between mb-2">
+                                    <label class="font-medium text-gray-700">
+                                        "语速 (Speed)"
+                                    </label>
+                                    <span class="text-sm text-primary font-bold">
+                                        {move || format!("{:.2}x", selected_param.get().speed)}
+                                    </span>
+                                </div>
+                                <div class="relative flex items-center">
+                                    <span class="text-xs text-gray-400 absolute left-0 -bottom-5">
+                                        "0.5x"
+                                    </span>
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="2.0"
+                                        step="0.01"
+                                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
+                                        prop:value=move || selected_param.get().speed
+                                        on:input=move |ev| {
+                                            let val = event_target_value(&ev)
+                                                .parse::<f32>()
+                                                .unwrap_or(1.0);
+                                            selected_param.update(|p| p.speed = val);
+                                        }
+                                    />
+                                    <span class="text-xs text-gray-400 absolute right-0 -bottom-5">
+                                        "2.0x"
+                                    </span>
+                                </div>
+                            </div>
+                        }
+                    }
+                >
+                    // 指令参数模式
+                    <div>
+                        <label class="block font-medium text-gray-700 mb-2">"输入指令"</label>
+                        <textarea
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none"
+                            rows="4"
+                            placeholder="例如：用温柔的语气，语速稍微慢一点..."
+                            prop:value=move || instruction_text.get()
+                            on:input=move |ev| instruction_text.set(event_target_value(&ev))
+                        ></textarea>
+                        <p class="text-xs text-gray-500 mt-2">
+                            <i class="fa-solid fa-circle-info mr-1"></i>
+                            "使用自然语言描述你想要的声音效果，AI 将自动为你调整。"
+                        </p>
                     </div>
-                    <div class="relative flex items-center">
-                        <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0.5x"</span>
-                        <input
-                            type="range"
-                            min="0.5"
-                            max="2.0"
-                            step="0.01"
-                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
-                            prop:value=move || selected_param.get().speed
-                            on:input=move |ev| {
-                                let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
-                                selected_param.update(|p| p.speed = val);
-                            }
-                        />
-                        <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0x"</span>
-                    </div>
-                </div>
-
+                </Show>
             </div>
         </section>
     }
