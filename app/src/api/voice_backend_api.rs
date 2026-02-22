@@ -110,6 +110,7 @@ struct DashScopeTtsOutput {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct DashScopeTtsResponse {
+    #[serde(default = "default_status_code")]
     status_code: i32,
     #[serde(default)]
     request_id: Option<String>,
@@ -119,6 +120,10 @@ struct DashScopeTtsResponse {
     message: Option<String>,
     #[serde(default)]
     output: Option<DashScopeTtsOutput>,
+}
+
+fn default_status_code() -> i32 {
+    200
 }
 
 /// Generate audio bytes via CosyVoice WebSocket API
