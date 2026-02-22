@@ -1311,7 +1311,7 @@ pub fn ParameterControlCard(
         dv || dp
     });
 
-    let selected_category = Memo::new(move |_| {
+    let selected_category = move || {
         let voice_id = selected_voice.get();
         if let Some(Ok(voices)) = voices_resource.get() {
             if let Some(voice) = voices.iter().find(|v| v.id == voice_id) {
@@ -1321,7 +1321,7 @@ pub fn ParameterControlCard(
             }
         }
         String::new()
-    });
+    };
 
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
@@ -1333,29 +1333,33 @@ pub fn ParameterControlCard(
                 </h3>
                 <div class="flex items-center gap-3">
                     // 切换按钮
-                    <Show when=move || {
-                        let cat = selected_category.get();
-                        cat != "qwen3-tts" && cat != "cosyvoice-v3" && cat != "cosyvoice-v3-flash"
-                            && cat != "qwen3-tts-flash"
+                    <Suspense fallback=move || {
+                        view! { <div class="w-20 h-8 bg-gray-100 rounded-lg animate-pulse"></div> }
                     }>
-                        <button
-                            class="text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center"
-                            class:bg-primary=move || is_instruction_mode.get()
-                            class:text-white=move || is_instruction_mode.get()
-                            class:bg-gray-100=move || !is_instruction_mode.get()
-                            class:text-gray-600=move || !is_instruction_mode.get()
-                            on:click=move |_| is_instruction_mode.update(|m| *m = !*m)
-                        >
-                            <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
-                            {move || {
-                                if is_instruction_mode.get() {
-                                    "指令参数"
-                                } else {
-                                    "传统参数"
-                                }
-                            }}
-                        </button>
-                    </Show>
+                        <Show when=move || {
+                            let cat = selected_category();
+                            cat != "qwen3-tts" && cat != "cosyvoice-v3"
+                                && cat != "cosyvoice-v3-flash" && cat != "qwen3-tts-flash"
+                        }>
+                            <button
+                                class="text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center"
+                                class:bg-primary=move || is_instruction_mode.get()
+                                class:text-white=move || is_instruction_mode.get()
+                                class:bg-gray-100=move || !is_instruction_mode.get()
+                                class:text-gray-600=move || !is_instruction_mode.get()
+                                on:click=move |_| is_instruction_mode.update(|m| *m = !*m)
+                            >
+                                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
+                                {move || {
+                                    if is_instruction_mode.get() {
+                                        "指令参数"
+                                    } else {
+                                        "传统参数"
+                                    }
+                                }}
+                            </button>
+                        </Show>
+                    </Suspense>
                     <Show when=move || is_modified.get()>
                         <button
                             class="text-sm px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
@@ -1370,36 +1374,43 @@ pub fn ParameterControlCard(
             </div>
 
             // 内容区域
-            <div class="space-y-8">
-                {move || {
-                    let cat = selected_category.get();
-                    if cat == "qwen3-tts" {
-                        view! { <InstructionParams instruction_text=instruction_text /> }.into_any()
-                    } else if cat == "cosyvoice-v3" || cat == "cosyvoice-v3-flash" {
-                        view! { <TraditionalParams selected_param=selected_param /> }.into_any()
-                    } else if cat == "qwen3-tts-flash" {
-                        view! {
-                            <div class="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-200">
-                                <i class="fa-solid fa-circle-info text-4xl mb-3 opacity-50"></i>
-                                <p>"此模型不支持参数调节"</p>
-                            </div>
+            <Suspense fallback=move || {
+                view! { <div class="h-32 bg-gray-100 rounded-lg animate-pulse"></div> }
+            }>
+                <div class="space-y-8">
+                    {move || {
+                        let cat = selected_category();
+                        if cat == "qwen3-tts" {
+                            view! { <InstructionParams instruction_text=instruction_text /> }
+                                .into_any()
+                        } else if cat == "cosyvoice-v3" || cat == "cosyvoice-v3-flash" {
+                            view! { <TraditionalParams selected_param=selected_param /> }.into_any()
+                        } else if cat == "qwen3-tts-flash" {
+                            view! {
+                                <div class="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-200">
+                                    <i class="fa-solid fa-circle-info text-4xl mb-3 opacity-50"></i>
+                                    <p>"此模型不支持参数调节"</p>
+                                </div>
+                            }
+                                .into_any()
+                        } else {
+                            view! {
+                                <Show
+                                    when=move || is_instruction_mode.get()
+                                    fallback=move || {
+                                        view! {
+                                            <TraditionalParams selected_param=selected_param />
+                                        }
+                                    }
+                                >
+                                    <InstructionParams instruction_text=instruction_text />
+                                </Show>
+                            }
+                                .into_any()
                         }
-                            .into_any()
-                    } else {
-                        view! {
-                            <Show
-                                when=move || is_instruction_mode.get()
-                                fallback=move || {
-                                    view! { <TraditionalParams selected_param=selected_param /> }
-                                }
-                            >
-                                <InstructionParams instruction_text=instruction_text />
-                            </Show>
-                        }
-                            .into_any()
-                    }
-                }}
-            </div>
+                    }}
+                </div>
+            </Suspense>
         </section>
     }
 }
