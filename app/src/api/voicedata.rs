@@ -5,8 +5,8 @@ use crate::api::*;
 
 fn parse_voice_category(raw: &str, _model_name: &str) -> VoiceModelCategory {
     match raw.to_lowercase().as_str() {
-        "user_designed" | "user" | "用户设计" => VoiceModelCategory::UserDesigned,
-        "voice_generated" | "generated" | "声音生成" => VoiceModelCategory::VoiceGenerated,
+        "user_designed"  => VoiceModelCategory::UserDesigned,
+        "voice_generated" => VoiceModelCategory::VoiceGenerated,
         _ => VoiceModelCategory::Official(raw.to_string()),
     }
 }

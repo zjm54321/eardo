@@ -6,7 +6,6 @@ use leptos_router::{
 };
 
 pub mod api;
-mod data;
 mod pages;
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {

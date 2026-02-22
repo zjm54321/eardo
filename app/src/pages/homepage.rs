@@ -134,18 +134,18 @@ pub fn HomePage() -> impl IntoView {
         let volume = param_signal.get().volume;
 
         async move {
+            // 获取基础模型信息
+            let base_model = match api::get_voice_model(voice_id.clone()).await {
+                Ok(model) => model,
+                Err(e) => {
+                    debug_error!("获取语音模型失败: {}", e);
+                    return Err(e);
+                }
+            };
+
             // 创建 VoiceMetaInfo 对象
             let voice_meta = api::VoiceMetaInfo {
-                base_model: api::VoiceModelInfo {
-                    id: voice_id.clone(),
-                    name: voice_id.clone(),
-                    icon_url: format!(
-                        "https://api.dicebear.com/7.x/shapes/svg?seed={}&backgroundType=gradientLinear&size=64",
-                        voice_id
-                    ),
-                    category: api::VoiceModelCategory::Official(voice_id.clone()),
-                    description: String::new(),
-                },
+                base_model,
                 metadata: api::VoiceMetadata::Parametric(VoiceParams {
                     pitch,
                     speed,
