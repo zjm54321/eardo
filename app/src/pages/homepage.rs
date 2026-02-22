@@ -1107,9 +1107,9 @@ pub fn VoiceSelectorCard(
 
                             // 3. 加载成功
                             view! {
-                                // 添加 max-h-[300px] 和 overflow-y-auto 来实现滚动条
+                                // 使用 h-full 让容器占满父容器，overflow-y-auto 实现滚动条
                                 // pr-2 是为了防止滚动条遮挡内容
-                                <div class="flex flex-col gap-3 max-h-[300px] lg:max-h-none overflow-y-auto pr-2 custom-scrollbar flex-1 min-h-0">
+                                <div class="flex flex-col gap-3 h-full overflow-y-auto pr-2">
                                     <For
                                         each=move || voices.clone()
                                         key=|voice| voice.id.clone()
