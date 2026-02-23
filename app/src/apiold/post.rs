@@ -122,7 +122,10 @@ impl PostService for ServiceProvider<Sqlite> {
 
             // 使用nickname如果存在，否则使用username
             let display_name = nickname.unwrap_or(username);
-            let avatar_url = user_id.as_ref().map(|id| format!("/api/avatar/{}", id)).unwrap_or_default();
+            let avatar_url = user_id
+                .as_ref()
+                .map(|id| format!("/api/avatar/{}", id))
+                .unwrap_or_default();
 
             result.push(PostInfo {
                 id: id.clone(),
@@ -262,7 +265,10 @@ impl PostService for ServiceProvider<Sqlite> {
         };
 
         let display_name = nickname.unwrap_or(username);
-        let avatar_url = user_id.as_ref().map(|id| format!("/api/avatar/{}", id)).unwrap_or_default();
+        let avatar_url = user_id
+            .as_ref()
+            .map(|id| format!("/api/avatar/{}", id))
+            .unwrap_or_default();
 
         Ok(PostInfo {
             id: id.clone(),
@@ -318,7 +324,12 @@ impl PostService for ServiceProvider<Sqlite> {
         leptos::logging::debug_log!("音频数据长度: {} bytes", audio_data.len());
 
         // 从 post.meta.voice_info.voice_meta_id 获取 base_model_id
-        let base_model_id = post.meta.voice_info.voice_meta_id.as_deref().unwrap_or("default");
+        let base_model_id = post
+            .meta
+            .voice_info
+            .voice_meta_id
+            .as_deref()
+            .unwrap_or("default");
 
         let voice_meta_id: Option<String> =
             sqlx::query_scalar("SELECT id FROM voice_meta_infos WHERE base_model_id = ? LIMIT 1")

@@ -5,7 +5,7 @@ use crate::api::*;
 
 fn parse_voice_category(raw: &str, _model_name: &str) -> VoiceModelCategory {
     match raw.to_lowercase().as_str() {
-        "user_designed"  => VoiceModelCategory::UserDesigned,
+        "user_designed" => VoiceModelCategory::UserDesigned,
         "voice_generated" => VoiceModelCategory::VoiceGenerated,
         _ => VoiceModelCategory::Official(raw.to_string()),
     }
@@ -345,13 +345,10 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
 
         leptos::logging::log!(
             "使用以下参数创建了音频请求：{:?};文本内容：{}\n",
-            voice_info, text
+            voice_info,
+            text
         );
 
-        crate::api::voice_backend_api::qwen_generate(
-            voice_info,
-            text,
-        )
-        .await
+        crate::api::voice_backend_api::qwen_generate(voice_info, text).await
     }
 }

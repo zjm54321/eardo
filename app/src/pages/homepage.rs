@@ -26,8 +26,8 @@ pub struct CreatePostPayload {
 pub async fn ai_rewrite_text(input: String) -> Result<String, ServerFnError> {
     let api_url = std::env::var("OPENAI_API_BASE")
         .unwrap_or_else(|_| "https://api.placeholder.com/v1/chat/completions".to_string());
-    let api_token = std::env::var("OPENAI_API_KEY")
-        .unwrap_or_else(|_| "YOUR_API_TOKEN".to_string());
+    let api_token =
+        std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "YOUR_API_TOKEN".to_string());
 
     let payload = serde_json::json!({
         "model": "DeepSeek-V3.1",
@@ -1203,9 +1203,7 @@ pub fn VoiceSelectorCard(
 }
 
 #[component]
-pub fn TraditionalParams(
-    selected_param: RwSignal<VoiceParams>,
-) -> impl IntoView {
+pub fn TraditionalParams(selected_param: RwSignal<VoiceParams>) -> impl IntoView {
     view! {
         <div>
             <div class="flex justify-between mb-2">
@@ -1262,11 +1260,9 @@ pub fn TraditionalParams(
 }
 
 #[component]
-pub fn InstructionParams(
-    instruction_text: RwSignal<String>,
-) -> impl IntoView {
+pub fn InstructionParams(instruction_text: RwSignal<String>) -> impl IntoView {
     let is_loading = RwSignal::new(false);
-    
+
     let ai_action = Action::new(move |input: &String| {
         let input = input.clone();
         async move {

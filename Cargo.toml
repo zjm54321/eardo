@@ -30,6 +30,8 @@ wasm-bindgen = "=0.2.108"
 sqlx = { version = "0.8", features = [
     "runtime-tokio",
     "sqlite",
+    "postgres",
+    "uuid",
     "macros",
     "chrono",
 ] }

@@ -307,10 +307,7 @@ pub async fn cosyvoice_generate(
 }
 
 /// Generate audio bytes via Qwen TTS HTTP API
-pub async fn qwen_generate(
-    voice_info: &VoiceMetaInfo,
-    text: &str,
-) -> Result<Vec<u8>> {
+pub async fn qwen_generate(voice_info: &VoiceMetaInfo, text: &str) -> Result<Vec<u8>> {
     #[cfg(not(feature = "ssr"))]
     {
         return Err(anyhow!("DashScope TTS generation not available on client"));
@@ -326,7 +323,9 @@ pub async fn qwen_generate(
         }
 
         let mut model = String::new();
-        if let crate::api::VoiceModelCategory::Official(ref model_name) = voice_info.base_model.category {
+        if let crate::api::VoiceModelCategory::Official(ref model_name) =
+            voice_info.base_model.category
+        {
             if model_name.contains("qwen") {
                 model = match model_name.as_str() {
                     "qwen3-tts-instruct-flash"
@@ -392,7 +391,9 @@ pub async fn qwen_generate(
 
         if !status.is_success() || parsed.status_code != 200 {
             let code = parsed.code.unwrap_or_else(|| "unknown".to_string());
-            let message = parsed.message.unwrap_or_else(|| "unknown error".to_string());
+            let message = parsed
+                .message
+                .unwrap_or_else(|| "unknown error".to_string());
             return Err(anyhow!(
                 "DashScope error: status={}, code={}, message={}",
                 parsed.status_code,
@@ -438,4 +439,3 @@ pub async fn qwen_generate(
         Err(anyhow!("DashScope response missing audio content"))
     }
 }
-
