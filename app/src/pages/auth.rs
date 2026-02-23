@@ -42,6 +42,7 @@ pub fn LoginPage() -> impl IntoView {
     let (username, set_username) = signal(String::new());
     let (password, set_password) = signal(String::new());
     let (error_msg, set_error_msg) = signal(Option::<String>::None);
+    let (show_password, set_show_password) = signal(false);
 
     let login_action = Action::new(move |_| {
         let u = username.get();
@@ -117,13 +118,62 @@ pub fn LoginPage() -> impl IntoView {
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">"密码"</label>
-                        <input
-                            type="password"
-                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
-                            placeholder="请输入密码"
-                            on:input=move |ev| set_password.set(event_target_value(&ev))
-                            prop:value=password
-                        />
+                        <div class="relative">
+                            <input
+                                type=move || if show_password.get() { "text" } else { "password" }
+                                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
+                                placeholder="请输入密码"
+                                on:input=move |ev| set_password.set(event_target_value(&ev))
+                                prop:value=password
+                            />
+                            <button
+                                type="button"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                on:click=move |_| set_show_password.update(|s| *s = !*s)
+                            >
+                                <Show
+                                    when=move || show_password.get()
+                                    fallback=move || {
+                                        view! {
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke-width="1.5"
+                                                stroke="currentColor"
+                                                class="w-5 h-5"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                                />
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                                />
+                                            </svg>
+                                        }
+                                    }
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="w-5 h-5"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                                        />
+                                    </svg>
+                                </Show>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -161,12 +211,35 @@ pub fn RegisterPage() -> impl IntoView {
     use email_address::EmailAddress;
     let navigate = use_navigate();
     // 注册方式：邮箱 / 手机号（二选一）
-    let (register_method, set_register_method) = signal(String::from("email"));
+    let (register_method, set_register_method) = signal(String::from("phone"));
     let (email, set_email) = signal(String::new());
     let (phone, set_phone) = signal(String::new());
     let (password, set_password) = signal(String::new());
     let (confirm_password, set_confirm_password) = signal(String::new());
     let (error_msg, set_error_msg) = signal(Option::<String>::None);
+    let (show_password, set_show_password) = signal(false);
+    let (show_confirm_password, set_show_confirm_password) = signal(false);
+
+    let password_strength = move || {
+        let p = password.get();
+        if p.is_empty() {
+            return 0;
+        }
+        let has_lower = p.chars().any(|c| c.is_ascii_lowercase());
+        let has_upper = p.chars().any(|c| c.is_ascii_uppercase());
+        let has_digit = p.chars().any(|c| c.is_ascii_digit());
+        let has_special = p.chars().any(|c| c.is_ascii_punctuation() || c.is_ascii());
+        
+        let types = has_lower as i32 + has_upper as i32 + has_digit as i32 + has_special as i32;
+        
+        if p.len() < 8 || types < 2 {
+            1 // Weak
+        } else if types == 2 {
+            2 // Medium
+        } else {
+            3 // Strong
+        }
+    };
 
     let register_action = Action::new(move |_| {
         let method = register_method.get();
@@ -185,6 +258,10 @@ pub fn RegisterPage() -> impl IntoView {
 
                 if p.is_empty() {
                     set_error_msg.set(Some("请输入密码".to_string()));
+                    return;
+                }
+                if p.len() > 32 || !p.is_ascii() {
+                    set_error_msg.set(Some("密码只能包含0-32位英文字母、数字或符号".to_string()));
                     return;
                 }
                 if p != cp {
@@ -253,46 +330,6 @@ pub fn RegisterPage() -> impl IntoView {
                 </div>
 
                 <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                            "注册方式"
-                        </label>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button
-                                type="button"
-                                class=move || {
-                                    if register_method.get() == "email" {
-                                        "px-4 py-2 rounded-lg border border-primary bg-primary/10 text-primary font-medium transition-all"
-                                    } else {
-                                        "px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-all"
-                                    }
-                                }
-                                on:click=move |_| {
-                                    set_register_method.set("email".to_string());
-                                    set_error_msg.set(None);
-                                }
-                            >
-                                "邮箱注册"
-                            </button>
-                            <button
-                                type="button"
-                                class=move || {
-                                    if register_method.get() == "phone" {
-                                        "px-4 py-2 rounded-lg border border-primary bg-primary/10 text-primary font-medium transition-all"
-                                    } else {
-                                        "px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-all"
-                                    }
-                                }
-                                on:click=move |_| {
-                                    set_register_method.set("phone".to_string());
-                                    set_error_msg.set(None);
-                                }
-                            >
-                                "手机号注册"
-                            </button>
-                        </div>
-                    </div>
-
                     <Show
                         when=move || register_method.get() == "email"
                         fallback=move || {
@@ -327,25 +364,178 @@ pub fn RegisterPage() -> impl IntoView {
                     </Show>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">"密码"</label>
-                        <input
-                            type="password"
-                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
-                            placeholder="设置密码"
-                            on:input=move |ev| set_password.set(event_target_value(&ev))
-                            prop:value=password
-                        />
+                        <div class="relative">
+                            <input
+                                type=move || if show_password.get() { "text" } else { "password" }
+                                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
+                                placeholder="设置密码"
+                                maxlength="32"
+                                on:input=move |ev| set_password.set(event_target_value(&ev))
+                                prop:value=password
+                            />
+                            <button
+                                type="button"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                on:click=move |_| set_show_password.update(|s| *s = !*s)
+                            >
+                                <Show
+                                    when=move || show_password.get()
+                                    fallback=move || {
+                                        view! {
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke-width="1.5"
+                                                stroke="currentColor"
+                                                class="w-5 h-5"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                                />
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                                />
+                                            </svg>
+                                        }
+                                    }
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="w-5 h-5"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                                        />
+                                    </svg>
+                                </Show>
+                            </button>
+                        </div>
+                        <Show
+                            when=move || !password.get().is_empty()
+                            fallback=move || {
+                                view! {
+                                    <div class="mt-1 text-xs text-gray-400">
+                                        "密码只能包含0-32位英文字母、数字或符号"
+                                    </div>
+                                }
+                            }
+                        >
+                            <div class="mt-2 flex gap-1 h-1.5">
+                                <div class=move || {
+                                    format!(
+                                        "flex-1 rounded-full transition-colors {}",
+                                        if password_strength() >= 1 {
+                                            "bg-red-400"
+                                        } else {
+                                            "bg-gray-200"
+                                        },
+                                    )
+                                }></div>
+                                <div class=move || {
+                                    format!(
+                                        "flex-1 rounded-full transition-colors {}",
+                                        if password_strength() >= 2 {
+                                            "bg-yellow-400"
+                                        } else {
+                                            "bg-gray-200"
+                                        },
+                                    )
+                                }></div>
+                                <div class=move || {
+                                    format!(
+                                        "flex-1 rounded-full transition-colors {}",
+                                        if password_strength() >= 3 {
+                                            "bg-green-400"
+                                        } else {
+                                            "bg-gray-200"
+                                        },
+                                    )
+                                }></div>
+                            </div>
+                            <div class="mt-1 text-xs text-right text-gray-500">
+                                {move || match password_strength() {
+                                    1 => "弱",
+                                    2 => "中",
+                                    3 => "强",
+                                    _ => "",
+                                }}
+                            </div>
+                        </Show>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
                             "确认密码"
                         </label>
-                        <input
-                            type="password"
-                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
-                            placeholder="再次输入密码"
-                            on:input=move |ev| set_confirm_password.set(event_target_value(&ev))
-                            prop:value=confirm_password
-                        />
+                        <div class="relative">
+                            <input
+                                type=move || {
+                                    if show_confirm_password.get() { "text" } else { "password" }
+                                }
+                                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
+                                placeholder="再次输入密码"
+                                maxlength="32"
+                                on:input=move |ev| set_confirm_password.set(event_target_value(&ev))
+                                prop:value=confirm_password
+                            />
+                            <button
+                                type="button"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                on:click=move |_| set_show_confirm_password.update(|s| *s = !*s)
+                            >
+                                <Show
+                                    when=move || show_confirm_password.get()
+                                    fallback=move || {
+                                        view! {
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke-width="1.5"
+                                                stroke="currentColor"
+                                                class="w-5 h-5"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                                />
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                                />
+                                            </svg>
+                                        }
+                                    }
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="w-5 h-5"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                                        />
+                                    </svg>
+                                </Show>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -371,11 +561,33 @@ pub fn RegisterPage() -> impl IntoView {
                     }}
                 </button>
 
-                <div class="text-center text-sm text-gray-500">
-                    "已有账号？ "
-                    <A href="/login" attr:class="text-primary hover:underline font-medium">
-                        "去登录"
-                    </A>
+                <div class="flex justify-between items-center text-sm text-gray-500 px-1">
+                    <button
+                        type="button"
+                        class="text-primary hover:underline font-medium"
+                        on:click=move |_| {
+                            if register_method.get() == "phone" {
+                                set_register_method.set("email".to_string());
+                            } else {
+                                set_register_method.set("phone".to_string());
+                            }
+                            set_error_msg.set(None);
+                        }
+                    >
+                        {move || {
+                            if register_method.get() == "phone" {
+                                "使用邮箱注册"
+                            } else {
+                                "使用手机号注册"
+                            }
+                        }}
+                    </button>
+                    <div>
+                        "已有账号？ "
+                        <A href="/login" attr:class="text-primary hover:underline font-medium">
+                            "去登录"
+                        </A>
+                    </div>
                 </div>
             </div>
         </div>
