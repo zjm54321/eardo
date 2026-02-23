@@ -229,9 +229,9 @@ pub fn RegisterPage() -> impl IntoView {
         let has_upper = p.chars().any(|c| c.is_ascii_uppercase());
         let has_digit = p.chars().any(|c| c.is_ascii_digit());
         let has_special = p.chars().any(|c| c.is_ascii_punctuation() || c.is_ascii());
-        
+
         let types = has_lower as i32 + has_upper as i32 + has_digit as i32 + has_special as i32;
-        
+
         if p.len() < 8 || types < 2 {
             1 // Weak
         } else if types == 2 {
@@ -617,15 +617,6 @@ pub fn ProfilePage() -> impl IntoView {
         },
     );
 
-    // 编辑状态
-    let (is_editing, set_is_editing) = signal(false);
-    let (edit_nickname, set_edit_nickname) = signal(String::new());
-    let (edit_bio, set_edit_bio) = signal(String::new());
-    // 用于预览（WebP data url）
-    let (new_avatar, set_new_avatar) = signal(Option::<String>::None);
-    // 用于上传（WebP bytes）
-    let (new_avatar_webp, set_new_avatar_webp) = signal(Option::<Vec<u8>>::None);
-
     let logout_action = Action::new(move |_| {
         let value = navigate.clone();
         async move {
@@ -633,150 +624,6 @@ pub fn ProfilePage() -> impl IntoView {
             value("/login", Default::default());
         }
     });
-
-    let update_action = Action::new(move |_| {
-        let nickname = edit_nickname.get();
-        let bio = edit_bio.get();
-        let avatar_webp = new_avatar_webp.get();
-        async move {
-            let Some(Ok(current_user)) = user_resource.get_untracked() else {
-                leptos::logging::error!("更新失败: 未获取到当前用户信息");
-                return;
-            };
-
-            let mut updated_user = current_user.clone();
-            updated_user.usermeta.nick_name = nickname;
-            updated_user.usermeta.bio = bio;
-
-            if let Err(e) = update_user_profile(updated_user).await {
-                leptos::logging::error!("更新用户信息失败: {:?}", e);
-                return;
-            }
-
-            if let Some(webp_bytes) = avatar_webp {
-                if let Err(e) = update_user_avatar(webp_bytes).await {
-                    leptos::logging::error!("更新头像失败: {:?}", e);
-                    return;
-                }
-            }
-
-            set_is_editing.set(false);
-            set_new_avatar.set(None);
-            set_new_avatar_webp.set(None);
-            // 刷新用户信息
-            user_resource.refetch();
-        }
-    });
-
-    // 处理文件选择
-    let on_file_change = move |ev: web_sys::Event| {
-        // 在 web_sys 中，target() 返回 EventTarget，需要转换
-        let target = ev.target().unwrap();
-        let input: web_sys::HtmlInputElement = target.unchecked_into();
-
-        if let Some(files) = input.files() {
-            if let Some(file) = files.get(0) {
-                // 修复乘法类型错误：统一使用浮点数
-                if file.size() > 2.0 * 1024.0 * 1024.0 {
-                    leptos::logging::warn!("文件太大");
-                    return;
-                }
-
-                let reader = FileReader::new().unwrap();
-                let reader_clone = reader.clone();
-                let file_clone = file.clone();
-
-                let onload = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
-                    let result = reader_clone.result().unwrap();
-                    if let Some(base64) = result.as_string() {
-                        // 1) 把图片缩放到 200x200（居中裁剪填充）
-                        // 2) 生成 WebP data-url 用于预览
-                        // 3) 解码为 WebP bytes，供新 API 存入数据库
-
-                        let window = web_sys::window().unwrap();
-                        let document = window.document().unwrap();
-
-                        let canvas: HtmlCanvasElement =
-                            document.create_element("canvas").unwrap().unchecked_into();
-                        canvas.set_width(200);
-                        canvas.set_height(200);
-                        let ctx = canvas
-                            .get_context("2d")
-                            .unwrap()
-                            .unwrap()
-                            .unchecked_into::<web_sys::CanvasRenderingContext2d>();
-
-                        let img = HtmlImageElement::new().unwrap();
-                        let img_clone = img.clone();
-
-                        let on_img_load = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
-                            let sw = img_clone.natural_width() as f64;
-                            let sh = img_clone.natural_height() as f64;
-                            if sw <= 0.0 || sh <= 0.0 {
-                                leptos::logging::error!("图片尺寸无效");
-                                return;
-                            }
-
-                            let tw = 200.0;
-                            let th = 200.0;
-                            let scale = (tw / sw).max(th / sh);
-                            let dw = sw * scale;
-                            let dh = sh * scale;
-                            let dx = (tw - dw) / 2.0;
-                            let dy = (th - dh) / 2.0;
-
-                            // 清空并绘制
-                            ctx.clear_rect(0.0, 0.0, tw, th);
-                            if let Err(e) = ctx.draw_image_with_html_image_element_and_dw_and_dh(
-                                &img_clone, dx, dy, dw, dh,
-                            ) {
-                                leptos::logging::error!("绘制头像失败: {:?}", e);
-                                return;
-                            }
-
-                            let webp_data_url = match canvas.to_data_url_with_type("image/webp") {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    leptos::logging::error!("导出 WebP 失败: {:?}", e);
-                                    return;
-                                }
-                            };
-
-                            // 预览使用缩放后的 WebP
-                            set_new_avatar.set(Some(webp_data_url.clone()));
-
-                            // 提取 base64 -> WebP bytes
-                            let Some((_, b64)) = webp_data_url.split_once(',') else {
-                                leptos::logging::error!("WebP data url 格式不正确");
-                                return;
-                            };
-
-                            let webp_bytes =
-                                match base64::engine::general_purpose::STANDARD.decode(b64) {
-                                    Ok(bytes) => bytes,
-                                    Err(e) => {
-                                        leptos::logging::error!("WebP base64 解码失败: {:?}", e);
-                                        return;
-                                    }
-                                };
-
-                            set_new_avatar_webp.set(Some(webp_bytes));
-                        })
-                            as Box<dyn Fn()>);
-
-                        img.set_onload(Some(on_img_load.as_ref().unchecked_ref()));
-                        img.set_src(&base64);
-                        on_img_load.forget();
-                    }
-                })
-                    as Box<dyn Fn()>);
-
-                reader.set_onload(Some(onload.as_ref().unchecked_ref()));
-                reader.read_as_data_url(&file_clone).unwrap();
-                onload.forget(); // 防止被回收
-            }
-        }
-    };
 
     view! {
         <div class="min-h-screen bg-base-100 pt-20 px-4 pb-20">
@@ -790,17 +637,7 @@ pub fn ProfilePage() -> impl IntoView {
                         match user_resource.get() {
                             Some(Ok(user)) => {
                                 let user_bio = user.usermeta.bio.clone();
-                                let user_bio_clone = user_bio.clone();
                                 let user_nickname = user.usermeta.nick_name.clone();
-                                let user_nickname_clone = user_nickname.clone();
-                                let user_uid_clone1 = user.id.to_string();
-                                let user_uid_clone2 = user_uid_clone1.clone();
-                                Effect::new(move |_| {
-                                    if !is_editing.get_untracked() {
-                                        set_edit_bio.set(user_bio_clone.clone());
-                                        set_edit_nickname.set(user_nickname_clone.clone());
-                                    }
-                                });
 
                                 view! {
                                     <div class="flex flex-col items-center animate-fade-in space-y-12">
@@ -824,173 +661,73 @@ pub fn ProfilePage() -> impl IntoView {
                                             <div class="relative flex-shrink-0">
                                                 <div class="w-32 h-32 md:w-40 md:h-40 rounded-full p-1.5 bg-gradient-to-tr from-primary to-secondary shadow-lg">
                                                     <div class="w-full h-full rounded-full bg-white overflow-hidden relative border-4 border-white">
-                                                        // 优先显示新上传的头像预览
-                                                        {move || {
-                                                            if let Some(preview) = new_avatar.get() {
-                                                                view! {
-                                                                    <img src=preview class="w-full h-full object-cover" />
-                                                                }
-                                                                    .into_any()
-                                                            } else if !user.usermeta.avatar_url.is_empty() {
-                                                                view! {
-                                                                    <img
-                                                                        src=user.usermeta.avatar_url.clone()
-                                                                        class="w-full h-full object-cover"
-                                                                    />
-                                                                }
-                                                                    .into_any()
-                                                            } else {
-                                                                view! {
-                                                                    <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
-                                                                        <i class="fa-solid fa-user text-6xl"></i>
-                                                                    </div>
-                                                                }
-                                                                    .into_any()
+                                                        {if !user.usermeta.avatar_url.is_empty() {
+                                                            view! {
+                                                                <img
+                                                                    src=format!(
+                                                                        "{}?t={}",
+                                                                        user.usermeta.avatar_url,
+                                                                        {
+                                                                            #[cfg(target_arch = "wasm32")] { js_sys::Date::now() }
+                                                                            #[cfg(not(target_arch = "wasm32"))] { 0.0 }
+                                                                        },
+                                                                    )
+                                                                    class="w-full h-full object-cover"
+                                                                />
                                                             }
+                                                                .into_any()
+                                                        } else {
+                                                            view! {
+                                                                <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
+                                                                    <i class="fa-solid fa-user text-6xl"></i>
+                                                                </div>
+                                                            }
+                                                                .into_any()
                                                         }}
                                                     </div>
                                                 </div>
-
-                                                // 编辑模式下的上传按钮
-                                                <Show when=move || is_editing.get()>
-                                                    <label class="absolute bottom-2 right-2 w-9 h-9 bg-primary text-white rounded-full shadow-md flex items-center justify-center hover:bg-primary-focus transition-all hover:scale-110 border-2 border-white cursor-pointer z-20">
-                                                        <i class="fa-solid fa-camera text-sm"></i>
-                                                        <input
-                                                            type="file"
-                                                            accept="image/*"
-                                                            class="hidden"
-                                                            on:change=on_file_change
-                                                        />
-                                                    </label>
-                                                </Show>
                                             </div>
 
                                             // 信息内容
                                             <div class="flex-grow text-center md:text-left space-y-5 z-10 w-full">
                                                 <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
                                                     <div class="flex-1">
-                                                        <Show
-                                                            when=move || is_editing.get()
-                                                            fallback=move || {
-                                                                let nickname_display = user_nickname.clone();
-                                                                let uid_display = user_uid_clone1.clone();
-                                                                view! {
-                                                                    <>
-                                                                        <div class="flex items-start gap-2">
-                                                                            <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">
-                                                                                {if nickname_display.is_empty() {
-                                                                                    "未设置昵称".to_string()
-                                                                                } else {
-                                                                                    nickname_display
-                                                                                }}
-                                                                            </h2>
-                                                                            <button
-                                                                                class="text-primary text-sm hover:underline font-medium mt-1"
-                                                                                on:click=move |_| set_is_editing.set(true)
-                                                                            >
-                                                                                <i class="fa-solid fa-pen"></i>
-                                                                                "编辑"
-                                                                            </button>
-                                                                        </div>
-                                                                        <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
-                                                                            <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">
-                                                                                "uid: " {uid_display}
-                                                                            </span>
-                                                                        </div>
-                                                                    </>
-                                                                }
-                                                            }
-                                                        >
-                                                            <input
-                                                                type="text"
-                                                                class="text-3xl md:text-4xl font-bold border border-gray-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-primary/50 w-full md:w-auto"
-                                                                placeholder="设置昵称"
-                                                                prop:value=move || edit_nickname.get()
-                                                                on:input=move |ev| {
-                                                                    set_edit_nickname.set(event_target_value(&ev))
-                                                                }
-                                                            />
-                                                            <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
-                                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">
-                                                                    "uid: " {user_uid_clone2.clone()}
-                                                                </span>
-                                                            </div>
-                                                        </Show>
+                                                        <div class="flex items-start gap-2">
+                                                            <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">
+                                                                {if user_nickname.is_empty() {
+                                                                    "未设置昵称".to_string()
+                                                                } else {
+                                                                    user_nickname
+                                                                }}
+                                                            </h2>
+                                                        </div>
                                                     </div>
 
                                                     <div class="flex gap-2 justify-center md:justify-end">
-                                                        <Show when=move || !is_editing.get()>
-                                                            <button
-                                                                class="px-5 py-2 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm text-sm flex items-center gap-2"
-                                                                on:click=move |_| {
-                                                                    logout_action.dispatch(());
-                                                                }
-                                                            >
-                                                                <i class="fa-solid fa-right-from-bracket"></i>
-                                                                "退出登录"
-                                                            </button>
-                                                        </Show>
+                                                        <button
+                                                            class="px-5 py-2 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm text-sm flex items-center gap-2"
+                                                            on:click=move |_| {
+                                                                logout_action.dispatch(());
+                                                            }
+                                                        >
+                                                            <i class="fa-solid fa-right-from-bracket"></i>
+                                                            "退出登录"
+                                                        </button>
                                                     </div>
                                                 </div>
 
-                                                // 简介展示与编辑
+                                                // 简介展示
                                                 <div class="bg-gray-50/80 rounded-xl p-4 border border-gray-100 text-gray-600 text-sm leading-relaxed text-left relative min-h-[80px]">
                                                     <i class="fa-solid fa-quote-left text-gray-300 absolute -top-2 -left-2 text-xl"></i>
-
-                                                    <Show
-                                                        when=move || is_editing.get()
-                                                        fallback=move || {
-                                                            let bio_display = user_bio.clone();
-                                                            view! {
-                                                                <div>
-                                                                    <p>
-                                                                        {if bio_display.is_empty() {
-                                                                            "暂无简介，快来写点什么吧...".to_string()
-                                                                        } else {
-                                                                            bio_display
-                                                                        }}
-                                                                    </p>
-                                                                </div>
-                                                            }
-                                                        }
-                                                    >
-                                                        <div class="space-y-3">
-                                                            <textarea
-                                                                class="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm bg-white"
-                                                                rows="3"
-                                                                placeholder="介绍一下你自己..."
-                                                                prop:value=move || edit_bio.get()
-                                                                on:input=move |ev| set_edit_bio.set(event_target_value(&ev))
-                                                            ></textarea>
-                                                            <div class="flex justify-end gap-2">
-                                                                <button
-                                                                    class="px-3 py-1 text-xs text-gray-500 hover:bg-gray-200 rounded"
-                                                                    on:click=move |_| {
-                                                                        set_is_editing.set(false);
-                                                                        set_new_avatar.set(None);
-                                                                        set_new_avatar_webp.set(None);
-                                                                    }
-                                                                >
-                                                                    "取消"
-                                                                </button>
-                                                                <button
-                                                                    class="px-4 py-1 text-xs bg-primary text-white rounded hover:bg-primary-focus disabled:opacity-50"
-                                                                    on:click=move |_| {
-                                                                        update_action.dispatch(());
-                                                                    }
-                                                                    disabled=move || update_action.pending().get()
-                                                                >
-                                                                    {move || {
-                                                                        if update_action.pending().get() {
-                                                                            "保存中..."
-                                                                        } else {
-                                                                            "保存"
-                                                                        }
-                                                                    }}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </Show>
+                                                    <div>
+                                                        <p>
+                                                            {if user_bio.is_empty() {
+                                                                "暂无简介，快来写点什么吧...".to_string()
+                                                            } else {
+                                                                user_bio
+                                                            }}
+                                                        </p>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1238,6 +975,767 @@ pub fn ProfilePage() -> impl IntoView {
                     }}
                 </Suspense>
             </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn SettingsPage() -> impl IntoView {
+    let navigate = use_navigate();
+    let user_resource = Resource::new(|| (), |_| get_user_profile());
+    let auth_resource = Resource::new(|| (), |_| crate::api::user::get_authinfo());
+
+    // 0: 个人信息, 1: 登录设置
+    let (active_tab, set_active_tab) = signal(0);
+
+    let (edit_nickname, set_edit_nickname) = signal(String::new());
+    let (edit_bio, set_edit_bio) = signal(String::new());
+    let (new_avatar, set_new_avatar) = signal(Option::<String>::None);
+    let (new_avatar_webp, set_new_avatar_webp) = signal(Option::<Vec<u8>>::None);
+
+    // 绑定/修改状态
+    let (show_bind_modal, set_show_bind_modal) = signal(false);
+    let (bind_type, set_bind_type) = signal(String::new()); // "phone", "email", "password"
+    let (bind_action_type, set_bind_action_type) = signal(String::new()); // "add", "change"
+    let (bind_input, set_bind_input) = signal(String::new());
+    let (bind_password, set_bind_password) = signal(String::new());
+    let (bind_error, set_bind_error) = signal(Option::<String>::None);
+
+    let bind_action = Action::new(move |_| {
+        let b_type = bind_type.get();
+        let b_action_type = bind_action_type.get();
+        let input_val = bind_input.get().trim().to_string();
+        let pwd_val = bind_password.get();
+        
+        async move {
+            set_bind_error.set(None);
+            
+            let auth_info = match b_type.as_str() {
+                "password" => {
+                    if input_val.is_empty() {
+                        set_bind_error.set(Some("请输入旧密码".to_string()));
+                        return;
+                    }
+                    if pwd_val.is_empty() {
+                        set_bind_error.set(Some("请输入新密码".to_string()));
+                        return;
+                    }
+                    
+                    let mut hasher_old = Sha256::new();
+                    hasher_old.update(input_val.as_bytes());
+                    let old_password_hash = format!("{:x}", hasher_old.finalize());
+                    
+                    let mut hasher_new = Sha256::new();
+                    hasher_new.update(pwd_val.as_bytes());
+                    let new_password_hash = format!("{:x}", hasher_new.finalize());
+                    
+                    user::UpdateAuthInfo::ChangePassword(old_password_hash, new_password_hash)
+                }
+                _ => {
+                    let auth_id = match b_type.as_str() {
+                        "phone" => {
+                            if input_val.is_empty() {
+                                set_bind_error.set(Some("请输入手机号".to_string()));
+                                return;
+                            }
+                            match phonenumber::parse(Some(CN), &input_val).or_else(|_| phonenumber::parse(None, &input_val)) {
+                                Ok(p) => user::AuthID::Phone(p),
+                                Err(_) => {
+                                    set_bind_error.set(Some("手机号格式不正确".to_string()));
+                                    return;
+                                }
+                            }
+                        }
+                        "email" => {
+                            if input_val.is_empty() {
+                                set_bind_error.set(Some("请输入邮箱".to_string()));
+                                return;
+                            }
+                            match email_address::EmailAddress::from_str(&input_val) {
+                                Ok(e) => user::AuthID::Email(e),
+                                Err(_) => {
+                                    set_bind_error.set(Some("邮箱格式不正确".to_string()));
+                                    return;
+                                }
+                            }
+                        }
+                        _ => return,
+                    };
+
+                    if b_action_type == "change" {
+                        user::UpdateAuthInfo::ChangePassAuth(auth_id)
+                    } else {
+                        user::UpdateAuthInfo::AddAuth(user::UserAuth::Password(user::PasswordAuth {
+                            auth_id,
+                            password_hash: String::new(), // 后端会从数据库获取已有的密码哈希
+                        }))
+                    }
+                }
+            };
+
+            match crate::api::user::update_authinfo(auth_info).await {
+                Ok(_) => {
+                    set_show_bind_modal.set(false);
+                    set_bind_input.set(String::new());
+                    set_bind_password.set(String::new());
+                    auth_resource.refetch();
+                    let _ = web_sys::window().unwrap().alert_with_message("操作成功");
+                }
+                Err(e) => set_bind_error.set(Some(e.to_string())),
+            }
+        }
+    });
+
+    let remove_auth_action = Action::new(move |auth_id: &user::AuthID| {
+        let auth_id = auth_id.clone();
+        async move {
+            match crate::api::user::update_authinfo(user::UpdateAuthInfo::RemoveAuth(auth_id)).await {
+                Ok(_) => {
+                    auth_resource.refetch();
+                    let _ = web_sys::window().unwrap().alert_with_message("解绑成功");
+                }
+                Err(e) => {
+                    let _ = web_sys::window().unwrap().alert_with_message(&format!("解绑失败: {}", e));
+                }
+            }
+        }
+    });
+
+    let update_action = {
+        let navigate = navigate.clone();
+        Action::new(move |_| {
+            let nickname = edit_nickname.get();
+            let bio = edit_bio.get();
+            let avatar_webp = new_avatar_webp.get();
+            let value = navigate.clone();
+            async move {
+                let Some(Ok(current_user)) = user_resource.get_untracked() else {
+                    leptos::logging::error!("更新失败: 未获取到当前用户信息");
+                    return;
+                };
+
+            let mut updated_user = current_user.clone();
+            updated_user.usermeta.nick_name = nickname;
+            updated_user.usermeta.bio = bio;
+
+            if let Err(e) = update_user_profile(updated_user).await {
+                leptos::logging::error!("更新用户信息失败: {:?}", e);
+                return;
+            }
+
+            if let Some(webp_bytes) = avatar_webp {
+                if let Err(e) = update_user_avatar(webp_bytes).await {
+                    leptos::logging::error!("更新头像失败: {:?}", e);
+                    return;
+                }
+            }
+
+            // 刷新用户信息并返回主页
+            user_resource.refetch();
+            value("/profile", Default::default());
+            }
+        })
+    };
+
+    let on_file_change = move |ev: web_sys::Event| {
+        let target = ev.target().unwrap();
+        let input: web_sys::HtmlInputElement = target.unchecked_into();
+
+        if let Some(files) = input.files() {
+            if let Some(file) = files.get(0) {
+                if file.size() > 2.0 * 1024.0 * 1024.0 {
+                    leptos::logging::warn!("文件太大");
+                    return;
+                }
+
+                let reader = FileReader::new().unwrap();
+                let reader_clone = reader.clone();
+                let file_clone = file.clone();
+
+                let onload = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
+                    let result = reader_clone.result().unwrap();
+                    if let Some(base64) = result.as_string() {
+                        let window = web_sys::window().unwrap();
+                        let document = window.document().unwrap();
+
+                        let canvas: HtmlCanvasElement =
+                            document.create_element("canvas").unwrap().unchecked_into();
+                        canvas.set_width(200);
+                        canvas.set_height(200);
+                        let ctx = canvas
+                            .get_context("2d")
+                            .unwrap()
+                            .unwrap()
+                            .unchecked_into::<web_sys::CanvasRenderingContext2d>();
+
+                        let img = HtmlImageElement::new().unwrap();
+                        let img_clone = img.clone();
+
+                        let on_img_load = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
+                            let sw = img_clone.natural_width() as f64;
+                            let sh = img_clone.natural_height() as f64;
+                            if sw <= 0.0 || sh <= 0.0 {
+                                leptos::logging::error!("图片尺寸无效");
+                                return;
+                            }
+
+                            let tw = 200.0;
+                            let th = 200.0;
+                            let scale = (tw / sw).max(th / sh);
+                            let dw = sw * scale;
+                            let dh = sh * scale;
+                            let dx = (tw - dw) / 2.0;
+                            let dy = (th - dh) / 2.0;
+
+                            ctx.clear_rect(0.0, 0.0, tw, th);
+                            if let Err(e) = ctx.draw_image_with_html_image_element_and_dw_and_dh(
+                                &img_clone, dx, dy, dw, dh,
+                            ) {
+                                leptos::logging::error!("绘制头像失败: {:?}", e);
+                                return;
+                            }
+
+                            let webp_data_url = match canvas.to_data_url_with_type("image/webp") {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    leptos::logging::error!("导出 WebP 失败: {:?}", e);
+                                    return;
+                                }
+                            };
+
+                            set_new_avatar.set(Some(webp_data_url.clone()));
+
+                            let Some((_, b64)) = webp_data_url.split_once(',') else {
+                                leptos::logging::error!("WebP data url 格式不正确");
+                                return;
+                            };
+
+                            let webp_bytes =
+                                match base64::engine::general_purpose::STANDARD.decode(b64) {
+                                    Ok(bytes) => bytes,
+                                    Err(e) => {
+                                        leptos::logging::error!("WebP base64 解码失败: {:?}", e);
+                                        return;
+                                    }
+                                };
+
+                            set_new_avatar_webp.set(Some(webp_bytes));
+                        })
+                            as Box<dyn Fn()>);
+
+                        img.set_onload(Some(on_img_load.as_ref().unchecked_ref()));
+                        img.set_src(&base64);
+                        on_img_load.forget();
+                    }
+                })
+                    as Box<dyn Fn()>);
+
+                reader.set_onload(Some(onload.as_ref().unchecked_ref()));
+                reader.read_as_data_url(&file_clone).unwrap();
+                onload.forget();
+            }
+        }
+    };
+
+    view! {
+        <div class="min-h-screen bg-base-100 pt-20 px-4 pb-20">
+            <div class="container mx-auto max-w-4xl">
+                <Suspense fallback=move || {
+                    view! {
+                        <div class="text-center py-10 text-gray-400">"加载用户信息..."</div>
+                    }
+                }>
+                    {move || {
+                        match user_resource.get() {
+                            Some(Ok(user)) => {
+                                let user_bio = user.usermeta.bio.clone();
+                                let user_nickname = user.usermeta.nick_name.clone();
+                                Effect::new(move |_| {
+                                    set_edit_bio.set(user_bio.clone());
+                                    set_edit_nickname.set(user_nickname.clone());
+                                });
+
+                                view! {
+                                    <div class="bg-white rounded-3xl shadow-soft w-full flex flex-col md:flex-row border border-gray-100 overflow-hidden min-h-[600px]">
+                                        // 左侧菜单
+                                        <div class="w-full md:w-64 bg-gray-50/50 border-r border-gray-100 p-6 flex flex-col gap-2">
+                                            <h2 class="text-xl font-bold text-dark mb-4 px-4">
+                                                "设置"
+                                            </h2>
+                                            <button
+                                                class=move || {
+                                                    format!(
+                                                        "text-left px-4 py-3 rounded-xl transition-colors font-medium {}",
+                                                        if active_tab.get() == 0 {
+                                                            "bg-primary/10 text-primary"
+                                                        } else {
+                                                            "text-gray-600 hover:bg-gray-100"
+                                                        },
+                                                    )
+                                                }
+                                                on:click=move |_| set_active_tab.set(0)
+                                            >
+                                                <i class="fa-solid fa-user mr-3 w-5 text-center"></i>
+                                                "个人信息"
+                                            </button>
+                                            <button
+                                                class=move || {
+                                                    format!(
+                                                        "text-left px-4 py-3 rounded-xl transition-colors font-medium {}",
+                                                        if active_tab.get() == 1 {
+                                                            "bg-primary/10 text-primary"
+                                                        } else {
+                                                            "text-gray-600 hover:bg-gray-100"
+                                                        },
+                                                    )
+                                                }
+                                                on:click=move |_| set_active_tab.set(1)
+                                            >
+                                                <i class="fa-solid fa-shield-halved mr-3 w-5 text-center"></i>
+                                                "登录设置"
+                                            </button>
+                                            <div class="flex-grow"></div>
+                                            <button
+                                                class="text-left px-4 py-3 rounded-xl transition-colors font-medium text-red-500 hover:bg-red-50 mt-auto"
+                                                on:click={
+                                                    let navigate = navigate.clone();
+                                                    move |_| {
+                                                        let navigate = navigate.clone();
+                                                        leptos::task::spawn_local(async move {
+                                                            let _ = logout().await;
+                                                            navigate("/", Default::default());
+                                                        });
+                                                    }
+                                                }
+                                            >
+                                                <i class="fa-solid fa-right-from-bracket mr-3 w-5 text-center"></i>
+                                                "退出登录"
+                                            </button>
+                                        </div>
+
+                                        // 右侧内容区
+                                        <div class="flex-1 p-8 md:p-10">
+                                            <Show when=move || active_tab.get() == 0>
+                                                <div class="max-w-xl flex flex-col gap-8 animate-fade-in">
+                                                    <h3 class="text-2xl font-bold text-dark">"个人信息"</h3>
+
+                                                    <div class="flex flex-col items-start gap-4">
+                                                        <div class="relative w-32 h-32 rounded-full p-1.5 bg-gradient-to-tr from-primary to-secondary shadow-lg">
+                                                            <div class="w-full h-full rounded-full bg-white overflow-hidden relative border-4 border-white">
+                                                                {
+                                                                    let avatar_url = user.usermeta.avatar_url.clone();
+                                                                    move || {
+                                                                        if let Some(preview) = new_avatar.get() {
+                                                                            view! {
+                                                                                <img src=preview class="w-full h-full object-cover" />
+                                                                            }
+                                                                                .into_any()
+                                                                        } else if !avatar_url.is_empty() {
+                                                                            view! {
+                                                                                <img
+                                                                                    src=format!(
+                                                                                        "{}?t={}",
+                                                                                        avatar_url,
+                                                                                        {
+                                                                                            #[cfg(target_arch = "wasm32")] { js_sys::Date::now() }
+                                                                                            #[cfg(not(target_arch = "wasm32"))] { 0.0 }
+                                                                                        },
+                                                                                    )
+                                                                                    class="w-full h-full object-cover"
+                                                                                />
+                                                                            }
+                                                                                .into_any()
+                                                                        } else {
+                                                                            view! {
+                                                                                <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
+                                                                                    <i class="fa-solid fa-user text-6xl"></i>
+                                                                                </div>
+                                                                            }
+                                                                                .into_any()
+                                                                        }
+                                                                    }
+                                                                }
+                                                            </div>
+                                                            <label class="absolute bottom-0 right-0 w-10 h-10 bg-primary text-white rounded-full shadow-md flex items-center justify-center hover:bg-primary-focus transition-all hover:scale-110 border-2 border-white cursor-pointer z-20">
+                                                                <i class="fa-solid fa-camera"></i>
+                                                                <input
+                                                                    type="file"
+                                                                    accept="image/*"
+                                                                    class="hidden"
+                                                                    on:change=on_file_change
+                                                                />
+                                                            </label>
+                                                        </div>
+                                                        <span class="text-sm text-gray-500">
+                                                            "点击更换头像"
+                                                        </span>
+                                                    </div>
+
+                                                    <div class="space-y-5">
+                                                        <div>
+                                                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                                                "昵称"
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 bg-gray-50/50 focus:bg-white transition-colors"
+                                                                placeholder="设置昵称"
+                                                                prop:value=move || edit_nickname.get()
+                                                                on:input=move |ev| {
+                                                                    set_edit_nickname.set(event_target_value(&ev))
+                                                                }
+                                                            />
+                                                        </div>
+
+                                                        <div>
+                                                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                                                "个人简介"
+                                                            </label>
+                                                            <textarea
+                                                                class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 bg-gray-50/50 focus:bg-white transition-colors"
+                                                                rows="4"
+                                                                placeholder="介绍一下你自己..."
+                                                                prop:value=move || edit_bio.get()
+                                                                on:input=move |ev| set_edit_bio.set(event_target_value(&ev))
+                                                            ></textarea>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="flex justify-start gap-4 mt-4">
+                                                        <button
+                                                            class="px-8 py-2.5 bg-primary text-white rounded-full hover:bg-primary-focus transition-colors shadow-md disabled:opacity-50 font-medium"
+                                                            on:click=move |_| {
+                                                                update_action.dispatch(());
+                                                            }
+                                                            disabled=move || update_action.pending().get()
+                                                        >
+                                                            {move || {
+                                                                if update_action.pending().get() {
+                                                                    "保存中..."
+                                                                } else {
+                                                                    "保存设置"
+                                                                }
+                                                            }}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </Show>
+
+                                            <Show when=move || active_tab.get() == 1>
+                                                <div class="max-w-xl flex flex-col gap-8 animate-fade-in">
+                                                    <h3 class="text-2xl font-bold text-dark">"登录设置"</h3>
+
+                                                    <Suspense fallback=move || {
+                                                        view! {
+                                                            <div class="text-gray-400">"加载登录信息..."</div>
+                                                        }
+                                                    }>
+                                                        {move || {
+                                                            match auth_resource.get() {
+                                                                Some(Ok(auth_infos)) => {
+                                                                    let mut has_phone = false;
+                                                                    let mut has_email = false;
+                                                                    let mut phone_str = String::new();
+                                                                    let mut email_str = String::new();
+                                                                    for auth in auth_infos.iter() {
+                                                                        if let crate::api::user::UserAuth::Password(p) = auth {
+                                                                            match &p.auth_id {
+                                                                                crate::api::user::AuthID::Phone(phone) => {
+                                                                                    has_phone = true;
+                                                                                    phone_str = phone.to_string();
+                                                                                }
+                                                                                crate::api::user::AuthID::Email(email) => {
+                                                                                    has_email = true;
+                                                                                    email_str = email.to_string();
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+
+                                                                    view! {
+                                                                        <div class="space-y-6">
+                                                                            // 绑定手机
+                                                                            <div class="p-5 border border-gray-100 rounded-2xl bg-white shadow-sm flex items-center justify-between">
+                                                                                <div class="flex items-center gap-4">
+                                                                                    <div class="w-10 h-10 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center">
+                                                                                        <i class="fa-solid fa-mobile-screen"></i>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <h4 class="font-medium text-dark">"绑定手机"</h4>
+                                                                                        <p class="text-sm text-gray-500">
+                                                                                            {if has_phone {
+                                                                                                phone_str.clone()
+                                                                                            } else {
+                                                                                                "未绑定".to_string()
+                                                                                            }}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div class="flex gap-2">
+                                                                                    <button
+                                                                                        class="px-4 py-1.5 text-sm text-primary border border-primary/30 rounded-full hover:bg-primary/5 transition-colors"
+                                                                                        on:click=move |_| {
+                                                                                            set_bind_type.set("phone".to_string());
+                                                                                            set_bind_action_type
+                                                                                                .set(
+                                                                                                    if has_phone {
+                                                                                                        "change".to_string()
+                                                                                                    } else {
+                                                                                                        "add".to_string()
+                                                                                                    },
+                                                                                                );
+                                                                                            set_show_bind_modal.set(true);
+                                                                                        }
+                                                                                    >
+                                                                                        {if has_phone { "修改" } else { "去绑定" }}
+                                                                                    </button>
+                                                                                    <Show when=move || {
+                                                                                        has_phone
+                                                                                    }>
+                                                                                        {
+                                                                                            let phone_str_clone = phone_str.clone();
+                                                                                            view! {
+                                                                                                <button
+                                                                                                    class="px-4 py-1.5 text-sm text-red-500 border border-red-200 rounded-full hover:bg-red-50 transition-colors"
+                                                                                                    on:click=move |_| {
+                                                                                                        if let Ok(p) = phonenumber::parse(
+                                                                                                                Some(CN),
+                                                                                                                &phone_str_clone,
+                                                                                                            )
+                                                                                                            .or_else(|_| phonenumber::parse(None, &phone_str_clone))
+                                                                                                        {
+                                                                                                            remove_auth_action.dispatch(user::AuthID::Phone(p));
+                                                                                                        }
+                                                                                                    }
+                                                                                                >
+                                                                                                    "解绑"
+                                                                                                </button>
+                                                                                            }
+                                                                                        }
+                                                                                    </Show>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            // 绑定邮箱
+                                                                            <div class="p-5 border border-gray-100 rounded-2xl bg-white shadow-sm flex items-center justify-between">
+                                                                                <div class="flex items-center gap-4">
+                                                                                    <div class="w-10 h-10 rounded-full bg-green-50 text-green-500 flex items-center justify-center">
+                                                                                        <i class="fa-regular fa-envelope"></i>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <h4 class="font-medium text-dark">"绑定邮箱"</h4>
+                                                                                        <p class="text-sm text-gray-500">
+                                                                                            {if has_email {
+                                                                                                email_str.clone()
+                                                                                            } else {
+                                                                                                "未绑定".to_string()
+                                                                                            }}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div class="flex gap-2">
+                                                                                    <button
+                                                                                        class="px-4 py-1.5 text-sm text-primary border border-primary/30 rounded-full hover:bg-primary/5 transition-colors"
+                                                                                        on:click=move |_| {
+                                                                                            set_bind_type.set("email".to_string());
+                                                                                            set_bind_action_type
+                                                                                                .set(
+                                                                                                    if has_email {
+                                                                                                        "change".to_string()
+                                                                                                    } else {
+                                                                                                        "add".to_string()
+                                                                                                    },
+                                                                                                );
+                                                                                            set_show_bind_modal.set(true);
+                                                                                        }
+                                                                                    >
+                                                                                        {if has_email { "修改" } else { "去绑定" }}
+                                                                                    </button>
+                                                                                    <Show when=move || {
+                                                                                        has_email
+                                                                                    }>
+                                                                                        {
+                                                                                            let email_str_clone = email_str.clone();
+                                                                                            view! {
+                                                                                                <button
+                                                                                                    class="px-4 py-1.5 text-sm text-red-500 border border-red-200 rounded-full hover:bg-red-50 transition-colors"
+                                                                                                    on:click=move |_| {
+                                                                                                        if let Ok(e) = email_address::EmailAddress::from_str(
+                                                                                                            &email_str_clone,
+                                                                                                        ) {
+                                                                                                            remove_auth_action.dispatch(user::AuthID::Email(e));
+                                                                                                        }
+                                                                                                    }
+                                                                                                >
+                                                                                                    "解绑"
+                                                                                                </button>
+                                                                                            }
+                                                                                        }
+                                                                                    </Show>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            // 修改密码
+                                                                            <div class="p-5 border border-gray-100 rounded-2xl bg-white shadow-sm flex items-center justify-between">
+                                                                                <div class="flex items-center gap-4">
+                                                                                    <div class="w-10 h-10 rounded-full bg-purple-50 text-purple-500 flex items-center justify-center">
+                                                                                        <i class="fa-solid fa-lock"></i>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <h4 class="font-medium text-dark">"修改密码"</h4>
+                                                                                        <p class="text-sm text-gray-500">
+                                                                                            "定期修改密码可以保护账号安全"
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <button
+                                                                                    class="px-4 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-full hover:bg-gray-50 transition-colors"
+                                                                                    on:click=move |_| {
+                                                                                        set_bind_type.set("password".to_string());
+                                                                                        set_show_bind_modal.set(true);
+                                                                                    }
+                                                                                >
+                                                                                    {"修改密码"}
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                                Some(Err(e)) => {
+                                                                    view! {
+                                                                        <div class="text-red-500">
+                                                                            {format!("加载失败: {}", e)}
+                                                                        </div>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                                None => view! { <div></div> }.into_any(),
+                                                            }
+                                                        }}
+                                                    </Suspense>
+                                                </div>
+                                            </Show>
+                                        </div>
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            Some(Err(e)) => {
+                                view! {
+                                    <div class="text-center py-10 text-red-500">
+                                        {format!("加载失败: {}", e)}
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            _ => {
+                                view! { <div class="text-center py-10">"请先登录"</div> }
+                                    .into_any()
+                            }
+                        }
+                    }}
+                </Suspense>
+            </div>
+
+            // 绑定/修改模态框
+            <Show when=move || show_bind_modal.get()>
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div class="bg-white rounded-2xl p-8 w-full max-w-md shadow-xl animate-fade-in">
+                        <h3 class="text-xl font-bold text-dark mb-6">
+                            {move || match bind_type.get().as_str() {
+                                "phone" => "绑定/修改手机号",
+                                "email" => "绑定/修改邮箱",
+                                "password" => "修改密码",
+                                _ => "",
+                            }}
+                        </h3>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    {move || match bind_type.get().as_str() {
+                                        "phone" => "新手机号",
+                                        "email" => "新邮箱",
+                                        "password" => "旧密码",
+                                        _ => "",
+                                    }}
+                                </label>
+                                <input
+                                    type=move || {
+                                        if bind_type.get() == "password" {
+                                            "password"
+                                        } else {
+                                            "text"
+                                        }
+                                    }
+                                    class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 bg-gray-50/50 focus:bg-white transition-colors"
+                                    placeholder=move || match bind_type.get().as_str() {
+                                        "phone" => "请输入手机号",
+                                        "email" => "请输入邮箱",
+                                        "password" => "请输入旧密码",
+                                        _ => "",
+                                    }
+                                    prop:value=move || bind_input.get()
+                                    on:input=move |ev| set_bind_input.set(event_target_value(&ev))
+                                />
+                            </div>
+
+                            <Show when=move || bind_type.get() == "password">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        "新密码"
+                                    </label>
+                                    <input
+                                        type="password"
+                                        class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 bg-gray-50/50 focus:bg-white transition-colors"
+                                        placeholder="请输入新密码"
+                                        prop:value=move || bind_password.get()
+                                        on:input=move |ev| {
+                                            set_bind_password.set(event_target_value(&ev))
+                                        }
+                                    />
+                                </div>
+                            </Show>
+
+                            <Show when=move || bind_error.get().is_some()>
+                                <div class="text-red-500 text-sm">
+                                    {move || bind_error.get().unwrap_or_default()}
+                                </div>
+                            </Show>
+                        </div>
+
+                        <div class="flex justify-end gap-4 mt-8">
+                            <button
+                                class="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                                on:click=move |_| {
+                                    set_show_bind_modal.set(false);
+                                    set_bind_error.set(None);
+                                    set_bind_input.set(String::new());
+                                    set_bind_password.set(String::new());
+                                }
+                            >
+                                "取消"
+                            </button>
+                            <button
+                                class="px-6 py-2 bg-primary text-white rounded-full hover:bg-primary-focus transition-colors shadow-md disabled:opacity-50"
+                                on:click=move |_| {
+                                    bind_action.dispatch(());
+                                }
+                                disabled=move || bind_action.pending().get()
+                            >
+                                {move || {
+                                    if bind_action.pending().get() {
+                                        "提交中..."
+                                    } else {
+                                        "确认"
+                                    }
+                                }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
         </div>
     }
 }

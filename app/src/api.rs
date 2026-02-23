@@ -67,6 +67,13 @@ pub mod user {
         Github(),
         WeChat(),
     }
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum UpdateAuthInfo {
+        ChangePassword(String, String), // 旧密码，新密码
+        AddAuth(UserAuth),
+        RemoveAuth(AuthID),
+        ChangePassAuth(AuthID),
+    }
 
     /// 用户信息结构体
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,8 +108,9 @@ pub mod user {
         async fn register(&self, userauth: UserAuth) -> anyhow::Result<UserID>;
         async fn login(&self, userauth: UserAuth) -> anyhow::Result<UserID>;
         async fn logout(&self) -> anyhow::Result<()>;
+        async fn get_authinfo(&self) -> anyhow::Result<Vec<UserAuth>>;
         /// 用于更新或添加用户登录信息（如绑定邮箱/手机号、修改密码等）
-        async fn update_authinfo(&self, userauth: UserAuth) -> anyhow::Result<()>;
+        async fn update_authinfo(&self, update_info: UpdateAuthInfo) -> anyhow::Result<()>;
     }
     pub type AuthProvider = Arc<dyn AuthService>;
     #[async_trait::async_trait]
@@ -115,7 +123,7 @@ pub mod user {
     pub type UserProvider = Arc<dyn UserService>;
 
     //以下为server实现，可以直接在前端使用
-    #[server]
+    #[server(input = Json)]
     pub async fn register(userauth: UserAuth) -> Result<UserID, ServerFnError> {
         use_context::<AuthProvider>()
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
@@ -139,11 +147,19 @@ pub mod user {
             .await
             .map_err(|e| ServerFnError::new(format!("登出失败: {}", e)))
     }
-    #[server]
-    pub async fn update_authinfo(userauth: UserAuth) -> Result<(), ServerFnError> {
+    #[server(input = Json)]
+    pub async fn get_authinfo() -> Result<Vec<UserAuth>, ServerFnError> {
         use_context::<AuthProvider>()
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
-            .update_authinfo(userauth)
+            .get_authinfo()
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取认证信息失败: {}", e)))
+    }
+    #[server(input = Json)]
+    pub async fn update_authinfo(update_info: UpdateAuthInfo) -> Result<(), ServerFnError> {
+        use_context::<AuthProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
+            .update_authinfo(update_info)
             .await
             .map_err(|e| ServerFnError::new(format!("更新认证信息失败: {}", e)))
     }

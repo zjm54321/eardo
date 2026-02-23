@@ -13,6 +13,7 @@ pub fn Header() -> impl IntoView {
     // 检查用户登录状态的资源
     // 这是一个简单的做法，实际上可能需要一个全局 Context 来存储 User
     let user_resource = Resource::new(|| (), |_| crate::api::user::get_user_profile());
+    let (show_menu, set_show_menu) = signal(false);
 
     view! {
         // 顶部导航栏容器
@@ -95,8 +96,11 @@ pub fn Header() -> impl IntoView {
                             match user_resource.get() {
                                 Some(Ok(user)) => {
                                     view! {
-                                        <A href="/profile">
-                                            <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+                                        <div class="relative">
+                                            <button
+                                                class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden"
+                                                on:click=move |_| set_show_menu.update(|v| *v = !*v)
+                                            >
                                                 <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden font-bold text-primary">
                                                     // 显示头像
                                                     {if user.usermeta.avatar_url.starts_with("/api/")
@@ -116,7 +120,49 @@ pub fn Header() -> impl IntoView {
                                                     }}
                                                 </div>
                                             </button>
-                                        </A>
+
+                                            <Show when=move || show_menu.get()>
+                                                // 透明遮罩，点击关闭菜单
+                                                <div
+                                                    class="fixed inset-0 z-40"
+                                                    on:click=move |_| set_show_menu.set(false)
+                                                ></div>
+                                                // 下拉菜单
+                                                <div class="absolute right-0 mt-2 w-32 bg-white rounded-lg shadow-lg py-2 z-50 border border-gray-100 animate-fade-in">
+                                                    <A
+                                                        href="/profile"
+                                                        attr:class="block px-4 py-2 text-sm text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors"
+                                                        on:click=move |_| set_show_menu.set(false)
+                                                    >
+                                                        <i class="fa-solid fa-user mr-2"></i>
+                                                        "我的主页"
+                                                    </A>
+                                                    <A
+                                                        href="/settings"
+                                                        attr:class="block px-4 py-2 text-sm text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors"
+                                                        on:click=move |_| set_show_menu.set(false)
+                                                    >
+                                                        <i class="fa-solid fa-gear mr-2"></i>
+                                                        "设置"
+                                                    </A>
+                                                    <div class="border-t border-gray-100 my-1"></div>
+                                                    <button
+                                                        class="w-full text-left block px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                                                        on:click=move |_| {
+                                                            set_show_menu.set(false);
+                                                            let navigate = leptos_router::hooks::use_navigate();
+                                                            leptos::task::spawn_local(async move {
+                                                                let _ = crate::api::user::logout().await;
+                                                                navigate("/", Default::default());
+                                                            });
+                                                        }
+                                                    >
+                                                        <i class="fa-solid fa-right-from-bracket mr-2"></i>
+                                                        "退出登录"
+                                                    </button>
+                                                </div>
+                                            </Show>
+                                        </div>
                                     }
                                         .into_any()
                                 }

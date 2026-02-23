@@ -65,6 +65,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("login") view=pages::auth::LoginPage />
                     <Route path=StaticSegment("register") view=pages::auth::RegisterPage />
                     <Route path=StaticSegment("profile") view=pages::auth::ProfilePage />
+                    <Route path=StaticSegment("settings") view=pages::auth::SettingsPage />
                 </Routes>
             </main>
 
