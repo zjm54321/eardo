@@ -318,8 +318,6 @@ pub async fn qwen_generate(
 
     #[cfg(feature = "ssr")]
     {
-        use serde::de;
-
         let api_key = std::env::var("DASHSCOPE_API_KEY")
             .or_else(|_| std::env::var("ALIYUN_API_KEY"))
             .unwrap_or_default();

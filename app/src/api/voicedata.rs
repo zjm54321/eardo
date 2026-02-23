@@ -342,11 +342,10 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
         if base_model_id.is_empty() {
             return Err(anyhow::anyhow!("base_model_id is empty"));
         }
-        let voice_id = base_model_id;
 
         leptos::logging::log!(
-            "使用以下参数创建了音频请求：\n {:?}",
-            voice_info
+            "使用以下参数创建了音频请求：{:?};文本内容：{}\n",
+            voice_info, text
         );
 
         crate::api::voice_backend_api::qwen_generate(
