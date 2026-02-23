@@ -10,6 +10,7 @@ leptos.workspace = true
 leptos_meta.workspace = true
 leptos_router.workspace = true
 leptos_axum = { workspace = true, optional = true }
+uuid.workspace = true
 
 http.workspace = true
 cfg-if.workspace = true
@@ -27,6 +28,7 @@ wasm-bindgen = "0.2"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
+    "HtmlImageElement",
     "CanvasRenderingContext2d",
     "AudioContext",
     "AnalyserNode",
@@ -51,7 +53,11 @@ anyhow = "1.0.100"
 async-trait = "0.1.89"
 email_address = "0.2.9"
 phonenumber = "0.3.9"
-uuid = { version = "1.18.1", features = ["v4", "serde"] }
+sha2 = "0.10.9"
+
+# wasm32 下 uuid(v4) 需要从浏览器获取随机数
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
 
 
 # --- 服务端依赖 (SSR) ---

@@ -1,13 +1,18 @@
-use crate::api::{
-    PostInfo, PostProvider, UserAuthInfo, UserInfo, get_user_profile, login, logout, register,
-    update_user_profile,
+use std::str::FromStr;
+
+use crate::api::user::{
+    self, get_user_profile, login, logout, register, update_user_avatar, update_user_profile,
 };
+use crate::apiold::{PostInfo, PostProvider};
 use crate::pages::playground::PostMetadata;
+use base64::Engine;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
+use phonenumber::country::Id::CN;
+use sha2::{Digest, Sha256};
 use wasm_bindgen::JsCast;
-use web_sys::FileReader;
+use web_sys::{FileReader, HtmlCanvasElement, HtmlImageElement};
 
 #[server]
 pub async fn search_posts_info(query: String) -> Result<Vec<PostInfo>, ServerFnError> {
@@ -32,6 +37,7 @@ pub async fn search_posts_info(query: String) -> Result<Vec<PostInfo>, ServerFnE
 
 #[component]
 pub fn LoginPage() -> impl IntoView {
+    use email_address::EmailAddress;
     let navigate = use_navigate();
     let (username, set_username) = signal(String::new());
     let (password, set_password) = signal(String::new());
@@ -43,12 +49,42 @@ pub fn LoginPage() -> impl IntoView {
         {
             let value = navigate.clone();
             async move {
-                let auth_info = UserAuthInfo {
-                    username: Some(u),
-                    email: None,
-                    phone: None,
+                // 每次尝试登录时先清空错误
+                set_error_msg.set(None);
+
+                let u = u.trim().to_string();
+                if u.is_empty() || p.is_empty() {
+                    set_error_msg.set(Some("请输入账号和密码".to_string()));
+                    return;
+                }
+
+                let mut hasher = Sha256::new();
+                hasher.update(p.as_bytes());
+                let password_hash = format!("{:x}", hasher.finalize());
+
+                let auth_id = if EmailAddress::is_valid(&u) {
+                    match EmailAddress::from_str(&u) {
+                        Ok(email) => Some(user::AuthID::Email(email)),
+                        Err(_) => None,
+                    }
+                } else {
+                    phonenumber::parse(Some(CN), &u)
+                        .or_else(|_| phonenumber::parse(None, &u))
+                        .ok()
+                        .map(user::AuthID::Phone)
                 };
-                match login(auth_info, p).await {
+
+                let Some(auth_id) = auth_id else {
+                    set_error_msg.set(Some("请输入有效的邮箱或手机号".to_string()));
+                    return;
+                };
+
+                let auth_info = user::UserAuth::Password(user::PasswordAuth {
+                    auth_id,
+                    password_hash,
+                });
+
+                match login(auth_info).await {
                     Ok(_) => {
                         value("/profile", Default::default());
                     }
@@ -69,12 +105,12 @@ pub fn LoginPage() -> impl IntoView {
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
-                            "用户名"
+                            "邮箱/手机号"
                         </label>
                         <input
                             type="text"
                             class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
-                            placeholder="请输入用户名"
+                            placeholder="请输入邮箱或手机号"
                             on:input=move |ev| set_username.set(event_target_value(&ev))
                             prop:value=username
                         />
@@ -122,8 +158,10 @@ pub fn LoginPage() -> impl IntoView {
 
 #[component]
 pub fn RegisterPage() -> impl IntoView {
+    use email_address::EmailAddress;
     let navigate = use_navigate();
-    let (username, set_username) = signal(String::new());
+    // 注册方式：邮箱 / 手机号（二选一）
+    let (register_method, set_register_method) = signal(String::from("email"));
     let (email, set_email) = signal(String::new());
     let (phone, set_phone) = signal(String::new());
     let (password, set_password) = signal(String::new());
@@ -131,7 +169,7 @@ pub fn RegisterPage() -> impl IntoView {
     let (error_msg, set_error_msg) = signal(Option::<String>::None);
 
     let register_action = Action::new(move |_| {
-        let u = username.get();
+        let method = register_method.get();
         let e = email.get();
         let ph = phone.get();
         let p = password.get();
@@ -139,16 +177,63 @@ pub fn RegisterPage() -> impl IntoView {
         {
             let value = navigate.clone();
             async move {
+                // 每次尝试注册时先清空错误
+                set_error_msg.set(None);
+
+                let p = p.trim().to_string();
+                let cp = cp.trim().to_string();
+
+                if p.is_empty() {
+                    set_error_msg.set(Some("请输入密码".to_string()));
+                    return;
+                }
                 if p != cp {
                     set_error_msg.set(Some("两次输入的密码不一致".to_string()));
                     return;
                 }
-                let auth_info = UserAuthInfo {
-                    username: Some(u),
-                    email: if e.is_empty() { None } else { Some(e) },
-                    phone: if ph.is_empty() { None } else { Some(ph) },
+
+                let mut hasher = Sha256::new();
+                hasher.update(p.as_bytes());
+                let password_hash = format!("{:x}", hasher.finalize());
+
+                let auth_id = match method.as_str() {
+                    "email" => {
+                        let e = e.trim().to_string();
+                        if EmailAddress::is_valid(&e) {
+                            EmailAddress::from_str(&e).ok().map(user::AuthID::Email)
+                        } else {
+                            None
+                        }
+                    }
+                    "phone" => {
+                        let ph = ph.trim().to_string();
+                        if ph.is_empty() {
+                            None
+                        } else {
+                            phonenumber::parse(None, &ph)
+                                .or_else(|_| phonenumber::parse(None, &ph))
+                                .ok()
+                                .map(user::AuthID::Phone)
+                        }
+                    }
+                    _ => None,
                 };
-                match register(auth_info, p).await {
+
+                let Some(auth_id) = auth_id else {
+                    set_error_msg.set(Some(match method.as_str() {
+                        "email" => "请输入有效的邮箱".to_string(),
+                        "phone" => "请输入有效的手机号".to_string(),
+                        _ => "请选择注册方式".to_string(),
+                    }));
+                    return;
+                };
+
+                let userauth = user::UserAuth::Password(user::PasswordAuth {
+                    auth_id,
+                    password_hash,
+                });
+
+                match register(userauth).await {
                     Ok(_) => {
                         // 注册成功跳转登录
                         value("/login", Default::default());
@@ -169,41 +254,77 @@ pub fn RegisterPage() -> impl IntoView {
 
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            "用户名"
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            "注册方式"
                         </label>
-                        <input
-                            type="text"
-                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
-                            placeholder="设置用户名"
-                            on:input=move |ev| set_username.set(event_target_value(&ev))
-                            prop:value=username
-                        />
+                        <div class="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                class=move || {
+                                    if register_method.get() == "email" {
+                                        "px-4 py-2 rounded-lg border border-primary bg-primary/10 text-primary font-medium transition-all"
+                                    } else {
+                                        "px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-all"
+                                    }
+                                }
+                                on:click=move |_| {
+                                    set_register_method.set("email".to_string());
+                                    set_error_msg.set(None);
+                                }
+                            >
+                                "邮箱注册"
+                            </button>
+                            <button
+                                type="button"
+                                class=move || {
+                                    if register_method.get() == "phone" {
+                                        "px-4 py-2 rounded-lg border border-primary bg-primary/10 text-primary font-medium transition-all"
+                                    } else {
+                                        "px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-all"
+                                    }
+                                }
+                                on:click=move |_| {
+                                    set_register_method.set("phone".to_string());
+                                    set_error_msg.set(None);
+                                }
+                            >
+                                "手机号注册"
+                            </button>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            "邮箱 (可选)"
-                        </label>
-                        <input
-                            type="email"
-                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
-                            placeholder="输入邮箱地址"
-                            on:input=move |ev| set_email.set(event_target_value(&ev))
-                            prop:value=email
-                        />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            "手机号 (可选)"
-                        </label>
-                        <input
-                            type="tel"
-                            class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
-                            placeholder="输入手机号"
-                            on:input=move |ev| set_phone.set(event_target_value(&ev))
-                            prop:value=phone
-                        />
-                    </div>
+
+                    <Show
+                        when=move || register_method.get() == "email"
+                        fallback=move || {
+                            view! {
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                        "手机号"
+                                    </label>
+                                    <input
+                                        type="tel"
+                                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
+                                        placeholder="请输入手机号"
+                                        on:input=move |ev| set_phone.set(event_target_value(&ev))
+                                        prop:value=phone
+                                    />
+                                </div>
+                            }
+                        }
+                    >
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                "邮箱"
+                            </label>
+                            <input
+                                type="email"
+                                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all"
+                                placeholder="请输入邮箱地址"
+                                on:input=move |ev| set_email.set(event_target_value(&ev))
+                                prop:value=email
+                            />
+                        </div>
+                    </Show>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">"密码"</label>
                         <input
@@ -288,7 +409,10 @@ pub fn ProfilePage() -> impl IntoView {
     let (is_editing, set_is_editing) = signal(false);
     let (edit_nickname, set_edit_nickname) = signal(String::new());
     let (edit_bio, set_edit_bio) = signal(String::new());
+    // 用于预览（WebP data url）
     let (new_avatar, set_new_avatar) = signal(Option::<String>::None);
+    // 用于上传（WebP bytes）
+    let (new_avatar_webp, set_new_avatar_webp) = signal(Option::<Vec<u8>>::None);
 
     let logout_action = Action::new(move |_| {
         let value = navigate.clone();
@@ -301,27 +425,34 @@ pub fn ProfilePage() -> impl IntoView {
     let update_action = Action::new(move |_| {
         let nickname = edit_nickname.get();
         let bio = edit_bio.get();
-        let avatar_url = new_avatar.get().unwrap_or_default();
+        let avatar_webp = new_avatar_webp.get();
         async move {
-            // 构造 UserInfo 对象
-            let user_info = UserInfo {
-                id: "current".to_string(), // 服务端会自动填充当前用户 ID
-                username: "".to_string(),  // 保持原用户名
-                avatar_url,
-                status: crate::api::UserStatus::Normal,
-                nickname,
-                bio,
-                level: 0,
-                role: "user".to_string(),
+            let Some(Ok(current_user)) = user_resource.get_untracked() else {
+                leptos::logging::error!("更新失败: 未获取到当前用户信息");
+                return;
             };
-            match update_user_profile(user_info).await {
-                Ok(_) => {
-                    set_is_editing.set(false);
-                    // 刷新用户信息
-                    user_resource.refetch();
-                }
-                Err(e) => leptos::logging::error!("更新失败: {:?}", e),
+
+            let mut updated_user = current_user.clone();
+            updated_user.usermeta.nick_name = nickname;
+            updated_user.usermeta.bio = bio;
+
+            if let Err(e) = update_user_profile(updated_user).await {
+                leptos::logging::error!("更新用户信息失败: {:?}", e);
+                return;
             }
+
+            if let Some(webp_bytes) = avatar_webp {
+                if let Err(e) = update_user_avatar(webp_bytes).await {
+                    leptos::logging::error!("更新头像失败: {:?}", e);
+                    return;
+                }
+            }
+
+            set_is_editing.set(false);
+            set_new_avatar.set(None);
+            set_new_avatar_webp.set(None);
+            // 刷新用户信息
+            user_resource.refetch();
         }
     });
 
@@ -346,7 +477,84 @@ pub fn ProfilePage() -> impl IntoView {
                 let onload = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
                     let result = reader_clone.result().unwrap();
                     if let Some(base64) = result.as_string() {
-                        set_new_avatar.set(Some(base64));
+                        // 1) 把图片缩放到 200x200（居中裁剪填充）
+                        // 2) 生成 WebP data-url 用于预览
+                        // 3) 解码为 WebP bytes，供新 API 存入数据库
+
+                        let window = web_sys::window().unwrap();
+                        let document = window.document().unwrap();
+
+                        let canvas: HtmlCanvasElement =
+                            document.create_element("canvas").unwrap().unchecked_into();
+                        canvas.set_width(200);
+                        canvas.set_height(200);
+                        let ctx = canvas
+                            .get_context("2d")
+                            .unwrap()
+                            .unwrap()
+                            .unchecked_into::<web_sys::CanvasRenderingContext2d>();
+
+                        let img = HtmlImageElement::new().unwrap();
+                        let img_clone = img.clone();
+
+                        let on_img_load = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
+                            let sw = img_clone.natural_width() as f64;
+                            let sh = img_clone.natural_height() as f64;
+                            if sw <= 0.0 || sh <= 0.0 {
+                                leptos::logging::error!("图片尺寸无效");
+                                return;
+                            }
+
+                            let tw = 200.0;
+                            let th = 200.0;
+                            let scale = (tw / sw).max(th / sh);
+                            let dw = sw * scale;
+                            let dh = sh * scale;
+                            let dx = (tw - dw) / 2.0;
+                            let dy = (th - dh) / 2.0;
+
+                            // 清空并绘制
+                            ctx.clear_rect(0.0, 0.0, tw, th);
+                            if let Err(e) = ctx.draw_image_with_html_image_element_and_dw_and_dh(
+                                &img_clone, dx, dy, dw, dh,
+                            ) {
+                                leptos::logging::error!("绘制头像失败: {:?}", e);
+                                return;
+                            }
+
+                            let webp_data_url = match canvas.to_data_url_with_type("image/webp") {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    leptos::logging::error!("导出 WebP 失败: {:?}", e);
+                                    return;
+                                }
+                            };
+
+                            // 预览使用缩放后的 WebP
+                            set_new_avatar.set(Some(webp_data_url.clone()));
+
+                            // 提取 base64 -> WebP bytes
+                            let Some((_, b64)) = webp_data_url.split_once(',') else {
+                                leptos::logging::error!("WebP data url 格式不正确");
+                                return;
+                            };
+
+                            let webp_bytes =
+                                match base64::engine::general_purpose::STANDARD.decode(b64) {
+                                    Ok(bytes) => bytes,
+                                    Err(e) => {
+                                        leptos::logging::error!("WebP base64 解码失败: {:?}", e);
+                                        return;
+                                    }
+                                };
+
+                            set_new_avatar_webp.set(Some(webp_bytes));
+                        })
+                            as Box<dyn Fn()>);
+
+                        img.set_onload(Some(on_img_load.as_ref().unchecked_ref()));
+                        img.set_src(&base64);
+                        on_img_load.forget();
                     }
                 })
                     as Box<dyn Fn()>);
@@ -369,12 +577,12 @@ pub fn ProfilePage() -> impl IntoView {
                     {move || {
                         match user_resource.get() {
                             Some(Ok(user)) => {
-                                let user_bio = user.bio.clone();
+                                let user_bio = user.usermeta.bio.clone();
                                 let user_bio_clone = user_bio.clone();
-                                let user_nickname = user.nickname.clone();
+                                let user_nickname = user.usermeta.nick_name.clone();
                                 let user_nickname_clone = user_nickname.clone();
-                                let user_username_clone1 = user.username.clone();
-                                let user_username_clone2 = user.username.clone();
+                                let user_uid_clone1 = user.id.to_string();
+                                let user_uid_clone2 = user_uid_clone1.clone();
                                 Effect::new(move |_| {
                                     if !is_editing.get_untracked() {
                                         set_edit_bio.set(user_bio_clone.clone());
@@ -411,10 +619,10 @@ pub fn ProfilePage() -> impl IntoView {
                                                                     <img src=preview class="w-full h-full object-cover" />
                                                                 }
                                                                     .into_any()
-                                                            } else if !user.avatar_url.is_empty() {
+                                                            } else if !user.usermeta.avatar_url.is_empty() {
                                                                 view! {
                                                                     <img
-                                                                        src=user.avatar_url.clone()
+                                                                        src=user.usermeta.avatar_url.clone()
                                                                         class="w-full h-full object-cover"
                                                                     />
                                                                 }
@@ -453,7 +661,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                             when=move || is_editing.get()
                                                             fallback=move || {
                                                                 let nickname_display = user_nickname.clone();
-                                                                let username_display = user_username_clone1.clone();
+                                                                let uid_display = user_uid_clone1.clone();
                                                                 view! {
                                                                     <>
                                                                         <div class="flex items-start gap-2">
@@ -474,7 +682,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                                         </div>
                                                                         <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
                                                                             <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">
-                                                                                "username: " {username_display}
+                                                                                "uid: " {uid_display}
                                                                             </span>
                                                                         </div>
                                                                     </>
@@ -492,7 +700,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                             />
                                                             <div class="flex items-center justify-center md:justify-start gap-2 mt-1">
                                                                 <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">
-                                                                    "username: " {user_username_clone2.clone()}
+                                                                    "uid: " {user_uid_clone2.clone()}
                                                                 </span>
                                                             </div>
                                                         </Show>
@@ -548,6 +756,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                                     on:click=move |_| {
                                                                         set_is_editing.set(false);
                                                                         set_new_avatar.set(None);
+                                                                        set_new_avatar_webp.set(None);
                                                                     }
                                                                 >
                                                                     "取消"

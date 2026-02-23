@@ -1,7 +1,7 @@
 #[cfg(feature = "ssr")]
 use sqlx::Sqlite;
 
-use crate::api::*;
+use crate::apiold::*;
 
 fn parse_voice_category(raw: &str, _model_name: &str) -> VoiceModelCategory {
     match raw.to_lowercase().as_str() {
@@ -349,6 +349,6 @@ impl VoiceMetadataService for ServiceProvider<Sqlite> {
             text
         );
 
-        crate::api::voice_backend_api::qwen_generate(voice_info, text).await
+        crate::apiold::voice_backend_api::qwen_generate(voice_info, text).await
     }
 }

@@ -12,7 +12,7 @@ pub mod welcome; // 新增
 pub fn Header() -> impl IntoView {
     // 检查用户登录状态的资源
     // 这是一个简单的做法，实际上可能需要一个全局 Context 来存储 User
-    let user_resource = Resource::new(|| (), |_| crate::api::get_user_profile());
+    let user_resource = Resource::new(|| (), |_| crate::api::user::get_user_profile());
 
     view! {
         // 顶部导航栏容器
@@ -99,12 +99,12 @@ pub fn Header() -> impl IntoView {
                                             <button class="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-primary to-accent shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
                                                 <div class="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden font-bold text-primary">
                                                     // 显示头像
-                                                    {if user.avatar_url.starts_with("/api/")
-                                                        || user.avatar_url.starts_with("http")
+                                                    {if user.usermeta.avatar_url.starts_with("/api/")
+                                                        || user.usermeta.avatar_url.starts_with("http")
                                                     {
                                                         view! {
                                                             <img
-                                                                src=user.avatar_url.clone()
+                                                                src=user.usermeta.avatar_url.clone()
                                                                 alt="avatar"
                                                                 class="w-full h-full object-cover"
                                                             />

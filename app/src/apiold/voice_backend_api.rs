@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
-use crate::api::{VoiceMetaInfo, VoiceMetadata};
+use crate::apiold::{VoiceMetaInfo, VoiceMetadata};
 
 #[cfg(feature = "ssr")]
 use leptos::logging::{debug_log, error};
@@ -323,7 +323,7 @@ pub async fn qwen_generate(voice_info: &VoiceMetaInfo, text: &str) -> Result<Vec
         }
 
         let mut model = String::new();
-        if let crate::api::VoiceModelCategory::Official(ref model_name) =
+        if let crate::apiold::VoiceModelCategory::Official(ref model_name) =
             voice_info.base_model.category
         {
             if model_name.contains("qwen") {

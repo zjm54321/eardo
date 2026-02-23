@@ -29,48 +29,6 @@ where
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserAuthInfo {
-    pub username: Option<String>,
-    pub email: Option<String>,
-    pub phone: Option<String>,
-}
-/// 登录/注册/登出/获取当前用户 接口
-#[async_trait]
-pub trait AuthService: Send + Sync {
-    async fn register(&self, userauth: UserAuthInfo, password: &str) -> anyhow::Result<()>;
-    async fn login(&self, userauth: UserAuthInfo, password: &str) -> anyhow::Result<()>;
-    async fn logout(&self) -> anyhow::Result<()>;
-    async fn get_current_user(&self) -> anyhow::Result<()>;
-}
-pub type AuthProvider = Arc<dyn AuthService>;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum UserStatus {
-    Normal,
-    Deleted,
-    Banned,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserInfo {
-    pub id: String,
-    pub username: String,
-    pub avatar_url: String,
-    pub status: UserStatus,
-    pub nickname: String,
-    pub bio: String,
-    pub level: i64,
-    pub role: String,
-}
-/// 用户资料管理接口
-#[async_trait]
-pub trait UserService: Send + Sync {
-    async fn get_user_profile(&self) -> anyhow::Result<UserInfo>;
-    async fn update_user_profile(&self, user: &UserInfo) -> anyhow::Result<()>;
-}
-pub type UserServiceProvider = Arc<dyn UserService>;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceModelInfo {
     pub id: String,
     pub name: String,
@@ -83,11 +41,11 @@ pub struct VoiceModelInfo {
 #[serde(tag = "type", content = "value")]
 pub enum VoiceModelCategory {
     // 官方模型，string字段为可用的后端接口
-    Official(Vec<String>),
+    Official(String),
     // 用户自定义模型，string字段为用户id
-    UserDesigned(String),
+    UserDesigned,
     // 语音生成模型，string字段为对应用户id
-    VoiceGenerated(String),
+    VoiceGenerated,
 }
 /// 语音模型管理接口
 #[async_trait]
@@ -130,14 +88,16 @@ pub struct VoiceMetaInfo {
 pub struct VoiceMetaPost {
     pub id: String,
     pub name: String,
-    pub info: VoiceMetaInfo,
-    pub author: String,      // 作者
-    pub description: String, // 描述
-    pub tags: Vec<String>,   // 标签
-    pub usage_count: i32,    // 使用次数
-    pub category: String,    // 分类
-    pub created_at: String,  // 创建日期
-    pub updated_at: String,  // 更新日期
+    pub base_model: VoiceModelInfo, // 关联的基础模型信息
+    pub metadata: VoiceMetadata,    // 枚举类型：控制方式
+    pub author: String,             // 作者
+    pub description: String,        // 描述
+    pub tags: Vec<String>,          // 标签
+    pub usage_count: i32,           // 使用次数s
+    pub is_public: bool,            // 是否公开
+    pub is_official: bool,          // 是否官方推荐
+    pub created_at: String,         // 创建日期
+    pub updated_at: String,         // 更新日期
 }
 
 // VoiceMetadata 枚举：支持参数控制和指令控制两种方式
@@ -221,65 +181,8 @@ pub trait PostService: Send + Sync {
 pub type PostProvider = Arc<dyn PostService>;
 
 pub mod post;
-pub mod user;
 pub mod voice_backend_api;
 pub mod voicedata;
-
-#[server]
-pub async fn register(userauth: UserAuthInfo, password: String) -> Result<(), ServerFnError> {
-    use_context::<AuthProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
-        .register(userauth, &password)
-        .await
-        .map_err(|e| ServerFnError::new(format!("注册失败: {}", e)))
-}
-
-#[server]
-pub async fn login(userauth: UserAuthInfo, password: String) -> Result<(), ServerFnError> {
-    use_context::<AuthProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
-        .login(userauth, &password)
-        .await
-        .map_err(|e| ServerFnError::new(format!("登录失败: {}", e)))
-}
-
-#[server]
-pub async fn logout() -> Result<(), ServerFnError> {
-    use_context::<AuthProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
-        .logout()
-        .await
-        .map_err(|e| ServerFnError::new(format!("登出失败: {}", e)))
-}
-
-#[server]
-pub async fn get_current_user() -> Result<(), ServerFnError> {
-    use_context::<AuthProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
-        .get_current_user()
-        .await
-        .map_err(|e| ServerFnError::new(format!("获取当前登录用户失败: {}", e)))
-}
-
-// === 用户资料模块 ===
-
-#[server]
-pub async fn get_user_profile() -> Result<UserInfo, ServerFnError> {
-    use_context::<UserServiceProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserServiceProvider)"))?
-        .get_user_profile()
-        .await
-        .map_err(|e| ServerFnError::new(format!("获取个人资料失败: {}", e)))
-}
-
-#[server]
-pub async fn update_user_profile(user: UserInfo) -> Result<(), ServerFnError> {
-    use_context::<UserServiceProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserServiceProvider)"))?
-        .update_user_profile(&user)
-        .await
-        .map_err(|e| ServerFnError::new(format!("更新个人资料失败: {}", e)))
-}
 
 // === 语音模型模块 ===
 

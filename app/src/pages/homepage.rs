@@ -1,5 +1,5 @@
-use crate::api;
-use crate::api::VoiceParams;
+use crate::apiold;
+use crate::apiold::VoiceParams;
 use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -25,7 +25,7 @@ pub struct CreatePostPayload {
 #[server]
 pub async fn ai_rewrite_text(input: String) -> Result<String, ServerFnError> {
     let api_url = std::env::var("OPENAI_API_BASE")
-        .unwrap_or_else(|_| "https://api.placeholder.com/v1/chat/completions".to_string());
+        .unwrap_or_else(|_| "https://apiold.placeholder.com/v1/chat/completions".to_string());
     let api_token =
         std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "YOUR_API_TOKEN".to_string());
 
@@ -129,7 +129,7 @@ pub fn HomePage() -> impl IntoView {
     let instruction_text = RwSignal::new(String::new());
 
     // Resource 用于异步获取数据
-    let voices_resource = Resource::new(|| (), |_| api::list_voice_models());
+    let voices_resource = Resource::new(|| (), |_| apiold::list_voice_models());
 
     // 创建 Action 处理生成请求
     // Action 自动管理 pending (加载中) 和 value (返回值) 状态
@@ -144,7 +144,7 @@ pub fn HomePage() -> impl IntoView {
 
         async move {
             // 获取基础模型信息
-            let base_model = match api::get_voice_model(voice_id.clone()).await {
+            let base_model = match apiold::get_voice_model(voice_id.clone()).await {
                 Ok(model) => model,
                 Err(e) => {
                     debug_error!("获取语音模型失败: {}", e);
@@ -154,16 +154,16 @@ pub fn HomePage() -> impl IntoView {
 
             // 创建 VoiceMetaInfo 对象
             let metadata = if is_instruction {
-                api::VoiceMetadata::Instruction(instruction)
+                apiold::VoiceMetadata::Instruction(instruction)
             } else {
-                api::VoiceMetadata::Parametric(VoiceParams {
+                apiold::VoiceMetadata::Parametric(VoiceParams {
                     pitch,
                     speed,
                     volume,
                 })
             };
 
-            let voice_meta = api::VoiceMetaInfo {
+            let voice_meta = apiold::VoiceMetaInfo {
                 base_model,
                 metadata,
             };
@@ -176,7 +176,7 @@ pub fn HomePage() -> impl IntoView {
                 speed
             );
 
-            let result = api::generate_audio(voice_meta.clone(), text.clone()).await;
+            let result = apiold::generate_audio(voice_meta.clone(), text.clone()).await;
 
             // 生成成功后保存数据供分享使用
             if let Ok(audio_data) = &result {
@@ -198,30 +198,30 @@ pub fn HomePage() -> impl IntoView {
     let create_post_action = Action::new(move |payload: &CreatePostPayload| {
         let payload = payload.clone();
         async move {
-            let post = api::PostInfo {
+            let post = apiold::PostInfo {
                 id: String::new(), // 服务器端生成 UUID
                 title: payload.title,
-                author: api::AuthorInfo {
+                author: apiold::AuthorInfo {
                     name: String::new(),
                     avatar: String::new(),
                 },
-                content: api::PostContent {
+                content: apiold::PostContent {
                     description: Some(payload.content),
                     audio_url: None,
                     audio_data: Some(payload.audio_data),
                 },
-                meta: api::PostMeta {
+                meta: apiold::PostMeta {
                     likes: 0,
                     comments: 0,
                     is_liked: false,
                     time: String::new(),
-                    voice_info: api::VoiceInfo {
+                    voice_info: apiold::VoiceInfo {
                         voice_type: String::new(),
                         voice_meta_id: Some(payload.voice_id),
                     },
                 },
             };
-            api::create_post(post).await
+            apiold::create_post(post).await
         }
     });
 
@@ -1082,7 +1082,7 @@ pub fn VoiceSelectorCard(
     /// 当前选中的声线 ID (双向绑定)
     selected_voice: RwSignal<String>,
     /// 声线列表资源
-    voices_resource: Resource<Result<Vec<api::VoiceModelInfo>, ServerFnError>>,
+    voices_resource: Resource<Result<Vec<apiold::VoiceModelInfo>, ServerFnError>>,
 ) -> impl IntoView {
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
@@ -1346,7 +1346,7 @@ pub fn ParameterControlCard(
     /// 指令文本
     instruction_text: RwSignal<String>,
     /// 声线列表资源
-    voices_resource: Resource<Result<Vec<api::VoiceModelInfo>, ServerFnError>>,
+    voices_resource: Resource<Result<Vec<apiold::VoiceModelInfo>, ServerFnError>>,
 ) -> impl IntoView {
     // 判定是否有改动
     let is_modified = Memo::new(move |_| {
@@ -1362,7 +1362,7 @@ pub fn ParameterControlCard(
         let voice_id = selected_voice.get();
         if let Some(Ok(voices)) = voices_resource.get() {
             if let Some(voice) = voices.iter().find(|v| v.id == voice_id) {
-                if let api::VoiceModelCategory::Official(ref cat) = voice.category {
+                if let apiold::VoiceModelCategory::Official(ref cat) = voice.category {
                     return cat.clone();
                 }
             }

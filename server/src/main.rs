@@ -13,24 +13,26 @@ use dotenv::dotenv;
 use leptos::logging::log;
 use leptos::prelude::*;
 use leptos_axum::{generate_route_list, handle_server_fns_with_context};
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{PgPool, SqlitePool, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use std::{env, sync::Arc};
 
 #[derive(Clone, FromRef)]
 struct AppState {
     leptos_options: LeptosOptions,
     pool: SqlitePool,
-    auth_provider: api::AuthProvider,
-    user_provider: api::UserServiceProvider,
-    voice_model_provider: api::VoiceModelProvider,
-    voice_metadata_provider: api::VoiceMetadataProvider,
-    post_provider: api::PostProvider,
+    pg_pool: PgPool,
+    auth_provider: api::user::AuthProvider,
+    user_provider: api::user::UserProvider,
+    voice_model_provider: apiold::VoiceModelProvider,
+    voice_metadata_provider: apiold::VoiceMetadataProvider,
+    post_provider: apiold::PostProvider,
 }
 
 // 1. API 路由处理函数 (用于 CSR / Server Functions)
 // 这里已经正确注入了 Headers
 async fn server_fn_handler(
     State(app_state): State<AppState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     req: Request<Body>,
 ) -> impl IntoResponse {
     let headers = req.headers().clone();
@@ -39,8 +41,10 @@ async fn server_fn_handler(
         move || {
             // 基础依赖
             provide_context(app_state.pool.clone());
+            provide_context(app_state.pg_pool.clone());
             provide_context(app_state.leptos_options.clone());
             provide_context(headers.clone());
+            provide_context(addr);
 
             // !!! 关键修复：必须手动注入 AppState 中的 Provider !!!
             provide_context(app_state.auth_provider.clone());
@@ -83,37 +87,37 @@ async fn get_avatar_handler(
     Path(user_id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let result: Result<(Vec<u8>, String), sqlx::Error> = sqlx::query_as(
-        "SELECT avatar_data, avatar_mime FROM users WHERE id = ? AND avatar_data IS NOT NULL",
-    )
-    .bind(&user_id)
-    .fetch_one(&state.pool)
-    .await;
+    let parsed_uuid = uuid::Uuid::parse_str(&user_id);
 
-    match result {
-        Ok((data, mime)) => (
-            [
-                (header::CONTENT_TYPE, mime.as_str()),
-                (header::CACHE_CONTROL, "public, max-age=86400"),
-            ],
-            data,
-        )
-            .into_response(),
-        Err(_) => {
-            // 返回默认头像 - 重定向到 DiceBear API
-            (
-                StatusCode::FOUND,
-                [(
-                    header::LOCATION,
-                    format!(
-                        "https://api.dicebear.com/7.x/avataaars/svg?seed={}",
-                        user_id
-                    ),
-                )],
+    if let Ok(uuid) = parsed_uuid {
+        let result: Result<(Vec<u8>,), sqlx::Error> =
+            sqlx::query_as(r#"SELECT avatar FROM "user" WHERE id = $1 AND avatar IS NOT NULL"#)
+                .bind(uuid)
+                .fetch_one(&state.pg_pool)
+                .await;
+        if let Ok((data,)) = result {
+            return (
+                [
+                    (header::CONTENT_TYPE, "image/webp"),
+                    (header::CACHE_CONTROL, "public, max-age=86400"),
+                ],
+                data,
             )
-                .into_response()
+                .into_response();
         }
     }
+    // 返回默认头像 - 重定向到 DiceBear API
+    (
+        StatusCode::FOUND,
+        [(
+            header::LOCATION,
+            format!(
+                "https://api.dicebear.com/7.x/avataaars/svg?seed={}",
+                user_id
+            ),
+        )],
+    )
+        .into_response()
 }
 
 // 2.2 帖子音频获取处理函数
@@ -144,6 +148,7 @@ async fn get_post_audio_handler(
 // 专门用于处理页面请求，确保在服务端渲染时也能获取到 Headers (Cookie)
 async fn ssr_handler(
     State(app_state): State<AppState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
     req: Request<Body>,
 ) -> Response {
@@ -152,8 +157,10 @@ async fn ssr_handler(
         move || {
             // 基础依赖
             provide_context(app_state.pool.clone());
+            provide_context(app_state.pg_pool.clone());
             provide_context(app_state.leptos_options.clone());
             provide_context(headers.clone());
+            provide_context(addr);
 
             // !!! 关键修复：同样需要在 SSR 渲染时注入这些 Provider !!!
             provide_context(app_state.auth_provider.clone());
@@ -185,14 +192,27 @@ async fn main() {
         .await
         .expect("Failed to create pool.");
 
+    let pg_url = env::var("PG_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/eardo".to_string());
+    log!("连接PG数据库: {}", pg_url);
+
+    let pg_pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&pg_url)
+        .await
+        .expect("Failed to create pg pool.");
+
     // 1. 实例化 ServiceProvider (指定泛型为 SqlitePool)
-    let service_impl = api::ServiceProvider { pool: pool.clone() };
+    let service_impl = apiold::ServiceProvider { pool: pool.clone() };
+    let new_service_impl = api::ServiceProvider {
+        pool: pg_pool.clone(),
+    };
 
     // 2. 包装成 Arc (Provider)
     // 这里的 service_impl 实现了所有 Trait，所以可以被转型
     // ServiceProvider<SqlitePool> -> Arc<dyn AuthService>
-    let auth_provider = Arc::new(service_impl.clone());
-    let user_provider = Arc::new(service_impl.clone());
+    let auth_provider = Arc::new(new_service_impl.clone());
+    let user_provider = Arc::new(new_service_impl.clone());
     let voice_model_provider = Arc::new(service_impl.clone());
     let voice_metadata_provider = Arc::new(service_impl.clone());
     let post_provider = Arc::new(service_impl.clone());
@@ -201,6 +221,7 @@ async fn main() {
     let app_state = AppState {
         leptos_options: leptos_options.clone(),
         pool: pool.clone(),
+        pg_pool: pg_pool.clone(),
         auth_provider,
         user_provider,
         voice_model_provider,
@@ -230,7 +251,10 @@ async fn main() {
 
     log!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }

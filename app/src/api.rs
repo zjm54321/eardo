@@ -36,7 +36,7 @@ where
 */
 pub mod user {
     use email_address::EmailAddress;
-    use leptos::prelude::*;
+    use leptos::{prelude::*, server_fn::codec::Json};
     use phonenumber::PhoneNumber;
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
@@ -104,7 +104,7 @@ pub mod user {
         /// 用于更新或添加用户登录信息（如绑定邮箱/手机号、修改密码等）
         async fn update_authinfo(&self, userauth: UserAuth) -> anyhow::Result<()>;
     }
-    type AuthProvider = Arc<dyn AuthService>;
+    pub type AuthProvider = Arc<dyn AuthService>;
     #[async_trait::async_trait]
     pub trait UserService: Send + Sync {
         async fn get_user_profile(&self) -> anyhow::Result<User>;
@@ -112,7 +112,7 @@ pub mod user {
         /// 用于更新用户头像，接收二进制数据
         async fn update_user_avatar(&self, avatar_data: Vec<u8>) -> anyhow::Result<()>;
     }
-    type UserProvider = Arc<dyn UserService>;
+    pub type UserProvider = Arc<dyn UserService>;
 
     //以下为server实现，可以直接在前端使用
     #[server]
@@ -123,7 +123,7 @@ pub mod user {
             .await
             .map_err(|e| ServerFnError::new(format!("注册失败: {}", e)))
     }
-    #[server]
+    #[server(input = Json)]
     pub async fn login(userauth: UserAuth) -> Result<UserID, ServerFnError> {
         use_context::<AuthProvider>()
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?

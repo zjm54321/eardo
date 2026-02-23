@@ -1,11 +1,11 @@
-use crate::api::{PostInfo, list_posts};
+use crate::apiold::{PostInfo, list_posts};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 
 #[server]
 pub async fn toggle_post_like(post_id: String) -> Result<(), ServerFnError> {
-    let provider = leptos::prelude::use_context::<crate::api::PostProvider>()
+    let provider = leptos::prelude::use_context::<crate::apiold::PostProvider>()
         .ok_or_else(|| ServerFnError::new("未找到PostProvider"))?;
     provider
         .like_dislike_post(&post_id)
@@ -48,7 +48,7 @@ pub async fn get_post_comments(post_id: String) -> Result<Vec<CommentInfo>, Serv
             .into_iter()
             .map(|(id, content, created_at, user_id, username, nickname)| {
                 let author = nickname.unwrap_or(username);
-                let avatar = Some(format!("/api/avatar/{}", user_id));
+                let avatar = Some(format!("/apiold/avatar/{}", user_id));
                 CommentInfo {
                     id,
                     author,
@@ -67,7 +67,7 @@ pub async fn get_post_comments(post_id: String) -> Result<Vec<CommentInfo>, Serv
 
 #[server]
 pub async fn add_post_comment(post_id: String, content: String) -> Result<(), ServerFnError> {
-    let provider = leptos::prelude::use_context::<crate::api::PostProvider>()
+    let provider = leptos::prelude::use_context::<crate::apiold::PostProvider>()
         .ok_or_else(|| ServerFnError::new("未找到PostProvider"))?;
     provider
         .comment_on_post(&post_id, &content)
@@ -582,7 +582,7 @@ where
                                                                         src=comment
                                                                             .avatar
                                                                             .unwrap_or_else(|| {
-                                                                                "https://api.dicebear.com/7.x/avataaars/svg?seed=comment"
+                                                                                "https://apiold.dicebear.com/7.x/avataaars/svg?seed=comment"
                                                                                     .to_string()
                                                                             })
                                                                         class="w-8 h-8 rounded-full object-cover flex-shrink-0"

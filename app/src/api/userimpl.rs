@@ -1,19 +1,17 @@
-use crate::api::{ServiceProvider, user::*};
-use sqlx::Postgres;
-
-#[cfg(feature = "ssr")]
+#![cfg(feature = "ssr")]
 use {
+    crate::api::{ServiceProvider, user::*},
     anyhow::{Context, anyhow},
     axum_extra::extract::cookie::{Cookie, SameSite},
     bcrypt::{DEFAULT_COST, hash, verify},
     chrono::{Duration, Utc},
     http::{HeaderMap, HeaderValue, header::SET_COOKIE},
     leptos::prelude::use_context,
+    sqlx::Postgres,
     uuid::Uuid,
 };
 
 /// 从 Cookie 中获取 session token
-#[cfg(feature = "ssr")]
 fn get_session_token() -> Option<String> {
     let headers = use_context::<HeaderMap>()?;
     let cookie_header = headers.get("cookie")?.to_str().ok()?;
@@ -30,7 +28,6 @@ fn get_session_token() -> Option<String> {
 }
 
 /// 从 session token 获取用户 ID
-#[cfg(feature = "ssr")]
 async fn get_user_id_from_session(pool: &sqlx::Pool<Postgres>) -> anyhow::Result<UserID> {
     let token = get_session_token().ok_or_else(|| anyhow!("未找到 session token"))?;
     let token_uuid = Uuid::parse_str(&token).context("无效的 session token")?;
@@ -47,7 +44,6 @@ async fn get_user_id_from_session(pool: &sqlx::Pool<Postgres>) -> anyhow::Result
     Ok(user_id)
 }
 
-#[cfg(feature = "ssr")]
 #[async_trait::async_trait]
 impl AuthService for ServiceProvider<Postgres> {
     async fn register(&self, userauth: UserAuth) -> anyhow::Result<UserID> {
@@ -163,7 +159,8 @@ impl AuthService for ServiceProvider<Postgres> {
             })
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.split(',').next()) // x-forwarded-for 可能是逗号分隔的列表，取第一个
-            .map(|s| s.trim());
+            .map(|s| s.trim().to_string())
+            .or_else(|| use_context::<std::net::SocketAddr>().map(|addr| addr.ip().to_string()));
 
         let (session_id,): (Uuid,) = sqlx::query_as(
             "INSERT INTO user_session (user_id, auth_type, user_agent, ip_address, expires_at) 
@@ -282,7 +279,6 @@ impl AuthService for ServiceProvider<Postgres> {
     }
 }
 
-#[cfg(feature = "ssr")]
 #[async_trait::async_trait]
 impl UserService for ServiceProvider<Postgres> {
     async fn get_user_profile(&self) -> anyhow::Result<User> {
