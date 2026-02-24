@@ -106,7 +106,18 @@ pub fn Playground() -> impl IntoView {
     let (featured_list, set_featured_list) = signal(Vec::<VoicePost>::new());
     let (search_query, set_search_query) = signal(String::new());
 
-    // 初始化：加载所有作品
+    // 加载精选作品 (Recommended状态)
+    let featured_resource = LocalResource::new(move || async move {
+        match list_voice_post(Some(PostStatus::Recommended), 20).await {
+            Ok(posts) => Ok(posts),
+            Err(e) => {
+                leptos::logging::error!("加载精选作品失败: {}", e);
+                Err(e)
+            }
+        }
+    });
+
+    // 加载最新作品 (Normal状态)
     let posts_resource = LocalResource::new(move || async move {
         match list_voice_post(Some(PostStatus::Normal), 20).await {
             Ok(posts) => Ok(posts),
@@ -118,11 +129,11 @@ pub fn Playground() -> impl IntoView {
     });
 
     Effect::new(move || {
+        if let Some(Ok(featured)) = featured_resource.get() {
+            set_featured_list.set(featured);
+        }
         if let Some(Ok(posts)) = posts_resource.get() {
-            let (featured, rest): (Vec<_>, Vec<_>) =
-                posts.into_iter().enumerate().partition(|(idx, _)| *idx < 3);
-            set_featured_list.set(featured.into_iter().map(|(_, p)| p).collect());
-            set_works_list.set(rest.into_iter().map(|(_, p)| p).collect());
+            set_works_list.set(posts);
         }
     });
 
@@ -181,7 +192,7 @@ pub fn Playground() -> impl IntoView {
                                         </div>
 
                                         // 轮播内容
-                                        <div class="relative overflow-hidden rounded-2xl min-h-[300px]">
+                                        <div class="relative overflow-hidden rounded-2xl min-h-[300px] px-8 md:px-16 lg:px-24">
                                             {featured
                                                 .into_iter()
                                                 .enumerate()
@@ -348,42 +359,30 @@ fn WorkCard(work: VoicePost, is_featured: bool) -> impl IntoView {
 
     view! {
         <div class="relative">
-            <div
-                class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col"
-                class:max-w-2xl=is_featured
-                class:mx-auto=is_featured
-            >
-
-                // 用户信息
-                <div class="flex items-center mb-4">
-                    <img
-                        src=meta.avatar
-                        alt="Avatar"
-                        class="w-12 h-12 rounded-full mr-3 object-cover"
-                    />
-                    <div>
-                        <div class="font-medium text-gray-800">{meta.author}</div>
-                        <div class="text-xs text-gray-500">{meta.time}</div>
+            <div class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover min-h-[400px] flex flex-col">
+                // 头像（左侧）和标题（右侧）
+                <div class="flex items-start mb-4">
+                    // 用户头像（左侧）
+                    <div class="w-12 h-12 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center mr-3 flex-shrink-0">
+                        <img src=meta.avatar alt="Avatar" class="w-full h-full object-cover" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        // 标题
+                        <h3 class="font-semibold text-lg text-dark">{work.title.clone()}</h3>
                     </div>
                 </div>
 
-                // 内容
-                <h3 class="font-semibold mb-3 text-lg text-dark">{work.title.clone()}</h3>
-                <p class="text-sm text-gray-600 mb-4 line-clamp-3">{meta.description}</p>
-
-                // 音频播放器
-                <div class="mb-4 bg-gray-50 rounded-lg p-2">
-                    <div class="flex items-center justify-between mb-2 px-1">
-                        <p class="text-xs text-gray-500">"作品音频"</p>
-                        <span class="text-xs text-primary cursor-pointer hover:underline">
-                            <i class="fa-solid fa-arrows-rotate mr-1"></i>
-                            "替换"
-                        </span>
-                    </div>
-                    <audio controls class="w-full h-8" src=meta.audio_url>
-                        "您的浏览器不支持音频播放"
-                    </audio>
+                // 描述内容（可滚动）
+                <div
+                    class="text-sm text-gray-600 mb-4 overflow-y-auto flex-grow"
+                    class:max-h-32=move || !is_featured
+                    class:max-h-40=is_featured
+                >
+                    {meta.description}
                 </div>
+
+                // 音频播放器（自定义样式）
+                <CustomAudioPlayer audio_url=meta.audio_url.clone() />
 
                 // 底部操作栏 (mt-auto 保证对齐底部)
                 <div class="flex justify-between items-center text-sm mt-auto pt-2">
@@ -595,6 +594,153 @@ where
                     </Suspense>
                 </div>
             </div>
+        </div>
+    }
+}
+
+// --- 自定义音频播放器组件 ---
+#[component]
+fn CustomAudioPlayer(audio_url: String) -> impl IntoView {
+    let audio_ref = NodeRef::<leptos::html::Audio>::new();
+    let (is_playing, set_is_playing) = signal(false);
+    #[allow(unused_variables)]
+    let (current_time, set_current_time) = signal(0.0);
+    #[allow(unused_variables)]
+    let (duration, set_duration) = signal(0.0);
+    let (is_seeking, set_is_seeking) = signal(false);
+
+    // 播放/暂停切换
+    let toggle_play = move |_| {
+        if let Some(audio) = audio_ref.get() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast;
+                let audio_el: web_sys::HtmlAudioElement = audio.unchecked_into();
+                if is_playing.get() {
+                    let _ = audio_el.pause();
+                    set_is_playing.set(false);
+                } else {
+                    let _ = audio_el.play();
+                    set_is_playing.set(true);
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = audio;
+        }
+    };
+
+    // 更新当前时间
+    let on_time_update = move |_| {
+        if is_seeking.get() {
+            return;
+        }
+        if let Some(audio) = audio_ref.get() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast;
+                let audio_el: web_sys::HtmlAudioElement = audio.unchecked_into();
+                set_current_time.set(audio_el.current_time());
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = audio;
+        }
+    };
+
+    // 加载元数据时获取时长
+    let on_loaded_metadata = move |_| {
+        if let Some(audio) = audio_ref.get() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast;
+                let audio_el: web_sys::HtmlAudioElement = audio.unchecked_into();
+                set_duration.set(audio_el.duration());
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = audio;
+        }
+    };
+
+    // 进度条拖动
+    let on_seek = move |ev: web_sys::Event| {
+        if let Some(input) = ev.target() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast;
+                if let Ok(input_el) = input.dyn_into::<web_sys::HtmlInputElement>() {
+                    if let Ok(value) = input_el.value().parse::<f64>() {
+                        set_current_time.set(value);
+                        if let Some(audio) = audio_ref.get() {
+                            let audio_el: web_sys::HtmlAudioElement = audio.unchecked_into();
+                            audio_el.set_current_time(value);
+                        }
+                    }
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = input;
+        }
+        set_is_seeking.set(false);
+    };
+
+    // 格式化时间
+    let format_time = move |seconds: f64| {
+        if seconds.is_nan() || seconds.is_infinite() {
+            return "0:00".to_string();
+        }
+        let mins = (seconds / 60.0).floor() as i32;
+        let secs = (seconds % 60.0).floor() as i32;
+        format!("{}:{:02}", mins, secs)
+    };
+
+    view! {
+        <div class="mb-4 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-100 rounded-lg p-4">
+            <p class="text-xs text-gray-600 mb-3">"作品音频"</p>
+
+            <div class="flex items-center gap-3">
+                // 播放/暂停按钮
+                <button
+                    class="w-10 h-10 rounded-full bg-primary hover:bg-primary-focus text-white flex items-center justify-center transition-all duration-200 flex-shrink-0 shadow-sm hover:shadow"
+                    on:click=toggle_play
+                >
+                    {move || {
+                        if is_playing.get() {
+                            view! { <i class="fa-solid fa-pause"></i> }
+                        } else {
+                            view! { <i class="fa-solid fa-play ml-0.5"></i> }
+                        }
+                    }}
+                </button>
+
+                <div class="flex-1 flex flex-col gap-2">
+                    // 进度条
+                    <input
+                        type="range"
+                        min="0"
+                        max=move || duration.get()
+                        step="0.1"
+                        class="w-full h-1.5 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus"
+                        prop:value=move || current_time.get()
+                        on:input=move |_| set_is_seeking.set(true)
+                        on:change=on_seek
+                    />
+
+                    // 时间显示
+                    <div class="flex justify-between text-xs text-gray-500">
+                        <span>{move || format_time(current_time.get())}</span>
+                        <span>{move || format_time(duration.get())}</span>
+                    </div>
+                </div>
+            </div>
+
+            // 隐藏的实际音频元素
+            <audio
+                node_ref=audio_ref
+                src=audio_url
+                on:timeupdate=on_time_update
+                on:loadedmetadata=on_loaded_metadata
+                on:ended=move |_| set_is_playing.set(false)
+                class="hidden"
+            />
         </div>
     }
 }
