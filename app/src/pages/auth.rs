@@ -95,6 +95,66 @@ pub fn LoginPage() -> impl IntoView {
         }
     });
 
+    // 提取密码输入框组件，减少主组件的重渲染
+    let password_input = view! {
+        <div class="relative">
+            <input
+                type=move || if show_password.get() { "text" } else { "password" }
+                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
+                placeholder="请输入密码"
+                on:input=move |ev| set_password.set(event_target_value(&ev))
+                prop:value=password
+            />
+            <button
+                type="button"
+                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                on:click=move |_| set_show_password.update(|s| *s = !*s)
+            >
+                <Show
+                    when=move || show_password.get()
+                    fallback=move || {
+                        view! {
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke-width="1.5"
+                                stroke="currentColor"
+                                class="w-5 h-5"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                />
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                />
+                            </svg>
+                        }
+                    }
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1.5"
+                        stroke="currentColor"
+                        class="w-5 h-5"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                        />
+                    </svg>
+                </Show>
+            </button>
+        </div>
+    };
+
     view! {
         <div class="min-h-screen flex items-center justify-center bg-base-100 px-4">
             <div class="max-w-md w-full bg-white rounded-xl shadow-soft p-8 space-y-6 border border-gray-100">
@@ -118,62 +178,7 @@ pub fn LoginPage() -> impl IntoView {
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">"密码"</label>
-                        <div class="relative">
-                            <input
-                                type=move || if show_password.get() { "text" } else { "password" }
-                                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
-                                placeholder="请输入密码"
-                                on:input=move |ev| set_password.set(event_target_value(&ev))
-                                prop:value=password
-                            />
-                            <button
-                                type="button"
-                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                                on:click=move |_| set_show_password.update(|s| *s = !*s)
-                            >
-                                <Show
-                                    when=move || show_password.get()
-                                    fallback=move || {
-                                        view! {
-                                            <svg
-                                                xmlns="http://www.w3.org/2000/svg"
-                                                fill="none"
-                                                viewBox="0 0 24 24"
-                                                stroke-width="1.5"
-                                                stroke="currentColor"
-                                                class="w-5 h-5"
-                                            >
-                                                <path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-                                                />
-                                                <path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                                                />
-                                            </svg>
-                                        }
-                                    }
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke-width="1.5"
-                                        stroke="currentColor"
-                                        class="w-5 h-5"
-                                    >
-                                        <path
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
-                                        />
-                                    </svg>
-                                </Show>
-                            </button>
-                        </div>
+                        {password_input}
                     </div>
                 </div>
 
@@ -321,6 +326,67 @@ pub fn RegisterPage() -> impl IntoView {
         }
     });
 
+    // 提取密码输入框组件，减少主组件的重渲染
+    let password_input = view! {
+        <div class="relative">
+            <input
+                type=move || if show_password.get() { "text" } else { "password" }
+                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
+                placeholder="设置密码"
+                maxlength="32"
+                on:input=move |ev| set_password.set(event_target_value(&ev))
+                prop:value=password
+            />
+            <button
+                type="button"
+                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                on:click=move |_| set_show_password.update(|s| *s = !*s)
+            >
+                <Show
+                    when=move || show_password.get()
+                    fallback=move || {
+                        view! {
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke-width="1.5"
+                                stroke="currentColor"
+                                class="w-5 h-5"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                />
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                />
+                            </svg>
+                        }
+                    }
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1.5"
+                        stroke="currentColor"
+                        class="w-5 h-5"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                        />
+                    </svg>
+                </Show>
+            </button>
+        </div>
+    };
+
     view! {
         <div class="min-h-screen flex items-center justify-center bg-base-100 px-4">
             <div class="max-w-md w-full bg-white rounded-xl shadow-soft p-8 space-y-6 border border-gray-100">
@@ -364,68 +430,14 @@ pub fn RegisterPage() -> impl IntoView {
                     </Show>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">"密码"</label>
-                        <div class="relative">
-                            <input
-                                type=move || if show_password.get() { "text" } else { "password" }
-                                class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
-                                placeholder="设置密码"
-                                maxlength="32"
-                                on:input=move |ev| set_password.set(event_target_value(&ev))
-                                prop:value=password
-                            />
-                            <button
-                                type="button"
-                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                                on:click=move |_| set_show_password.update(|s| *s = !*s)
-                            >
-                                <Show
-                                    when=move || show_password.get()
-                                    fallback=move || {
-                                        view! {
-                                            <svg
-                                                xmlns="http://www.w3.org/2000/svg"
-                                                fill="none"
-                                                viewBox="0 0 24 24"
-                                                stroke-width="1.5"
-                                                stroke="currentColor"
-                                                class="w-5 h-5"
-                                            >
-                                                <path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-                                                />
-                                                <path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                                                />
-                                            </svg>
-                                        }
-                                    }
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke-width="1.5"
-                                        stroke="currentColor"
-                                        class="w-5 h-5"
-                                    >
-                                        <path
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
-                                        />
-                                    </svg>
-                                </Show>
-                            </button>
-                        </div>
+                        {password_input}
+
+                        // 密码强度指示器
                         <Show
                             when=move || !password.get().is_empty()
                             fallback=move || {
                                 view! {
-                                    <div class="mt-1 text-xs text-gray-400">
+                                    <div class="text-xs text-gray-400 mt-1.5">
                                         "密码只能包含0-32位英文字母、数字或符号"
                                     </div>
                                 }
@@ -463,16 +475,27 @@ pub fn RegisterPage() -> impl IntoView {
                                     )
                                 }></div>
                             </div>
-                            <div class="mt-1 text-xs text-right text-gray-500">
-                                {move || match password_strength() {
-                                    1 => "弱",
-                                    2 => "中",
-                                    3 => "强",
-                                    _ => "",
-                                }}
+                            <div class="text-xs mt-1.5 flex justify-between">
+                                <span class="text-gray-500">
+                                    "密码只能包含0-32位英文字母、数字或符号"
+                                </span>
+                                <span class=move || match password_strength() {
+                                    1 => "text-red-500 font-medium",
+                                    2 => "text-yellow-500 font-medium",
+                                    3 => "text-green-500 font-medium",
+                                    _ => "text-gray-500",
+                                }>
+                                    {move || match password_strength() {
+                                        1 => "弱",
+                                        2 => "中",
+                                        3 => "强",
+                                        _ => "",
+                                    }}
+                                </span>
                             </div>
                         </Show>
                     </div>
+
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
                             "确认密码"
@@ -483,7 +506,7 @@ pub fn RegisterPage() -> impl IntoView {
                                     if show_confirm_password.get() { "text" } else { "password" }
                                 }
                                 class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/50 focus:outline-none transition-all pr-10"
-                                placeholder="再次输入密码"
+                                placeholder="请再次输入密码"
                                 maxlength="32"
                                 on:input=move |ev| set_confirm_password.set(event_target_value(&ev))
                                 prop:value=confirm_password
@@ -595,20 +618,211 @@ pub fn RegisterPage() -> impl IntoView {
 }
 
 #[component]
-pub fn ProfilePage() -> impl IntoView {
+fn ProfileCard(user: crate::api::user::User) -> impl IntoView {
+    let user_bio = user.usermeta.bio.clone();
+    let user_nickname = user.usermeta.nick_name.clone();
     let navigate = use_navigate();
+    let logout_action = Action::new(move |_| {
+        let value = navigate.clone();
+        async move {
+            let _ = crate::api::user::logout().await;
+            value("/login", Default::default());
+        }
+    });
+
+    view! {
+        <div class="bg-white rounded-3xl p-8 md:p-10 shadow-soft w-full flex flex-col md:flex-row items-center md:items-start gap-8 md:gap-12 border border-gray-100 relative overflow-hidden group">
+            <div class="absolute -top-24 -right-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-500"></div>
+            <div class="absolute top-1/2 -left-24 w-48 h-48 bg-secondary/5 rounded-full blur-3xl group-hover:bg-secondary/10 transition-colors duration-500"></div>
+
+            // 头像区
+            <div class="relative flex-shrink-0">
+                <div class="w-32 h-32 md:w-40 md:h-40 rounded-full p-1.5 bg-gradient-to-tr from-primary to-secondary shadow-lg">
+                    <div class="w-full h-full rounded-full bg-white overflow-hidden relative border-4 border-white">
+                        {if !user.usermeta.avatar_url.is_empty() {
+                            view! {
+                                <img
+                                    src=format!(
+                                        "{}?t={}",
+                                        user.usermeta.avatar_url,
+                                        {
+                                            #[cfg(target_arch = "wasm32")] { js_sys::Date::now() }
+                                            #[cfg(not(target_arch = "wasm32"))] { 0.0 }
+                                        },
+                                    )
+                                    loading="lazy"
+                                    decoding="async"
+                                    class="w-full h-full object-cover"
+                                />
+                            }
+                                .into_any()
+                        } else {
+                            view! {
+                                <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
+                                    <i class="fa-solid fa-user text-6xl"></i>
+                                </div>
+                            }
+                                .into_any()
+                        }}
+                    </div>
+                </div>
+            </div>
+
+            // 信息内容
+            <div class="flex-grow text-center md:text-left space-y-5 z-10 w-full">
+                <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                    <div class="flex-1">
+                        <div class="flex items-start gap-2">
+                            <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">
+                                {if user_nickname.is_empty() {
+                                    "未设置昵称".to_string()
+                                } else {
+                                    user_nickname
+                                }}
+                            </h2>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 justify-center md:justify-end">
+                        <button
+                            class="px-5 py-2 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm text-sm flex items-center gap-2"
+                            on:click=move |_| {
+                                logout_action.dispatch(());
+                            }
+                        >
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                            "退出登录"
+                        </button>
+                    </div>
+                </div>
+
+                // 简介展示
+                <div class="bg-gray-50/80 rounded-xl p-4 border border-gray-100 text-gray-600 text-sm leading-relaxed text-left relative min-h-[80px]">
+                    <i class="fa-solid fa-quote-left text-gray-300 absolute -top-2 -left-2 text-xl"></i>
+                    <div>
+                        <p>
+                            {if user_bio.is_empty() {
+                                "暂无简介，快来写点什么吧...".to_string()
+                            } else {
+                                user_bio
+                            }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn WorksList(
+    works_resource: Resource<Result<Vec<crate::apiold::PostInfo>, leptos::prelude::ServerFnError>>,
+) -> impl IntoView {
+    view! {
+        <div class="space-y-4">
+            <div class="flex items-center justify-between px-1">
+                <h3 class="text-lg font-bold text-dark flex items-center">
+                    <span class="w-1.5 h-6 bg-secondary rounded-full mr-2"></span>
+                    "我的作品"
+                </h3>
+                <A href="/voice" attr:class="text-xs text-gray-400 hover:text-secondary">
+                    <i class="fa-solid fa-arrow-right"></i>
+                </A>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden min-h-[320px]">
+                <Suspense fallback=move || {
+                    view! {
+                        <div class="p-4 text-center text-sm text-gray-400">"加载作品..."</div>
+                    }
+                }>
+                    {move || {
+                        match works_resource.get() {
+                            Some(Ok(works)) => {
+                                if !works.is_empty() {
+                                    view! {
+                                        <ul class="divide-y divide-gray-50">
+                                            <For
+                                                each=move || works.clone()
+                                                key=|w| w.id.clone()
+                                                children=move |work| {
+                                                    let meta = PostMetadata::from_post(&work);
+                                                    view! {
+                                                        <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
+                                                            <div class="flex items-center justify-between mb-1">
+                                                                <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors truncate pr-2">
+                                                                    {work.title}
+                                                                </span>
+                                                                <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
+                                                                    "公开"
+                                                                </span>
+                                                            </div>
+                                                            <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">
+                                                                {meta.description}
+                                                            </p>
+                                                            <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                                                <span>
+                                                                    <i class="fa-solid fa-comments mr-1"></i>
+                                                                    {meta.comments}
+                                                                </span>
+                                                                <span>
+                                                                    <i class="fa-solid fa-heart mr-1"></i>
+                                                                    {meta.likes}
+                                                                </span>
+                                                                <span class="ml-auto">{meta.time}</span>
+                                                            </div>
+                                                        </li>
+                                                    }
+                                                }
+                                            />
+                                        </ul>
+                                    }
+                                        .into_any()
+                                } else {
+                                    view! {
+                                        <div class="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[200px]">
+                                            <i class="fa-regular fa-folder-open text-4xl mb-2 opacity-50"></i>
+                                            <p class="text-sm">"暂无作品"</p>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+                            }
+                            _ => {
+                                view! {
+                                    <div class="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[200px]">
+                                        <i class="fa-regular fa-folder-open text-4xl mb-2 opacity-50"></i>
+                                        <p class="text-sm">"暂无作品"</p>
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                        }
+                    }}
+                </Suspense>
+                <div class="p-3 text-center border-t border-gray-50">
+                    <button class="text-xs font-medium text-secondary hover:underline">
+                        "查看全部作品"
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn ProfilePage() -> impl IntoView {
     let user_resource = Resource::new(|| (), |_| get_user_profile());
+
+    // 使用闭包获取用户信息，避免 Memo 的 PartialEq 限制
+    let user_info = move || user_resource.get().and_then(|res| res.ok());
 
     // 使用用户ID动态加载用户的作品
     let works_resource = Resource::new(
-        move || {
-            user_resource
-                .get()
-                .map(|user_opt| user_opt.ok().map(|u| u.id))
-        },
+        move || user_info().map(|u| u.id),
         move |user_id_opt| async move {
             match user_id_opt {
-                Some(Some(uid)) => {
+                Some(uid) => {
                     let query = format!("uid:{}", uid);
                     search_posts_info(query).await
                 }
@@ -616,14 +830,6 @@ pub fn ProfilePage() -> impl IntoView {
             }
         },
     );
-
-    let logout_action = Action::new(move |_| {
-        let value = navigate.clone();
-        async move {
-            let _ = logout().await;
-            value("/login", Default::default());
-        }
-    });
 
     view! {
         <div class="min-h-screen bg-base-100 pt-20 px-4 pb-20">
@@ -636,9 +842,6 @@ pub fn ProfilePage() -> impl IntoView {
                     {move || {
                         match user_resource.get() {
                             Some(Ok(user)) => {
-                                let user_bio = user.usermeta.bio.clone();
-                                let user_nickname = user.usermeta.nick_name.clone();
-
                                 view! {
                                     <div class="flex flex-col items-center animate-fade-in space-y-12">
 
@@ -653,171 +856,12 @@ pub fn ProfilePage() -> impl IntoView {
                                         </div>
 
                                         // 2. 个人信息卡片
-                                        <div class="bg-white rounded-3xl p-8 md:p-10 shadow-soft w-full flex flex-col md:flex-row items-center md:items-start gap-8 md:gap-12 border border-gray-100 relative overflow-hidden group">
-                                            <div class="absolute -top-24 -right-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-500"></div>
-                                            <div class="absolute top-1/2 -left-24 w-48 h-48 bg-secondary/5 rounded-full blur-3xl group-hover:bg-secondary/10 transition-colors duration-500"></div>
-
-                                            // 头像区
-                                            <div class="relative flex-shrink-0">
-                                                <div class="w-32 h-32 md:w-40 md:h-40 rounded-full p-1.5 bg-gradient-to-tr from-primary to-secondary shadow-lg">
-                                                    <div class="w-full h-full rounded-full bg-white overflow-hidden relative border-4 border-white">
-                                                        {if !user.usermeta.avatar_url.is_empty() {
-                                                            view! {
-                                                                <img
-                                                                    src=format!(
-                                                                        "{}?t={}",
-                                                                        user.usermeta.avatar_url,
-                                                                        {
-                                                                            #[cfg(target_arch = "wasm32")] { js_sys::Date::now() }
-                                                                            #[cfg(not(target_arch = "wasm32"))] { 0.0 }
-                                                                        },
-                                                                    )
-                                                                    class="w-full h-full object-cover"
-                                                                />
-                                                            }
-                                                                .into_any()
-                                                        } else {
-                                                            view! {
-                                                                <div class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
-                                                                    <i class="fa-solid fa-user text-6xl"></i>
-                                                                </div>
-                                                            }
-                                                                .into_any()
-                                                        }}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            // 信息内容
-                                            <div class="flex-grow text-center md:text-left space-y-5 z-10 w-full">
-                                                <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                                                    <div class="flex-1">
-                                                        <div class="flex items-start gap-2">
-                                                            <h2 class="text-3xl md:text-4xl font-bold text-dark tracking-tight">
-                                                                {if user_nickname.is_empty() {
-                                                                    "未设置昵称".to_string()
-                                                                } else {
-                                                                    user_nickname
-                                                                }}
-                                                            </h2>
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="flex gap-2 justify-center md:justify-end">
-                                                        <button
-                                                            class="px-5 py-2 bg-white border border-gray-200 text-gray-500 rounded-full hover:bg-gray-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm text-sm flex items-center gap-2"
-                                                            on:click=move |_| {
-                                                                logout_action.dispatch(());
-                                                            }
-                                                        >
-                                                            <i class="fa-solid fa-right-from-bracket"></i>
-                                                            "退出登录"
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                // 简介展示
-                                                <div class="bg-gray-50/80 rounded-xl p-4 border border-gray-100 text-gray-600 text-sm leading-relaxed text-left relative min-h-[80px]">
-                                                    <i class="fa-solid fa-quote-left text-gray-300 absolute -top-2 -left-2 text-xl"></i>
-                                                    <div>
-                                                        <p>
-                                                            {if user_bio.is_empty() {
-                                                                "暂无简介，快来写点什么吧...".to_string()
-                                                            } else {
-                                                                user_bio
-                                                            }}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <ProfileCard user=user />
 
                                         // 3. 三栏列表区域 (保持不变)
                                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full items-start">
                                             // 栏目 1: 我的作品
-                                            <div class="space-y-4">
-                                                <div class="flex items-center justify-between px-1">
-                                                    <h3 class="text-lg font-bold text-dark flex items-center">
-                                                        <span class="w-1.5 h-6 bg-secondary rounded-full mr-2"></span>
-                                                        "我的作品"
-                                                    </h3>
-                                                    <A
-                                                        href="/voice"
-                                                        attr:class="text-xs text-gray-400 hover:text-secondary"
-                                                    >
-                                                        <i class="fa-solid fa-arrow-right"></i>
-                                                    </A>
-                                                </div>
-
-                                                <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden min-h-[320px]">
-                                                    <Suspense fallback=move || {
-                                                        view! {
-                                                            <div class="p-4 text-center text-sm text-gray-400">
-                                                                "加载作品..."
-                                                            </div>
-                                                        }
-                                                    }>
-                                                        {move || {
-                                                            match works_resource.get() {
-                                                                Some(Ok(works)) if !works.is_empty() => {
-                                                                    view! {
-                                                                        <ul class="divide-y divide-gray-50">
-                                                                            <For
-                                                                                each=move || works.clone()
-                                                                                key=|w| w.id.clone()
-                                                                                children=move |work| {
-                                                                                    let meta = PostMetadata::from_post(&work);
-                                                                                    view! {
-                                                                                        <li class="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer group">
-                                                                                            <div class="flex items-center justify-between mb-1">
-                                                                                                <span class="font-medium text-dark text-sm group-hover:text-secondary transition-colors truncate pr-2">
-                                                                                                    {work.title}
-                                                                                                </span>
-                                                                                                <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
-                                                                                                    "公开"
-                                                                                                </span>
-                                                                                            </div>
-                                                                                            <p class="text-xs text-gray-500 line-clamp-2 mt-1 h-8">
-                                                                                                {meta.description}
-                                                                                            </p>
-                                                                                            <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                                                                                                <span>
-                                                                                                    <i class="fa-solid fa-comments mr-1"></i>
-                                                                                                    {meta.comments}
-                                                                                                </span>
-                                                                                                <span>
-                                                                                                    <i class="fa-solid fa-heart mr-1"></i>
-                                                                                                    {meta.likes}
-                                                                                                </span>
-                                                                                                <span class="ml-auto">{meta.time}</span>
-                                                                                            </div>
-                                                                                        </li>
-                                                                                    }
-                                                                                }
-                                                                            />
-                                                                        </ul>
-                                                                    }
-                                                                        .into_any()
-                                                                }
-                                                                _ => {
-                                                                    view! {
-                                                                        <div class="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[200px]">
-                                                                            <i class="fa-regular fa-folder-open text-4xl mb-2 opacity-50"></i>
-                                                                            <p class="text-sm">"暂无作品"</p>
-                                                                        </div>
-                                                                    }
-                                                                        .into_any()
-                                                                }
-                                                            }
-                                                        }}
-                                                    </Suspense>
-                                                    <div class="p-3 text-center border-t border-gray-50">
-                                                        <button class="text-xs font-medium text-secondary hover:underline">
-                                                            "查看全部作品"
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            <WorksList works_resource=works_resource.clone() />
 
                                             // 栏目 2: 我的声音 (模糊处理)
                                             <div class="space-y-4">
@@ -931,45 +975,29 @@ pub fn ProfilePage() -> impl IntoView {
                             }
                             Some(Err(e)) => {
                                 view! {
-                                    <div class="min-h-[60vh] flex flex-col items-center justify-center">
-                                        <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
-                                            <i class="fa-solid fa-lock text-4xl"></i>
-                                        </div>
-                                        <h2 class="text-2xl font-bold mb-2 text-dark">
-                                            "加载失败"
-                                        </h2>
-                                        <p class="text-gray-500 mb-8">{format!("错误: {}", e)}</p>
-                                        <A
-                                            href="/login"
-                                            attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold"
-                                        >
-                                            "去登录"
-                                        </A>
+                                    <div class="text-center py-10 text-red-500">
+                                        {format!("加载失败: {}", e)}
                                     </div>
                                 }
                                     .into_any()
                             }
-                            _ => {
-                                view! {
-                                    <div class="min-h-[60vh] flex flex-col items-center justify-center">
-                                        <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 text-gray-300">
-                                            <i class="fa-solid fa-lock text-4xl"></i>
-                                        </div>
-                                        <h2 class="text-2xl font-bold mb-2 text-dark">
-                                            "未登录"
-                                        </h2>
-                                        <p class="text-gray-500 mb-8">
-                                            "请登录以查看您的个人主页"
-                                        </p>
-                                        <A
-                                            href="/login"
-                                            attr:class="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary-focus transition-all shadow-md hover:shadow-lg font-bold"
-                                        >
-                                            "去登录"
-                                        </A>
-                                    </div>
+                            None => {
+                                match user_resource.get() {
+                                    Some(Err(e)) => {
+                                        view! {
+                                            <div class="text-center py-10 text-red-500">
+                                                {format!("加载失败: {}", e)}
+                                            </div>
+                                        }
+                                            .into_any()
+                                    }
+                                    _ => {
+                                        view! {
+                                            <div class="text-center py-10">"请先登录"</div>
+                                        }
+                                            .into_any()
+                                    }
                                 }
-                                    .into_any()
                             }
                         }
                     }}
@@ -993,6 +1021,13 @@ pub fn SettingsPage() -> impl IntoView {
     let (new_avatar, set_new_avatar) = signal(Option::<String>::None);
     let (new_avatar_webp, set_new_avatar_webp) = signal(Option::<Vec<u8>>::None);
 
+    Effect::new(move |_| {
+        if let Some(Ok(user)) = user_resource.get() {
+            set_edit_nickname.set(user.usermeta.nick_name.clone());
+            set_edit_bio.set(user.usermeta.bio.clone());
+        }
+    });
+
     // 绑定/修改状态
     let (show_bind_modal, set_show_bind_modal) = signal(false);
     let (bind_type, set_bind_type) = signal(String::new()); // "phone", "email", "password"
@@ -1006,10 +1041,10 @@ pub fn SettingsPage() -> impl IntoView {
         let b_action_type = bind_action_type.get();
         let input_val = bind_input.get().trim().to_string();
         let pwd_val = bind_password.get();
-        
+
         async move {
             set_bind_error.set(None);
-            
+
             let auth_info = match b_type.as_str() {
                 "password" => {
                     if input_val.is_empty() {
@@ -1020,15 +1055,15 @@ pub fn SettingsPage() -> impl IntoView {
                         set_bind_error.set(Some("请输入新密码".to_string()));
                         return;
                     }
-                    
+
                     let mut hasher_old = Sha256::new();
                     hasher_old.update(input_val.as_bytes());
                     let old_password_hash = format!("{:x}", hasher_old.finalize());
-                    
+
                     let mut hasher_new = Sha256::new();
                     hasher_new.update(pwd_val.as_bytes());
                     let new_password_hash = format!("{:x}", hasher_new.finalize());
-                    
+
                     user::UpdateAuthInfo::ChangePassword(old_password_hash, new_password_hash)
                 }
                 _ => {
@@ -1038,7 +1073,9 @@ pub fn SettingsPage() -> impl IntoView {
                                 set_bind_error.set(Some("请输入手机号".to_string()));
                                 return;
                             }
-                            match phonenumber::parse(Some(CN), &input_val).or_else(|_| phonenumber::parse(None, &input_val)) {
+                            match phonenumber::parse(Some(CN), &input_val)
+                                .or_else(|_| phonenumber::parse(None, &input_val))
+                            {
                                 Ok(p) => user::AuthID::Phone(p),
                                 Err(_) => {
                                     set_bind_error.set(Some("手机号格式不正确".to_string()));
@@ -1065,10 +1102,12 @@ pub fn SettingsPage() -> impl IntoView {
                     if b_action_type == "change" {
                         user::UpdateAuthInfo::ChangePassAuth(auth_id)
                     } else {
-                        user::UpdateAuthInfo::AddAuth(user::UserAuth::Password(user::PasswordAuth {
-                            auth_id,
-                            password_hash: String::new(), // 后端会从数据库获取已有的密码哈希
-                        }))
+                        user::UpdateAuthInfo::AddAuth(user::UserAuth::Password(
+                            user::PasswordAuth {
+                                auth_id,
+                                password_hash: String::new(), // 后端会从数据库获取已有的密码哈希
+                            },
+                        ))
                     }
                 }
             };
@@ -1089,13 +1128,16 @@ pub fn SettingsPage() -> impl IntoView {
     let remove_auth_action = Action::new(move |auth_id: &user::AuthID| {
         let auth_id = auth_id.clone();
         async move {
-            match crate::api::user::update_authinfo(user::UpdateAuthInfo::RemoveAuth(auth_id)).await {
+            match crate::api::user::update_authinfo(user::UpdateAuthInfo::RemoveAuth(auth_id)).await
+            {
                 Ok(_) => {
                     auth_resource.refetch();
                     let _ = web_sys::window().unwrap().alert_with_message("解绑成功");
                 }
                 Err(e) => {
-                    let _ = web_sys::window().unwrap().alert_with_message(&format!("解绑失败: {}", e));
+                    let _ = web_sys::window()
+                        .unwrap()
+                        .alert_with_message(&format!("解绑失败: {}", e));
                 }
             }
         }
@@ -1114,25 +1156,25 @@ pub fn SettingsPage() -> impl IntoView {
                     return;
                 };
 
-            let mut updated_user = current_user.clone();
-            updated_user.usermeta.nick_name = nickname;
-            updated_user.usermeta.bio = bio;
+                let mut updated_user = current_user.clone();
+                updated_user.usermeta.nick_name = nickname;
+                updated_user.usermeta.bio = bio;
 
-            if let Err(e) = update_user_profile(updated_user).await {
-                leptos::logging::error!("更新用户信息失败: {:?}", e);
-                return;
-            }
-
-            if let Some(webp_bytes) = avatar_webp {
-                if let Err(e) = update_user_avatar(webp_bytes).await {
-                    leptos::logging::error!("更新头像失败: {:?}", e);
+                if let Err(e) = update_user_profile(updated_user).await {
+                    leptos::logging::error!("更新用户信息失败: {:?}", e);
                     return;
                 }
-            }
 
-            // 刷新用户信息并返回主页
-            user_resource.refetch();
-            value("/profile", Default::default());
+                if let Some(webp_bytes) = avatar_webp {
+                    if let Err(e) = update_user_avatar(webp_bytes).await {
+                        leptos::logging::error!("更新头像失败: {:?}", e);
+                        return;
+                    }
+                }
+
+                // 刷新用户信息并返回主页
+                user_resource.refetch();
+                value("/profile", Default::default());
             }
         })
     };
@@ -1248,13 +1290,6 @@ pub fn SettingsPage() -> impl IntoView {
                     {move || {
                         match user_resource.get() {
                             Some(Ok(user)) => {
-                                let user_bio = user.usermeta.bio.clone();
-                                let user_nickname = user.usermeta.nick_name.clone();
-                                Effect::new(move |_| {
-                                    set_edit_bio.set(user_bio.clone());
-                                    set_edit_nickname.set(user_nickname.clone());
-                                });
-
                                 view! {
                                     <div class="bg-white rounded-3xl shadow-soft w-full flex flex-col md:flex-row border border-gray-100 overflow-hidden min-h-[600px]">
                                         // 左侧菜单
@@ -1327,7 +1362,12 @@ pub fn SettingsPage() -> impl IntoView {
                                                                     move || {
                                                                         if let Some(preview) = new_avatar.get() {
                                                                             view! {
-                                                                                <img src=preview class="w-full h-full object-cover" />
+                                                                                <img
+                                                                                    src=preview
+                                                                                    class="w-full h-full object-cover"
+                                                                                    loading="lazy"
+                                                                                    decoding="async"
+                                                                                />
                                                                             }
                                                                                 .into_any()
                                                                         } else if !avatar_url.is_empty() {
@@ -1342,6 +1382,8 @@ pub fn SettingsPage() -> impl IntoView {
                                                                                         },
                                                                                     )
                                                                                     class="w-full h-full object-cover"
+                                                                                    loading="lazy"
+                                                                                    decoding="async"
                                                                                 />
                                                                             }
                                                                                 .into_any()
@@ -1629,9 +1671,23 @@ pub fn SettingsPage() -> impl IntoView {
                                 }
                                     .into_any()
                             }
-                            _ => {
-                                view! { <div class="text-center py-10">"请先登录"</div> }
-                                    .into_any()
+                            None => {
+                                match user_resource.get() {
+                                    Some(Err(e)) => {
+                                        view! {
+                                            <div class="text-center py-10 text-red-500">
+                                                {format!("加载失败: {}", e)}
+                                            </div>
+                                        }
+                                            .into_any()
+                                    }
+                                    _ => {
+                                        view! {
+                                            <div class="text-center py-10">"请先登录"</div>
+                                        }
+                                            .into_any()
+                                    }
+                                }
                             }
                         }
                     }}

@@ -418,18 +418,25 @@ impl UserService for ServiceProvider<Postgres> {
     async fn get_user_profile(&self) -> anyhow::Result<User> {
         let user_id = get_user_id_from_session(&self.pool).await?;
 
-        let mut usermeta: UserMeta =
-            sqlx::query_as(r#"SELECT nick_name, bio, role, level FROM "user" WHERE id = $1"#)
+        #[derive(sqlx::FromRow)]
+        struct UserProfileRow {
+            #[sqlx(flatten)]
+            usermeta: UserMeta,
+            updated_at: chrono::DateTime<Utc>,
+        }
+
+        let mut row: UserProfileRow =
+            sqlx::query_as(r#"SELECT nick_name, bio, role, level, updated_at FROM "user" WHERE id = $1"#)
                 .bind(user_id)
                 .fetch_one(&self.pool)
                 .await
                 .context("获取用户信息失败")?;
 
-        usermeta.avatar_url = format!("/api/avatar/{}", user_id);
+        row.usermeta.avatar_url = format!("/api/avatar/{}?t={}", user_id, row.updated_at.timestamp());
 
         Ok(User {
             id: user_id,
-            usermeta,
+            usermeta: row.usermeta,
         })
     }
 
