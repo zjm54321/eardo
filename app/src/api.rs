@@ -383,6 +383,7 @@ pub mod post {
         pub status: PostStatus,
         pub comments_count: i32,
         pub likes_count: i32,
+        pub is_liked_by_current_user: bool,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

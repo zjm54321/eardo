@@ -1,3 +1,4 @@
+#[cfg(target_arch = "wasm32")]
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::components::A;
