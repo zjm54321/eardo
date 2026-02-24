@@ -6,6 +6,7 @@
         "--rustfmt"
     ],
     "chat.tools.terminal.autoApprove": {
-        "cargo check": true
+        "cargo check": true,
+        "cargo fmt": true
     }
 }
