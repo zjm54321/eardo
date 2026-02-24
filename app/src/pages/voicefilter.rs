@@ -1,4 +1,4 @@
-use crate::apiold::{VoiceMetaPost, VoiceMetadata, list_voice_metadata};
+use crate::api::post::{PostStatus, VoiceMetaPost, list_voice_meta_post};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
@@ -12,35 +12,26 @@ struct DisplayFilter {
     pitch: f64,
     speed: f64,
     volume: f64,
-    usage_count: i32,
-    tags: Vec<String>,
+    likes_count: i32,
+    comments_count: i32,
     author: String,
     is_official: bool,
 }
 
 impl DisplayFilter {
     fn from_voice_meta(meta: VoiceMetaPost) -> Self {
-        let (pitch, speed, volume) = match &meta.metadata {
-            VoiceMetadata::Parametric(params) => (
-                params.pitch as f64,
-                params.speed as f64,
-                params.volume as f64,
-            ),
-            VoiceMetadata::Instruction(_) => (0.0, 1.0, 1.0),
-        };
-
         DisplayFilter {
-            id: meta.id,
-            name: meta.name,
-            description: meta.description,
-            base_model_id: meta.base_model.id,
-            pitch,
-            speed,
-            volume,
-            usage_count: meta.usage_count,
-            tags: meta.tags,
-            author: meta.author,
-            is_official: meta.is_official,
+            id: meta.id.to_string(),
+            name: meta.title,
+            description: meta.content,
+            base_model_id: meta.meta_id.to_string(),
+            pitch: 1.0, // TODO: 从 meta_id 获取
+            speed: 1.0,
+            volume: 1.0,
+            likes_count: meta.likes_count,
+            comments_count: meta.comments_count,
+            author: meta.author.to_string(),
+            is_official: matches!(meta.status, PostStatus::Recommended),
         }
     }
 }
@@ -48,7 +39,13 @@ impl DisplayFilter {
 #[component]
 pub fn VoiceFilterPage() -> impl IntoView {
     // 获取数据资源
-    let filters_resource = Resource::new(|| (), |_| list_voice_metadata());
+    let recommended_filters_resource = Resource::new(
+        || (),
+        |_| list_voice_meta_post(Some(PostStatus::Recommended), 20),
+    );
+
+    let normal_filters_resource =
+        Resource::new(|| (), |_| list_voice_meta_post(Some(PostStatus::Normal), 9));
 
     // 导航 hook
     let navigate = use_navigate();
@@ -104,12 +101,19 @@ pub fn VoiceFilterPage() -> impl IntoView {
                     view! { <div class="text-center py-10">"加载滤镜中..."</div> }
                 }>
                     {move || {
-                        match filters_resource.get() {
-                            Some(Ok(meta_list)) => {
-                                let all_filters: Vec<DisplayFilter> = meta_list
+                        let recommended_res = recommended_filters_resource.get();
+                        let normal_res = normal_filters_resource.get();
+                        match (recommended_res, normal_res) {
+                            (Some(Ok(recommended_meta_list)), Some(Ok(normal_meta_list))) => {
+                                let mut all_filters: Vec<DisplayFilter> = recommended_meta_list
                                     .into_iter()
                                     .map(DisplayFilter::from_voice_meta)
                                     .collect();
+                                let normal_filters: Vec<DisplayFilter> = normal_meta_list
+                                    .into_iter()
+                                    .map(DisplayFilter::from_voice_meta)
+                                    .collect();
+                                all_filters.extend(normal_filters);
                                 let query = search.get().trim().to_lowercase();
                                 let filtered: Vec<DisplayFilter> = if query.is_empty() {
                                     all_filters.clone()
@@ -120,12 +124,8 @@ pub fn VoiceFilterPage() -> impl IntoView {
                                             let name = f.name.to_lowercase();
                                             let author = f.author.to_lowercase();
                                             let desc = f.description.to_lowercase();
-                                            let tag_hit = f
-                                                .tags
-                                                .iter()
-                                                .any(|t| t.to_lowercase().contains(&query));
                                             name.contains(&query) || author.contains(&query)
-                                                || desc.contains(&query) || tag_hit
+                                                || desc.contains(&query)
                                         })
                                         .collect()
                                 };
@@ -160,7 +160,7 @@ pub fn VoiceFilterPage() -> impl IntoView {
                                 }
                                     .into_any()
                             }
-                            Some(Err(e)) => {
+                            (Some(Err(e)), _) | (_, Some(Err(e))) => {
                                 view! {
                                     <div class="text-red-500 text-center">
                                         "加载失败: " {e.to_string()}
@@ -168,9 +168,7 @@ pub fn VoiceFilterPage() -> impl IntoView {
                                 }
                                     .into_any()
                             }
-                            None => {
-                                view! { <div class="text-center">"加载中..."</div> }.into_any()
-                            }
+                            _ => view! { <div class="text-center">"加载中..."</div> }.into_any(),
                         }
                     }}
                 </Suspense>
@@ -225,20 +223,6 @@ where
                                     {filter.description.clone()}
                                 </p>
 
-                                <div class="flex flex-wrap gap-2 mb-6">
-                                    {filter
-                                        .tags
-                                        .iter()
-                                        .map(|tag| {
-                                            view! {
-                                                <span class="text-xs px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-200">
-                                                    {tag.clone()}
-                                                </span>
-                                            }
-                                        })
-                                        .collect::<Vec<_>>()}
-                                </div>
-
                                 <div class="flex items-center justify-between mt-auto">
                                     <div class="text-xs text-gray-400 space-x-2">
                                         <span>
@@ -250,17 +234,33 @@ where
                                             {filter.speed}
                                             "x"
                                         </span>
+                                        <span>
+                                            <i class="fa-solid fa-volume-high mr-1"></i>
+                                            {filter.volume}
+                                        </span>
                                     </div>
 
-                                    <button
-                                        class="bg-primary/10 hover:bg-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
-                                        on:click=move |_| {
-                                            on_apply(filter_clone.clone());
-                                        }
-                                    >
-                                        <i class="fa-solid fa-check mr-2"></i>
-                                        "使用"
-                                    </button>
+                                    <div class="flex items-center space-x-3">
+                                        <div class="text-xs text-gray-400 flex items-center space-x-2">
+                                            <span class="flex items-center hover:text-primary cursor-pointer transition-colors">
+                                                <i class="fa-regular fa-heart mr-1"></i>
+                                                {filter.likes_count}
+                                            </span>
+                                            <span class="flex items-center hover:text-primary cursor-pointer transition-colors">
+                                                <i class="fa-regular fa-comment mr-1"></i>
+                                                {filter.comments_count}
+                                            </span>
+                                        </div>
+                                        <button
+                                            class="bg-primary/10 hover:bg-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
+                                            on:click=move |_| {
+                                                on_apply(filter_clone.clone());
+                                            }
+                                        >
+                                            <i class="fa-solid fa-check mr-2"></i>
+                                            "使用"
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         }

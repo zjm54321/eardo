@@ -2,7 +2,6 @@
 use {
     crate::api::{ServiceProvider, voice::*, voice_backend::generate_audio},
     anyhow::Context,
-    leptos::logging::debug_log,
     sqlx::Postgres,
     uuid::Uuid,
 };

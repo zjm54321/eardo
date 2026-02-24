@@ -1,16 +1,16 @@
-use crate::apiold::{PostInfo, list_posts};
+use crate::api::post::{
+    Action, PostStatus, VoicePost, VoicePostID, action_voice_post, get_voice_post_comments,
+    list_voice_post,
+};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 #[server]
 pub async fn toggle_post_like(post_id: String) -> Result<(), ServerFnError> {
-    let provider = leptos::prelude::use_context::<crate::apiold::PostProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到PostProvider"))?;
-    provider
-        .like_dislike_post(&post_id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("点赞操作失败: {}", e)))
+    let id = VoicePostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+    action_voice_post(id, Action::LikeDislike).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,55 +24,24 @@ pub struct CommentInfo {
 
 #[server]
 pub async fn get_post_comments(post_id: String) -> Result<Vec<CommentInfo>, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        let pool = leptos::prelude::use_context::<sqlx::SqlitePool>()
-            .ok_or_else(|| ServerFnError::new("未找到数据库连接池"))?;
-        let comments =
-            sqlx::query_as::<_, (String, String, String, String, String, Option<String>)>(
-                "SELECT 
-                pc.id, pc.content, pc.created_at, pc.user_id,
-                ua.username, u.nickname
-            FROM post_comments pc
-            JOIN users u ON pc.user_id = u.id
-            JOIN user_auth ua ON u.id = ua.user_id
-            WHERE pc.post_id = ? AND pc.status = 'normal'
-            ORDER BY pc.created_at DESC",
-            )
-            .bind(&post_id)
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(format!("获取评论失败: {}", e)))?;
-
-        Ok(comments
-            .into_iter()
-            .map(|(id, content, created_at, user_id, username, nickname)| {
-                let author = nickname.unwrap_or(username);
-                let avatar = Some(format!("/apiold/avatar/{}", user_id));
-                CommentInfo {
-                    id,
-                    author,
-                    avatar,
-                    content,
-                    time: created_at,
-                }
-            })
-            .collect())
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Ok(Vec::new())
-    }
+    let id = VoicePostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+    let comments = get_voice_post_comments(id).await?;
+    Ok(comments
+        .into_iter()
+        .map(|(user_id, content)| CommentInfo {
+            id: "".to_string(), // TODO: 评论ID
+            author: user_id.to_string(),
+            avatar: Some(format!("/api/avatar/{}", user_id)),
+            content,
+            time: "".to_string(), // TODO: 评论时间
+        })
+        .collect())
 }
 
 #[server]
 pub async fn add_post_comment(post_id: String, content: String) -> Result<(), ServerFnError> {
-    let provider = leptos::prelude::use_context::<crate::apiold::PostProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到PostProvider"))?;
-    provider
-        .comment_on_post(&post_id, &content)
-        .await
-        .map_err(|e| ServerFnError::new(format!("发表评论失败: {}", e)))
+    let id = VoicePostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+    action_voice_post(id, Action::Comment(content)).await
 }
 
 // 用于在页面中使用的扁平化的 PostMetadata
@@ -89,16 +58,16 @@ pub struct PostMetadata {
 }
 
 impl PostMetadata {
-    pub fn from_post(post: &PostInfo) -> Self {
+    pub fn from_post(post: &VoicePost) -> Self {
         Self {
-            author: post.author.name.clone(),
-            avatar: post.author.avatar.clone(),
-            time: format_local_time(&post.meta.time),
-            description: post.content.description.clone().unwrap_or_default(),
-            likes: post.meta.likes,
-            comments: post.meta.comments,
-            voice_type: post.meta.voice_info.voice_type.clone(),
-            audio_url: post.content.audio_url.clone().unwrap_or_default(),
+            author: post.author.to_string(),
+            avatar: format!("/api/avatar/{}", post.author),
+            time: "".to_string(), // TODO: 时间
+            description: post.content.clone(),
+            likes: post.likes_count,
+            comments: post.comments_count,
+            voice_type: "".to_string(), // TODO: 声音类型
+            audio_url: format!("/api/audio/{}", post.library_id),
         }
     }
 }
@@ -133,13 +102,13 @@ pub fn Playground() -> impl IntoView {
     let (current_slide, set_current_slide) = signal(0);
 
     // 2. 列表作品状态
-    let (works_list, set_works_list) = signal(Vec::<PostInfo>::new());
-    let (featured_list, set_featured_list) = signal(Vec::<PostInfo>::new());
+    let (works_list, set_works_list) = signal(Vec::<VoicePost>::new());
+    let (featured_list, set_featured_list) = signal(Vec::<VoicePost>::new());
     let (search_query, set_search_query) = signal(String::new());
 
     // 初始化：加载所有作品
     let posts_resource = LocalResource::new(move || async move {
-        match list_posts().await {
+        match list_voice_post(Some(PostStatus::Normal), 20).await {
             Ok(posts) => Ok(posts),
             Err(e) => {
                 leptos::logging::error!("加载作品失败: {}", e);
@@ -303,7 +272,7 @@ pub fn Playground() -> impl IntoView {
                                         .collect()
                                 }
                             }
-                            key=|w| w.id.clone()
+                            key=|w| w.id.to_string()
                             children=move |work| {
                                 view! { <WorkCard work=work is_featured=false /> }
                             }
@@ -332,13 +301,13 @@ pub fn Playground() -> impl IntoView {
 
 // --- 子组件：作品卡片 ---
 #[component]
-fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
+fn WorkCard(work: VoicePost, is_featured: bool) -> impl IntoView {
     let meta = PostMetadata::from_post(&work);
-    let post_id = work.id.clone();
-    let post_id_for_comment = work.id.clone();
+    let post_id = work.id.to_string();
+    let post_id_for_comment = work.id.to_string();
 
     // 从 work.meta 中获取 is_liked 状态
-    let initial_liked = work.meta.is_liked;
+    let initial_liked = false; // TODO: is_liked
 
     let (liked, set_liked) = signal(initial_liked);
     let (like_count, set_like_count) = signal(meta.likes);
@@ -399,7 +368,7 @@ fn WorkCard(work: PostInfo, is_featured: bool) -> impl IntoView {
                 </div>
 
                 // 内容
-                <h3 class="font-semibold mb-3 text-lg text-dark">{work.title}</h3>
+                <h3 class="font-semibold mb-3 text-lg text-dark">{work.title.clone()}</h3>
                 <p class="text-sm text-gray-600 mb-4 line-clamp-3">{meta.description}</p>
 
                 // 音频播放器

@@ -13,18 +13,17 @@ use dotenv::dotenv;
 use leptos::logging::log;
 use leptos::prelude::*;
 use leptos_axum::{generate_route_list, handle_server_fns_with_context};
-use sqlx::{PgPool, SqlitePool, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::{env, sync::Arc};
 
 #[derive(Clone, FromRef)]
 struct AppState {
     leptos_options: LeptosOptions,
-    pool: SqlitePool,
     pg_pool: PgPool,
     auth_provider: api::user::AuthProvider,
     user_provider: api::user::UserProvider,
-    voice_metadata_provider: apiold::VoiceMetadataProvider,
-    post_provider: apiold::PostProvider,
+    voice_meta_post_provider: api::post::VoiceMetaPostProvider,
+    voice_post_provider: api::post::VoicePostProvider,
     voice_provider: api::voice::VoiceProvider,
 }
 
@@ -40,7 +39,6 @@ async fn server_fn_handler(
     handle_server_fns_with_context(
         move || {
             // 基础依赖
-            provide_context(app_state.pool.clone());
             provide_context(app_state.pg_pool.clone());
             provide_context(app_state.leptos_options.clone());
             provide_context(headers.clone());
@@ -49,8 +47,8 @@ async fn server_fn_handler(
             // !!! 关键修复：必须手动注入 AppState 中的 Provider !!!
             provide_context(app_state.auth_provider.clone());
             provide_context(app_state.user_provider.clone());
-            provide_context(app_state.voice_metadata_provider.clone());
-            provide_context(app_state.post_provider.clone());
+            provide_context(app_state.voice_meta_post_provider.clone());
+            provide_context(app_state.voice_post_provider.clone());
             provide_context(app_state.voice_provider.clone());
         },
         req,
@@ -130,23 +128,30 @@ async fn get_post_audio_handler(
     Path(post_id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let result: Result<(Vec<u8>,), sqlx::Error> =
-        sqlx::query_as("SELECT generated_audio_data FROM posts WHERE id = ? AND status = 'normal'")
-            .bind(&post_id)
-            .fetch_one(&state.pool)
-            .await;
+    let parsed_uuid = uuid::Uuid::parse_str(&post_id);
 
-    match result {
-        Ok((data,)) => (
-            [
-                (header::CONTENT_TYPE, "audio/mpeg"),
-                (header::CACHE_CONTROL, "public, max-age=86400"),
-            ],
-            data,
-        )
-            .into_response(),
-        Err(_) => (StatusCode::NOT_FOUND, "Post audio not found").into_response(),
+    if let Ok(uuid) = parsed_uuid {
+        let result: Result<(Vec<u8>,), sqlx::Error> =
+            sqlx::query_as("SELECT audio_data FROM voice_library vl JOIN voice_post vp ON vl.id = vp.library_id WHERE vp.id = $1 AND vp.status = 'Normal'")
+                .bind(uuid)
+                .fetch_one(&state.pg_pool)
+                .await;
+
+        match result {
+            Ok((data,)) => {
+                return (
+                    [
+                        (header::CONTENT_TYPE, "audio/mpeg"),
+                        (header::CACHE_CONTROL, "public, max-age=86400"),
+                    ],
+                    data,
+                )
+                    .into_response();
+            }
+            Err(_) => {}
+        }
     }
+    (StatusCode::NOT_FOUND, "Post audio not found").into_response()
 }
 
 // 2.3 语音模型头像获取处理函数
@@ -197,7 +202,6 @@ async fn ssr_handler(
     let handler = leptos_axum::render_app_to_stream_with_context(
         move || {
             // 基础依赖
-            provide_context(app_state.pool.clone());
             provide_context(app_state.pg_pool.clone());
             provide_context(app_state.leptos_options.clone());
             provide_context(headers.clone());
@@ -206,8 +210,8 @@ async fn ssr_handler(
             // !!! 关键修复：同样需要在 SSR 渲染时注入这些 Provider !!!
             provide_context(app_state.auth_provider.clone());
             provide_context(app_state.user_provider.clone());
-            provide_context(app_state.voice_metadata_provider.clone());
-            provide_context(app_state.post_provider.clone());
+            provide_context(app_state.voice_meta_post_provider.clone());
+            provide_context(app_state.voice_post_provider.clone());
             provide_context(app_state.voice_provider.clone());
         },
         move || shell(options.clone()),
@@ -223,16 +227,6 @@ async fn main() {
     let leptos_options = conf.leptos_options;
     let routes = generate_route_list(App);
 
-    let db_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eardo.sqlite?mode=rwc".to_string());
-    log!("连接数据库: {}", db_url);
-
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(&db_url)
-        .await
-        .expect("Failed to create pool.");
-
     let pg_url = env::var("PG_DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/eardo".to_string());
     log!("连接PG数据库: {}", pg_url);
@@ -243,30 +237,28 @@ async fn main() {
         .await
         .expect("Failed to create pg pool.");
 
-    // 1. 实例化 ServiceProvider (指定泛型为 SqlitePool)
-    let service_impl = apiold::ServiceProvider { pool: pool.clone() };
+    // 1. 实例化 ServiceProvider (指定泛型为 PgPool)
     let new_service_impl = api::ServiceProvider {
         pool: pg_pool.clone(),
     };
 
     // 2. 包装成 Arc (Provider)
     // 这里的 service_impl 实现了所有 Trait，所以可以被转型
-    // ServiceProvider<SqlitePool> -> Arc<dyn AuthService>
+    // ServiceProvider<PgPool> -> Arc<dyn AuthService>
     let auth_provider = Arc::new(new_service_impl.clone());
     let user_provider = Arc::new(new_service_impl.clone());
-    let voice_metadata_provider = Arc::new(service_impl.clone());
-    let post_provider = Arc::new(service_impl.clone());
+    let voice_meta_post_provider = Arc::new(new_service_impl.clone());
+    let voice_post_provider = Arc::new(new_service_impl.clone());
     let voice_provider = Arc::new(new_service_impl.clone());
 
     // 3. 组装 AppState
     let app_state = AppState {
         leptos_options: leptos_options.clone(),
-        pool: pool.clone(),
         pg_pool: pg_pool.clone(),
         auth_provider,
         user_provider,
-        voice_metadata_provider,
-        post_provider,
+        voice_meta_post_provider,
+        voice_post_provider,
         voice_provider,
     };
 

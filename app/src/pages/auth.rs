@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
+use crate::api::post::{VoicePost, search_voice_post};
 use crate::api::user::{
     self, get_user_profile, login, logout, register, update_user_avatar, update_user_profile,
 };
-use crate::apiold::{PostInfo, PostProvider};
 use crate::pages::playground::PostMetadata;
 use base64::Engine;
 use leptos::prelude::*;
@@ -15,24 +15,8 @@ use wasm_bindgen::JsCast;
 use web_sys::{FileReader, HtmlCanvasElement, HtmlImageElement};
 
 #[server]
-pub async fn search_posts_info(query: String) -> Result<Vec<PostInfo>, ServerFnError> {
-    let post_provider = use_context::<PostProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到帖子服务组件(PostProvider)"))?;
-
-    let post_ids = post_provider
-        .search_post(&query)
-        .await
-        .map_err(|e| ServerFnError::new(format!("搜索帖子失败: {}", e)))?;
-
-    let mut posts = Vec::new();
-    for id in post_ids {
-        match post_provider.get_post(&id).await {
-            Ok(post) => posts.push(post),
-            Err(e) => leptos::logging::error!("获取帖子 {} 失败: {}", id, e),
-        }
-    }
-
-    Ok(posts)
+pub async fn search_posts_info(query: String) -> Result<Vec<VoicePost>, ServerFnError> {
+    search_voice_post(query).await
 }
 
 #[component]
@@ -716,7 +700,7 @@ fn ProfileCard(user: crate::api::user::User) -> impl IntoView {
 
 #[component]
 fn WorksList(
-    works_resource: Resource<Result<Vec<crate::apiold::PostInfo>, leptos::prelude::ServerFnError>>,
+    works_resource: Resource<Result<Vec<VoicePost>, leptos::prelude::ServerFnError>>,
 ) -> impl IntoView {
     view! {
         <div class="space-y-4">

@@ -1,6 +1,5 @@
 use crate::api;
-use crate::apiold;
-use crate::apiold::VoiceParams;
+use crate::api::voice::Parametic;
 use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -96,7 +95,7 @@ pub fn HomePage() -> impl IntoView {
     let initial_speed = get_f32_param("speed", 1.0);
     let initial_volume = get_f32_param("volume", 1.0);
 
-    let param_signal = RwSignal::new(VoiceParams {
+    let param_signal = RwSignal::new(Parametic {
         pitch: initial_pitch,
         speed: initial_speed,
         volume: initial_volume,
@@ -187,6 +186,7 @@ pub fn HomePage() -> impl IntoView {
 
             // 生成成功后保存数据供分享使用
             if let Ok(library_id) = &result {
+                #[allow(unused_variables)]
                 let audio_url = format!("/api/audio/{}", library_id);
                 set_generated_text.set(text.clone());
                 set_generated_voice_name.set(voice_id.clone());
@@ -207,37 +207,24 @@ pub fn HomePage() -> impl IntoView {
     let create_post_action = Action::new(move |payload: &CreatePostPayload| {
         let payload = payload.clone();
         async move {
-            let post = apiold::PostInfo {
-                id: String::new(), // 服务器端生成 UUID
+            let post = api::post::VoicePost {
+                id: uuid::Uuid::new_v4(),
                 title: payload.title,
-                author: apiold::AuthorInfo {
-                    name: String::new(),
-                    avatar: String::new(),
-                },
-                content: apiold::PostContent {
-                    description: Some(payload.content),
-                    audio_url: None,
-                    audio_data: Some(payload.audio_data),
-                },
-                meta: apiold::PostMeta {
-                    likes: 0,
-                    comments: 0,
-                    is_liked: false,
-                    time: String::new(),
-                    voice_info: apiold::VoiceInfo {
-                        voice_type: String::new(),
-                        voice_meta_id: Some(payload.voice_id),
-                    },
-                },
+                content: payload.content,
+                library_id: uuid::Uuid::parse_str(&payload.voice_id).unwrap_or_default(),
+                author: uuid::Uuid::nil(), // TODO: 获取当前用户ID
+                status: api::post::PostStatus::Normal,
+                comments_count: 0,
+                likes_count: 0,
             };
-            apiold::create_post(post).await
+            api::post::create_voice_post(post).await
         }
     });
 
     // 监听 create_post_action 的完成
     Effect::new(move |_| {
         match create_post_action.value().get() {
-            Some(Ok(())) => {
+            Some(Ok(_)) => {
                 debug_log!("帖子创建成功");
                 set_show_share_modal.set(false);
                 set_generated_text.set(String::new());
@@ -288,7 +275,7 @@ pub fn HomePage() -> impl IntoView {
                             selected_param=param_signal
                             selected_voice=voice_signal
                             initial_voice_id=initial_voice_id
-                            initial_param=VoiceParams {
+                            initial_param=Parametic {
                                 pitch: initial_pitch,
                                 speed: initial_speed,
                                 volume: initial_volume,
@@ -645,7 +632,7 @@ pub async fn share_voice_filter_to_db(
         use leptos::prelude::use_context;
         use uuid::Uuid;
 
-        let pool = use_context::<sqlx::SqlitePool>()
+        let pool = use_context::<sqlx::PgPool>()
             .ok_or_else(|| ServerFnError::new("未找到数据库连接池"))?;
 
         // 从 Cookie 读取 session_token
@@ -667,37 +654,49 @@ pub async fn share_voice_filter_to_db(
         let token = session_token.ok_or_else(|| ServerFnError::new("未登录或会话失效"))?;
 
         // 查 user_id
-        let (user_id,): (String,) = sqlx::query_as(
-            "SELECT user_id FROM user_sessions WHERE token = ? AND expires_at > datetime('now')",
-        )
-        .bind(&token)
-        .fetch_one(&pool)
-        .await
-        .map_err(|_| ServerFnError::new("会话已过期或无效"))?;
+        let (user_id,): (Uuid,) =
+            sqlx::query_as("SELECT user_id FROM user_session WHERE id = $1 AND expires_at > NOW()")
+                .bind(Uuid::parse_str(&token).unwrap_or_default())
+                .fetch_one(&pool)
+                .await
+                .map_err(|_| ServerFnError::new("会话已过期或无效"))?;
 
         // 生成 ID 并插入 voice_meta_infos
-        let id = Uuid::new_v4().to_string();
+        let id = Uuid::new_v4();
         sqlx::query(
-            r#"INSERT INTO voice_meta_infos
-               (id, user_id, name, description, base_model_id,
-              pitch, speed, volume, usage_count,
-                is_public, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'normal', CURRENT_TIMESTAMP)"#,
+            r#"INSERT INTO voice_meta
+               (id, voice_model_id, parametric)
+             VALUES ($1, $2, $3)"#,
         )
-        .bind(&id)
-        .bind(&user_id)
-        .bind(&title)
-        .bind(&intro)
-        .bind(&base_model_id)
-        .bind(pitch as f64)
-        .bind(speed as f64)
-        .bind(1.0_f64) // 默认音量
+        .bind(id)
+        .bind(Uuid::parse_str(&base_model_id).unwrap_or_default())
+        .bind(crate::api::voice::Parametic {
+            pitch,
+            speed,
+            volume: 1.0,
+        })
         .execute(&pool)
         .await
         .context("创建声音滤镜失败")
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        Ok(id)
+        let post_id = Uuid::new_v4();
+        sqlx::query(
+            r#"INSERT INTO voice_meta_post
+               (id, title, content, meta_id, author, status)
+             VALUES ($1, $2, $3, $4, $5, 'Normal')"#,
+        )
+        .bind(post_id)
+        .bind(&title)
+        .bind(&intro)
+        .bind(id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .context("创建声音滤镜帖子失败")
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        Ok(post_id.to_string())
     }
     #[cfg(not(feature = "ssr"))]
     {
@@ -1206,7 +1205,7 @@ pub fn VoiceSelectorCard(
 }
 
 #[component]
-pub fn TraditionalParams(selected_param: RwSignal<VoiceParams>) -> impl IntoView {
+pub fn TraditionalParams(selected_param: RwSignal<Parametic>) -> impl IntoView {
     view! {
         <div>
             <div class="flex justify-between mb-2">
@@ -1335,13 +1334,13 @@ pub fn InstructionParams(instruction_text: RwSignal<String>) -> impl IntoView {
 #[component]
 pub fn ParameterControlCard(
     /// 选中的参数 (双向绑定)
-    selected_param: RwSignal<VoiceParams>,
+    selected_param: RwSignal<Parametic>,
     /// 当前选中的声线
     selected_voice: RwSignal<String>,
     /// 初始基线：声线ID
     initial_voice_id: RwSignal<String>,
     /// 初始基线：参数
-    initial_param: VoiceParams,
+    initial_param: Parametic,
     /// 触发分享弹窗
     open_filter_share: WriteSignal<bool>,
     /// 是否为指令模式
@@ -1681,6 +1680,7 @@ pub fn AudioResultCard(
                                         <button
                                             class="text-primary hover:text-secondary hover:underline flex items-center"
                                             on:click={
+                                                #[allow(unused_variables)]
                                                 let value = audio_url.clone();
                                                 move |_| {
                                                     #[cfg(target_arch = "wasm32")]

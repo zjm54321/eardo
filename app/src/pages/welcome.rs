@@ -10,6 +10,7 @@ pub fn WelcomePage() -> impl IntoView {
     let (in_cooldown, set_in_cooldown) = signal(false);
 
     // Scroll handler logic
+    #[allow(unused_variables)]
     let handle_scroll = move |delta_y: f64| {
         if in_cooldown.get() {
             return;
@@ -53,6 +54,7 @@ pub fn WelcomePage() -> impl IntoView {
     });
 
     // Mobile: Touch Event Listeners
+    #[allow(unused_variables)]
     let (touch_start_y, set_touch_start_y) = signal(0.0);
 
     Effect::new(move |_| {
