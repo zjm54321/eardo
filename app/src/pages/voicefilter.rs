@@ -77,7 +77,7 @@ pub fn VoiceFilterPage() -> impl IntoView {
 
     // 处理“使用滤镜”点击
     let apply_filter = move |filter: DisplayFilter| {
-        let url = format!("/home?voice_id={}", filter.base_model_id);
+        let url = format!("/home?meta_id={}", filter.base_model_id);
         navigate(&url, Default::default());
     };
 

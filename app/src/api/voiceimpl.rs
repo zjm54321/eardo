@@ -176,6 +176,22 @@ impl VoiceService for ServiceProvider<Postgres> {
         Ok(meta_id)
     }
 
+    async fn get_meta(&self, voice_meta_id: VoiceMetaID) -> anyhow::Result<VoiceMeta> {
+        let row: VoiceMetaRow = sqlx::query_as(
+            r#"
+            SELECT voice_model_id, pitch, speed, volume, instruction 
+            FROM voice_meta 
+            WHERE id = $1
+            "#,
+        )
+        .bind(voice_meta_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("未找到对应的语音元数据")?;
+
+        Ok(row.into())
+    }
+
     async fn generate_voice(
         &self,
         voice_meta_id: VoiceMetaID,

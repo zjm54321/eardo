@@ -67,15 +67,7 @@ pub fn HomePage() -> impl IntoView {
     // 1. 获取 URL 查询参数
     let query = use_query_map();
 
-    // 2. 初始化信号 (优先从 URL 参数读取，否则用默认值)
-    // 使用 with_untracked 避免初始化时的响应式追踪警告
-    let get_f32_param = |key: &str, default: f32| {
-        query.with_untracked(|q| {
-            q.get(key)
-                .and_then(|v| v.parse::<f32>().ok())
-                .unwrap_or(default)
-        })
-    };
+    // 获取可选的字符串参数
     let get_str_param_opt = |key: &str| {
         query.with_untracked(|q| {
             q.get(key)
@@ -85,20 +77,14 @@ pub fn HomePage() -> impl IntoView {
 
     let text_signal = RwSignal::new(String::new());
 
-    // 初始化声线 ID
-    let url_voice_id = get_str_param_opt("voice_id");
-    let initial_voice_id = RwSignal::new(url_voice_id.clone().unwrap_or_default());
-    let voice_signal = RwSignal::new(url_voice_id.unwrap_or_default());
-
-    // 初始化参数
-    let initial_pitch = get_f32_param("pitch", 1.0);
-    let initial_speed = get_f32_param("speed", 1.0);
-    let initial_volume = get_f32_param("volume", 1.0);
+    // 初始化声线 ID 和参数（默认值）
+    let initial_voice_id = RwSignal::new(String::new());
+    let voice_signal = RwSignal::new(String::new());
 
     let param_signal = RwSignal::new(Parametic {
-        pitch: initial_pitch,
-        speed: initial_speed,
-        volume: initial_volume,
+        pitch: 1.0,
+        speed: 1.0,
+        volume: 1.0,
     });
 
     // 保存生成成功的数据用于分享
@@ -122,6 +108,41 @@ pub fn HomePage() -> impl IntoView {
 
     // Resource 用于异步获取数据
     let voices_resource = Resource::new(|| (), |_| api::voice::list_voice_models());
+
+    // 检查是否有 meta_id 参数，如果有则加载对应的 meta 数据
+    let url_meta_id = get_str_param_opt("meta_id");
+    let meta_resource = Resource::new_blocking(
+        move || url_meta_id.clone(),
+        move |meta_id_opt| async move {
+            if let Some(meta_id_str) = meta_id_opt {
+                if let Ok(meta_id) = uuid::Uuid::parse_str(&meta_id_str) {
+                    api::voice::get_meta(meta_id).await.ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        },
+    );
+
+    // 使用 Effect 来应用从 meta_id 加载的数据
+    Effect::new(move |_| {
+        if let Some(Some(meta)) = meta_resource.get() {
+            // 设置 voice_model_id
+            voice_signal.set(meta.voice_model_id.to_string());
+            initial_voice_id.set(meta.voice_model_id.to_string());
+            
+            // 设置参数或指令模式
+            if let Some(parametric) = meta.parametric {
+                is_instruction_mode.set(false);
+                param_signal.set(parametric);
+            } else if let Some(instruction) = meta.instruction {
+                is_instruction_mode.set(true);
+                instruction_text.set(instruction);
+            }
+        }
+    });
 
     Effect::new(move |_| {
         if voice_signal.get().is_empty() {
@@ -276,9 +297,9 @@ pub fn HomePage() -> impl IntoView {
                             selected_voice=voice_signal
                             initial_voice_id=initial_voice_id
                             initial_param=Parametic {
-                                pitch: initial_pitch,
-                                speed: initial_speed,
-                                volume: initial_volume,
+                                pitch: 1.0,
+                                speed: 1.0,
+                                volume: 1.0,
                             }
                             open_filter_share=set_show_filter_share
                             is_instruction_mode=is_instruction_mode

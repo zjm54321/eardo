@@ -282,6 +282,7 @@ pub mod voice {
             voice_model_info: VoiceModelInfo,
         ) -> anyhow::Result<()>;
         async fn generate_meta(&self, voice_meta: VoiceMeta) -> anyhow::Result<VoiceMetaID>;
+        async fn get_meta(&self, voice_meta_id: VoiceMetaID) -> anyhow::Result<VoiceMeta>;
         /// 返回生成的音频文件URL
         async fn generate_voice(
             &self,
@@ -341,6 +342,15 @@ pub mod voice {
             .generate_meta(voice_meta)
             .await
             .map_err(|e| ServerFnError::new(format!("生成语音元数据失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn get_meta(voice_meta_id: VoiceMetaID) -> Result<VoiceMeta, ServerFnError> {
+        use_context::<VoiceProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
+            .get_meta(voice_meta_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取语音元数据失败: {}", e)))
     }
 
     #[server(input = Json)]
