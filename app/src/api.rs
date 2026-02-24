@@ -198,6 +198,8 @@ pub mod voice {
     use uuid::Uuid;
 
     pub type VoiceModelID = Uuid;
+    pub type VoiceMetaID = Uuid;
+    pub type VoiceLibraryID = Uuid;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct VoiceModel {
@@ -257,6 +259,14 @@ pub mod voice {
         VoiceDesign(String),
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct VoiceLibrary {
+        pub id: VoiceLibraryID,
+        pub meta_id: VoiceMetaID,
+        pub text: String,
+        pub audio_url: String,
+    }
+
     #[async_trait::async_trait]
     pub trait VoiceService: Send + Sync {
         async fn list_voice_models(&self) -> anyhow::Result<Vec<VoiceModel>>;
@@ -271,9 +281,13 @@ pub mod voice {
             voice_model_id: VoiceModelID,
             voice_model_info: VoiceModelInfo,
         ) -> anyhow::Result<()>;
+        async fn generate_meta(&self, voice_meta: VoiceMeta) -> anyhow::Result<VoiceMetaID>;
         /// 返回生成的音频文件URL
-        async fn generate_voice(&self, voice_meta: VoiceMeta, text: &str)
-        -> anyhow::Result<String>;
+        async fn generate_voice(
+            &self,
+            voice_meta_id: VoiceMetaID,
+            text: &str,
+        ) -> anyhow::Result<VoiceLibraryID>;
     }
 
     pub type VoiceProvider = Arc<dyn VoiceService>;
@@ -321,16 +335,290 @@ pub mod voice {
     }
 
     #[server(input = Json)]
-    pub async fn generate_voice(
-        voice_meta: VoiceMeta,
-        text: String,
-    ) -> Result<String, ServerFnError> {
+    pub async fn generate_meta(voice_meta: VoiceMeta) -> Result<VoiceMetaID, ServerFnError> {
         use_context::<VoiceProvider>()
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
-            .generate_voice(voice_meta, &text)
+            .generate_meta(voice_meta)
+            .await
+            .map_err(|e| ServerFnError::new(format!("生成语音元数据失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn generate_voice(
+        voice_meta_id: VoiceMetaID,
+        text: String,
+    ) -> Result<VoiceLibraryID, ServerFnError> {
+        use_context::<VoiceProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
+            .generate_voice(voice_meta_id, &text)
             .await
             .map_err(|e| ServerFnError::new(format!("生成语音失败: {}", e)))
     }
 }
 mod voice_backend;
 mod voiceimpl;
+
+pub mod post {
+    use crate::api::{
+        user::UserID,
+        voice::{VoiceLibraryID, VoiceMetaID},
+    };
+    use leptos::{prelude::*, server_fn::codec::Json};
+    use serde::{Deserialize, Serialize};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    pub type VoiceMetaPostID = Uuid;
+    pub type VoicePostID = Uuid;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
+    pub struct VoiceMetaPost {
+        pub id: VoiceMetaPostID,
+        pub title: String,
+        pub content: String,
+        /// 指向VoiceMeta的id
+        pub meta_id: VoiceMetaID,
+        pub author: UserID,
+        pub status: PostStatus,
+        pub comments_count: i32,
+        pub likes_count: i32,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
+    pub struct VoicePost {
+        pub id: VoicePostID,
+        pub title: String,
+        pub content: String,
+        /// 指向VoiceLibrary的id
+        pub library_id: VoiceLibraryID,
+        pub author: UserID,
+        pub status: PostStatus,
+        pub comments_count: i32,
+        pub likes_count: i32,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::Type))]
+    #[cfg_attr(feature = "ssr", sqlx(type_name = "post_status"))]
+    pub enum PostStatus {
+        Normal,
+        Deleted,
+        Banned,
+        Recommended,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Action {
+        LikeDislike,
+        Comment(String), // 用户id和评论内容
+    }
+
+    #[async_trait::async_trait]
+    pub trait VoiceMetaPostService: Send + Sync {
+        async fn create(&self, post: VoiceMetaPost) -> anyhow::Result<VoiceMetaPostID>;
+        async fn get(&self, post_id: VoiceMetaPostID) -> anyhow::Result<VoiceMetaPost>;
+        async fn update(&self, post: VoiceMetaPost) -> anyhow::Result<()>;
+        async fn delete(&self, post_id: VoiceMetaPostID) -> anyhow::Result<()>;
+        async fn search(&self, query: &str) -> anyhow::Result<Vec<VoiceMetaPost>>;
+        async fn list(
+            &self,
+            status: Option<PostStatus>,
+            number: u8,
+        ) -> anyhow::Result<Vec<VoiceMetaPost>>;
+        async fn action(&self, post_id: VoiceMetaPostID, action: Action) -> anyhow::Result<()>;
+        async fn get_comments(
+            &self,
+            post_id: VoiceMetaPostID,
+        ) -> anyhow::Result<Vec<(UserID, String)>>;
+    }
+
+    pub type VoiceMetaPostProvider = Arc<dyn VoiceMetaPostService>;
+
+    #[async_trait::async_trait]
+    pub trait VoicePostService: Send + Sync {
+        async fn create(&self, post: VoicePost) -> anyhow::Result<VoicePostID>;
+        async fn get(&self, post_id: VoicePostID) -> anyhow::Result<VoicePost>;
+        async fn update(&self, post: VoicePost) -> anyhow::Result<()>;
+        async fn delete(&self, post_id: VoicePostID) -> anyhow::Result<()>;
+        async fn search(&self, query: &str) -> anyhow::Result<Vec<VoicePost>>;
+        async fn list(
+            &self,
+            status: Option<PostStatus>,
+            number: u8,
+        ) -> anyhow::Result<Vec<VoicePost>>;
+        async fn action(&self, post_id: VoicePostID, action: Action) -> anyhow::Result<()>;
+        async fn get_comments(&self, post_id: VoicePostID)
+        -> anyhow::Result<Vec<(UserID, String)>>;
+    }
+
+    pub type VoicePostProvider = Arc<dyn VoicePostService>;
+
+    #[server(input = Json)]
+    pub async fn create_voice_meta_post(
+        post: VoiceMetaPost,
+    ) -> Result<VoiceMetaPostID, ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .create(post)
+            .await
+            .map_err(|e| ServerFnError::new(format!("创建失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn get_voice_meta_post(
+        post_id: VoiceMetaPostID,
+    ) -> Result<VoiceMetaPost, ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .get(post_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn update_voice_meta_post(post: VoiceMetaPost) -> Result<(), ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .update(post)
+            .await
+            .map_err(|e| ServerFnError::new(format!("更新失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn delete_voice_meta_post(post_id: VoiceMetaPostID) -> Result<(), ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .delete(post_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("删除失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn search_voice_meta_post(
+        query: String,
+    ) -> Result<Vec<VoiceMetaPost>, ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .search(&query)
+            .await
+            .map_err(|e| ServerFnError::new(format!("搜索失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn list_voice_meta_post(
+        status: Option<PostStatus>,
+        number: u8,
+    ) -> Result<Vec<VoiceMetaPost>, ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .list(status, number)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取列表失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn action_voice_meta_post(
+        post_id: VoiceMetaPostID,
+        action: Action,
+    ) -> Result<(), ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .action(post_id, action)
+            .await
+            .map_err(|e| ServerFnError::new(format!("操作失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn get_voice_meta_post_comments(
+        post_id: VoiceMetaPostID,
+    ) -> Result<Vec<(UserID, String)>, ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .get_comments(post_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取评论失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn create_voice_post(post: VoicePost) -> Result<VoicePostID, ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .create(post)
+            .await
+            .map_err(|e| ServerFnError::new(format!("创建失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn get_voice_post(post_id: VoicePostID) -> Result<VoicePost, ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .get(post_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn update_voice_post(post: VoicePost) -> Result<(), ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .update(post)
+            .await
+            .map_err(|e| ServerFnError::new(format!("更新失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn delete_voice_post(post_id: VoicePostID) -> Result<(), ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .delete(post_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("删除失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn search_voice_post(query: String) -> Result<Vec<VoicePost>, ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .search(&query)
+            .await
+            .map_err(|e| ServerFnError::new(format!("搜索失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn list_voice_post(
+        status: Option<PostStatus>,
+        number: u8,
+    ) -> Result<Vec<VoicePost>, ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .list(status, number)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取列表失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn action_voice_post(
+        post_id: VoicePostID,
+        action: Action,
+    ) -> Result<(), ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .action(post_id, action)
+            .await
+            .map_err(|e| ServerFnError::new(format!("操作失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn get_voice_post_comments(
+        post_id: VoicePostID,
+    ) -> Result<Vec<(UserID, String)>, ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .get_comments(post_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取评论失败: {}", e)))
+    }
+}
+mod postimpl;

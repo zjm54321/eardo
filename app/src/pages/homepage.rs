@@ -175,10 +175,19 @@ pub fn HomePage() -> impl IntoView {
                 },
             };
 
-            let result = api::voice::generate_voice(voice_meta.clone(), text.clone()).await;
+            let voice_meta_id = match api::voice::generate_meta(voice_meta).await {
+                Ok(id) => id,
+                Err(e) => {
+                    debug_error!("生成语音元数据失败: {}", e);
+                    return Err(ServerFnError::new("生成语音元数据失败"));
+                }
+            };
+
+            let result = api::voice::generate_voice(voice_meta_id, text.clone()).await;
 
             // 生成成功后保存数据供分享使用
-            if let Ok(audio_url) = &result {
+            if let Ok(library_id) = &result {
+                let audio_url = format!("/api/audio/{}", library_id);
                 set_generated_text.set(text.clone());
                 set_generated_voice_name.set(voice_id.clone());
                 set_generated_voice_id.set(voice_id.clone());
@@ -634,7 +643,6 @@ pub async fn share_voice_filter_to_db(
         use axum_extra::extract::cookie::Cookie;
         use http::HeaderMap;
         use leptos::prelude::use_context;
-        use sqlx::prelude::*;
         use uuid::Uuid;
 
         let pool = use_context::<sqlx::SqlitePool>()
@@ -1468,7 +1476,7 @@ pub fn ParameterControlCard(
 #[component]
 pub fn AudioResultCard(
     /// 生成动作 (Action) - 返回音频 URL
-    generate_action: Action<(), Result<String, ServerFnError>>,
+    generate_action: Action<(), Result<uuid::Uuid, ServerFnError>>,
 ) -> impl IntoView {
     // 获取 Action 的状态信号
     let is_pending = generate_action.pending();
@@ -1650,7 +1658,8 @@ pub fn AudioResultCard(
                         }
                             .into_any()
                     }
-                    (false, Some(Ok(audio_url))) => {
+                    (false, Some(Ok(library_id))) => {
+                        let audio_url = format!("/api/audio/{}", library_id);
                         view! {
                             // 使用 Flex 布局垂直排列 Canvas 和 Controls
                             <div class="w-full animate-slide-up flex flex-col">

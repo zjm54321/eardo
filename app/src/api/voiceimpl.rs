@@ -157,25 +157,7 @@ impl VoiceService for ServiceProvider<Postgres> {
         Ok(())
     }
 
-    async fn generate_voice(&self, voice_meta: VoiceMeta, text: &str) -> anyhow::Result<String> {
-        // 1. 获取 voice_model 的外部 voice_id 和 supported_model
-        let (voice_id, supported_model): (String, String) =
-            sqlx::query_as("SELECT voice_id, supported_model FROM voice_model WHERE id = $1")
-                .bind(voice_meta.voice_model_id)
-                .fetch_one(&self.pool)
-                .await
-                .context("未找到对应的语音模型")?;
-
-        // 2. 解析 supported_model 为枚举
-        let model = supported_model
-            .parse::<crate::api::voice_backend::SupportedModel>()
-            .context("不支持的语音模型类型")?;
-
-        // 3. 调用外部 TTS API 生成音频
-        let audio_bytes = generate_audio(&model, &voice_id, text, &voice_meta).await?;
-
-        // 4. 检查或插入 voice_meta 记录，获取 meta_id
-        // 由于传入的 voice_meta 可能没有 ID，我们需要在数据库中查找或创建它
+    async fn generate_meta(&self, voice_meta: VoiceMeta) -> anyhow::Result<VoiceMetaID> {
         let meta_id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO voice_meta (voice_model_id, pitch, speed, volume, instruction)
@@ -192,6 +174,40 @@ impl VoiceService for ServiceProvider<Postgres> {
         .await
         .context("插入 voice_meta 失败")?;
 
+        Ok(meta_id)
+    }
+
+    async fn generate_voice(
+        &self,
+        voice_meta_id: VoiceMetaID,
+        text: &str,
+    ) -> anyhow::Result<VoiceLibraryID> {
+        // 1. 获取 voice_meta
+        let voice_meta: VoiceMetaRow = sqlx::query_as(
+            "SELECT voice_model_id, pitch, speed, volume, instruction FROM voice_meta WHERE id = $1"
+        )
+        .bind(voice_meta_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("未找到对应的语音元数据")?;
+        let voice_meta: VoiceMeta = voice_meta.into();
+
+        // 2. 获取 voice_model 的外部 voice_id 和 supported_model
+        let (voice_id, supported_model): (String, String) =
+            sqlx::query_as("SELECT voice_id, supported_model FROM voice_model WHERE id = $1")
+                .bind(voice_meta.voice_model_id)
+                .fetch_one(&self.pool)
+                .await
+                .context("未找到对应的语音模型")?;
+
+        // 3. 解析 supported_model 为枚举
+        let model = supported_model
+            .parse::<crate::api::voice_backend::SupportedModel>()
+            .context("不支持的语音模型类型")?;
+
+        // 4. 调用外部 TTS API 生成音频
+        let audio_bytes = generate_audio(&model, &voice_id, text, &voice_meta).await?;
+
         // 5. 将生成的记录保存到 voice_library 表中
         let library_id: Uuid = sqlx::query_scalar(
             r#"
@@ -200,16 +216,13 @@ impl VoiceService for ServiceProvider<Postgres> {
             RETURNING id
             "#,
         )
-        .bind(meta_id)
+        .bind(voice_meta_id)
         .bind(text)
         .bind(audio_bytes)
         .fetch_one(&self.pool)
         .await
         .context("插入 voice_library 失败")?;
 
-        // 6. 返回获取声音库的地址
-        let audio_url = format!("/api/audio/{}", library_id);
-
-        Ok(audio_url)
+        Ok(library_id)
     }
 }
