@@ -23,9 +23,9 @@ struct AppState {
     pg_pool: PgPool,
     auth_provider: api::user::AuthProvider,
     user_provider: api::user::UserProvider,
-    voice_model_provider: apiold::VoiceModelProvider,
     voice_metadata_provider: apiold::VoiceMetadataProvider,
     post_provider: apiold::PostProvider,
+    voice_provider: api::voice::VoiceProvider,
 }
 
 // 1. API 路由处理函数 (用于 CSR / Server Functions)
@@ -49,9 +49,9 @@ async fn server_fn_handler(
             // !!! 关键修复：必须手动注入 AppState 中的 Provider !!!
             provide_context(app_state.auth_provider.clone());
             provide_context(app_state.user_provider.clone());
-            provide_context(app_state.voice_model_provider.clone());
             provide_context(app_state.voice_metadata_provider.clone());
             provide_context(app_state.post_provider.clone());
+            provide_context(app_state.voice_provider.clone());
         },
         req,
     )
@@ -63,23 +63,28 @@ async fn get_audio_handler(
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let result: Result<(Vec<u8>,), sqlx::Error> =
-        sqlx::query_as("SELECT data FROM audio_files WHERE id = ?")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await;
+    let parsed_uuid = uuid::Uuid::parse_str(&id);
 
-    match result {
-        Ok((data,)) => (
-            [
-                (header::CONTENT_TYPE, "audio/mp3"),
-                (header::CACHE_CONTROL, "public, max-age=3600"),
-            ],
-            data,
-        )
-            .into_response(),
-        Err(_) => (StatusCode::NOT_FOUND, "Audio not found").into_response(),
+    if let Ok(uuid) = parsed_uuid {
+        let result: Result<(Vec<u8>,), sqlx::Error> =
+            sqlx::query_as("SELECT audio_data FROM voice_library WHERE id = $1")
+                .bind(uuid)
+                .fetch_one(&state.pg_pool)
+                .await;
+
+        if let Ok((data,)) = result {
+            return (
+                [
+                    (header::CONTENT_TYPE, "audio/mp3"),
+                    (header::CACHE_CONTROL, "public, max-age=3600"),
+                ],
+                data,
+            )
+                .into_response();
+        }
     }
+
+    (StatusCode::NOT_FOUND, "Audio not found").into_response()
 }
 
 // 2.1 头像获取处理函数
@@ -144,6 +149,42 @@ async fn get_post_audio_handler(
     }
 }
 
+// 2.3 语音模型头像获取处理函数
+async fn get_voice_avatar_handler(
+    Path(voice_id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let parsed_uuid = uuid::Uuid::parse_str(&voice_id);
+
+    if let Ok(uuid) = parsed_uuid {
+        let result: Result<(Vec<u8>,), sqlx::Error> = sqlx::query_as(
+            r#"SELECT avatar FROM voice_model WHERE id = $1 AND avatar IS NOT NULL"#,
+        )
+        .bind(uuid)
+        .fetch_one(&state.pg_pool)
+        .await;
+        if let Ok((data,)) = result {
+            return (
+                [
+                    (header::CONTENT_TYPE, "image/webp"),
+                    (header::CACHE_CONTROL, "public, max-age=86400"),
+                ],
+                data,
+            )
+                .into_response();
+        }
+    }
+    // 返回默认头像 - 重定向到 DiceBear API
+    (
+        StatusCode::FOUND,
+        [(
+            header::LOCATION,
+            format!("https://api.dicebear.com/7.x/bottts/svg?seed={}", voice_id),
+        )],
+    )
+        .into_response()
+}
+
 // 3. 新增：SSR 页面渲染处理函数
 // 专门用于处理页面请求，确保在服务端渲染时也能获取到 Headers (Cookie)
 async fn ssr_handler(
@@ -165,9 +206,9 @@ async fn ssr_handler(
             // !!! 关键修复：同样需要在 SSR 渲染时注入这些 Provider !!!
             provide_context(app_state.auth_provider.clone());
             provide_context(app_state.user_provider.clone());
-            provide_context(app_state.voice_model_provider.clone());
             provide_context(app_state.voice_metadata_provider.clone());
             provide_context(app_state.post_provider.clone());
+            provide_context(app_state.voice_provider.clone());
         },
         move || shell(options.clone()),
     );
@@ -213,9 +254,9 @@ async fn main() {
     // ServiceProvider<SqlitePool> -> Arc<dyn AuthService>
     let auth_provider = Arc::new(new_service_impl.clone());
     let user_provider = Arc::new(new_service_impl.clone());
-    let voice_model_provider = Arc::new(service_impl.clone());
     let voice_metadata_provider = Arc::new(service_impl.clone());
     let post_provider = Arc::new(service_impl.clone());
+    let voice_provider = Arc::new(new_service_impl.clone());
 
     // 3. 组装 AppState
     let app_state = AppState {
@@ -224,9 +265,9 @@ async fn main() {
         pg_pool: pg_pool.clone(),
         auth_provider,
         user_provider,
-        voice_model_provider,
         voice_metadata_provider,
         post_provider,
+        voice_provider,
     };
 
     // 构建 Router
@@ -234,6 +275,10 @@ async fn main() {
         .route("/api/{*fn_name}", post(server_fn_handler))
         .route("/api/audio/{id}", get(get_audio_handler))
         .route("/api/avatar/{user_id}", get(get_avatar_handler))
+        .route(
+            "/api/voice_avatar/{voice_id}",
+            get(get_voice_avatar_handler),
+        )
         .route("/api/post/audio/{post_id}", get(get_post_audio_handler));
 
     // 为每个 Leptos 路由注册我们自定义的 ssr_handler

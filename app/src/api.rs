@@ -190,3 +190,147 @@ pub mod user {
     }
 }
 mod userimpl;
+
+pub mod voice {
+    use leptos::{prelude::*, server_fn::codec::Json};
+    use serde::{Deserialize, Serialize};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    pub type VoiceModelID = Uuid;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct VoiceModel {
+        pub id: VoiceModelID,
+        pub voice_id: String,
+        pub info: VoiceModelInfo,
+        pub avatar_url: String,
+        pub category: VoiceModelCategory,
+        pub ability: VoiceModelAbility,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct VoiceModelInfo {
+        pub name: String,
+        pub description: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum VoiceModelCategory {
+        Official(String),
+        User {
+            supported_model: String,
+            user_id: crate::api::user::UserID,
+            voice_generate_data_id: Uuid,
+        },
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct VoiceModelAbility {
+        pub voice_clone: bool,
+        pub voice_design: bool,
+        pub ssml: bool,
+        pub latex: bool,
+        pub parametric_control: bool,
+        pub instruction_control: bool,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::Type))]
+    pub struct VoiceMeta {
+        pub voice_model_id: VoiceModelID,
+        pub parametric: Option<Parametic>,
+        pub instruction: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::Type))]
+    pub struct Parametic {
+        pub pitch: f32,
+        pub speed: f32,
+        pub volume: f32,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum VoiceGenerateData {
+        VoiceClone(Vec<u8>),
+        VoiceDesign(String),
+    }
+
+    #[async_trait::async_trait]
+    pub trait VoiceService: Send + Sync {
+        async fn list_voice_models(&self) -> anyhow::Result<Vec<VoiceModel>>;
+        async fn search_voice_model(&self, info: &str) -> anyhow::Result<Vec<VoiceModel>>;
+        async fn generate_voice_model(
+            &self,
+            voice_generate_meta: VoiceModelInfo,
+            voice_data: VoiceGenerateData,
+        ) -> anyhow::Result<VoiceModelID>;
+        async fn update_voice_model(
+            &self,
+            voice_model_id: VoiceModelID,
+            voice_model_info: VoiceModelInfo,
+        ) -> anyhow::Result<()>;
+        /// 返回生成的音频文件URL
+        async fn generate_voice(&self, voice_meta: VoiceMeta, text: &str)
+        -> anyhow::Result<String>;
+    }
+
+    pub type VoiceProvider = Arc<dyn VoiceService>;
+
+    #[server]
+    pub async fn list_voice_models() -> Result<Vec<VoiceModel>, ServerFnError> {
+        use_context::<VoiceProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
+            .list_voice_models()
+            .await
+            .map_err(|e| ServerFnError::new(format!("获取语音模型列表失败: {}", e)))
+    }
+
+    #[server]
+    pub async fn search_voice_model(info: String) -> Result<Vec<VoiceModel>, ServerFnError> {
+        use_context::<VoiceProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
+            .search_voice_model(&info)
+            .await
+            .map_err(|e| ServerFnError::new(format!("搜索语音模型失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn generate_voice_model(
+        voice_generate_meta: VoiceModelInfo,
+        voice_data: VoiceGenerateData,
+    ) -> Result<VoiceModelID, ServerFnError> {
+        use_context::<VoiceProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
+            .generate_voice_model(voice_generate_meta, voice_data)
+            .await
+            .map_err(|e| ServerFnError::new(format!("生成语音模型失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn update_voice_model(
+        voice_model_id: VoiceModelID,
+        voice_model_info: VoiceModelInfo,
+    ) -> Result<(), ServerFnError> {
+        use_context::<VoiceProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
+            .update_voice_model(voice_model_id, voice_model_info)
+            .await
+            .map_err(|e| ServerFnError::new(format!("更新语音模型失败: {}", e)))
+    }
+
+    #[server(input = Json)]
+    pub async fn generate_voice(
+        voice_meta: VoiceMeta,
+        text: String,
+    ) -> Result<String, ServerFnError> {
+        use_context::<VoiceProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
+            .generate_voice(voice_meta, &text)
+            .await
+            .map_err(|e| ServerFnError::new(format!("生成语音失败: {}", e)))
+    }
+}
+mod voice_backend;
+mod voiceimpl;

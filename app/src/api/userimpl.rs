@@ -223,13 +223,12 @@ impl AuthService for ServiceProvider<Postgres> {
     async fn get_authinfo(&self) -> anyhow::Result<Vec<UserAuth>> {
         let user_id = get_user_id_from_session(&self.pool).await?;
 
-        let auths: Vec<(String, String)> = sqlx::query_as(
-            "SELECT auth_type::text, provider_id FROM user_auth WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_all(&self.pool)
-        .await
-        .context("获取认证信息失败")?;
+        let auths: Vec<(String, String)> =
+            sqlx::query_as("SELECT auth_type::text, provider_id FROM user_auth WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_all(&self.pool)
+                .await
+                .context("获取认证信息失败")?;
 
         let mut result = Vec::new();
         for (auth_type, provider_id) in auths {
@@ -291,7 +290,8 @@ impl AuthService for ServiceProvider<Postgres> {
                 }
 
                 // 2. Hash new password
-                let new_password_hash = hash(&new_password, DEFAULT_COST).context("密码加密失败")?;
+                let new_password_hash =
+                    hash(&new_password, DEFAULT_COST).context("密码加密失败")?;
 
                 // 3. Update all password_email and password_phone for this user
                 sqlx::query(
@@ -358,12 +358,11 @@ impl AuthService for ServiceProvider<Postgres> {
                     AuthID::Phone(phone) => ("password_phone", phone.to_string()),
                 };
 
-                let count: (i64,) = sqlx::query_as(
-                    "SELECT COUNT(*) FROM user_auth WHERE user_id = $1"
-                )
-                .bind(user_id)
-                .fetch_one(&self.pool)
-                .await?;
+                let count: (i64,) =
+                    sqlx::query_as("SELECT COUNT(*) FROM user_auth WHERE user_id = $1")
+                        .bind(user_id)
+                        .fetch_one(&self.pool)
+                        .await?;
 
                 if count.0 <= 1 {
                     return Err(anyhow!("无法解绑最后一个认证方式"));
@@ -425,14 +424,16 @@ impl UserService for ServiceProvider<Postgres> {
             updated_at: chrono::DateTime<Utc>,
         }
 
-        let mut row: UserProfileRow =
-            sqlx::query_as(r#"SELECT nick_name, bio, role, level, updated_at FROM "user" WHERE id = $1"#)
-                .bind(user_id)
-                .fetch_one(&self.pool)
-                .await
-                .context("获取用户信息失败")?;
+        let mut row: UserProfileRow = sqlx::query_as(
+            r#"SELECT nick_name, bio, role, level, updated_at FROM "user" WHERE id = $1"#,
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("获取用户信息失败")?;
 
-        row.usermeta.avatar_url = format!("/api/avatar/{}?t={}", user_id, row.updated_at.timestamp());
+        row.usermeta.avatar_url =
+            format!("/api/avatar/{}?t={}", user_id, row.updated_at.timestamp());
 
         Ok(User {
             id: user_id,

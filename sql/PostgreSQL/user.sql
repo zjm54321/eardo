@@ -1,3 +1,5 @@
+-- 注意：这需要数据库管理员预先安装并启用 pg_cron 扩展
+
 -- 用户角色枚举
 CREATE TYPE user_role AS ENUM ('Admin', 'User', 'FakeUser', 'BannedUser', 'DeletedUser', 'Bot');
 

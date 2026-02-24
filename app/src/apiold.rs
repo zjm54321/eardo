@@ -47,16 +47,6 @@ pub enum VoiceModelCategory {
     // 语音生成模型，string字段为对应用户id
     VoiceGenerated,
 }
-/// 语音模型管理接口
-#[async_trait]
-pub trait VoiceModelService: Send + Sync {
-    /// 列出默认的推荐模型
-    async fn list_voice_models(&self) -> anyhow::Result<Vec<VoiceModelInfo>>;
-    async fn get_voice_model(&self, voice_id: &str) -> anyhow::Result<VoiceModelInfo>;
-    async fn update_voice_model(&self, voice: &VoiceModelInfo) -> anyhow::Result<()>;
-    async fn delete_voice_model(&self, voice_id: &str) -> anyhow::Result<()>;
-}
-pub type VoiceModelProvider = Arc<dyn VoiceModelService>;
 
 // --- 语音参数结构 ---
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -184,44 +174,6 @@ pub mod post;
 pub mod voice_backend_api;
 pub mod voicedata;
 
-// === 语音模型模块 ===
-
-#[server]
-pub async fn list_voice_models() -> Result<Vec<VoiceModelInfo>, ServerFnError> {
-    use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
-        .list_voice_models()
-        .await
-        .map_err(|e| ServerFnError::new(format!("获取语音模型列表失败: {}", e)))
-}
-
-#[server]
-pub async fn get_voice_model(voice_id: String) -> Result<VoiceModelInfo, ServerFnError> {
-    use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
-        .get_voice_model(&voice_id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("获取语音模型详情失败: {}", e)))
-}
-
-#[server]
-pub async fn update_voice_model(voice: VoiceModelInfo) -> Result<(), ServerFnError> {
-    use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
-        .update_voice_model(&voice)
-        .await
-        .map_err(|e| ServerFnError::new(format!("更新语音模型失败: {}", e)))
-}
-
-#[server]
-pub async fn delete_voice_model(voice_id: String) -> Result<(), ServerFnError> {
-    use_context::<VoiceModelProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到语音模型服务组件(VoiceModelProvider)"))?
-        .delete_voice_model(&voice_id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("删除语音模型失败: {}", e)))
-}
-
 // === 语音元数据模块 ===
 
 #[server]
@@ -258,18 +210,6 @@ pub async fn delete_voice_metadata(voice_id: String) -> Result<(), ServerFnError
         .delete_voice_metadata(&voice_id)
         .await
         .map_err(|e| ServerFnError::new(format!("删除语音元数据失败: {}", e)))
-}
-
-#[server]
-pub async fn generate_audio(
-    voice_meta: VoiceMetaInfo,
-    input_text: String,
-) -> Result<Vec<u8>, ServerFnError> {
-    use_context::<VoiceMetadataProvider>()
-        .ok_or_else(|| ServerFnError::new("未找到语音元数据服务组件(VoiceMetadataProvider)"))?
-        .generate_voice(&voice_meta, &input_text)
-        .await
-        .map_err(|e| ServerFnError::new(format!("生成音频失败: {}", e)))
 }
 
 // === 帖子模块 ===

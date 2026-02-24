@@ -1,17 +1,10 @@
+use crate::api;
 use crate::apiold;
 use crate::apiold::VoiceParams;
 use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_query_map;
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenerateParams {
-    pub text: String,
-    pub voice_id: String,
-    pub voice_param: VoiceParams,
-}
 
 // 用于 create_post_action 的有效负载
 #[derive(Clone)]
@@ -84,19 +77,19 @@ pub fn HomePage() -> impl IntoView {
                 .unwrap_or(default)
         })
     };
-    let get_str_param = |key: &str, default: &str| {
+    let get_str_param_opt = |key: &str| {
         query.with_untracked(|q| {
             q.get(key)
                 .map(|arg0: std::string::String| ToString::to_string(&arg0))
-                .unwrap_or(default.to_string())
         })
     };
 
     let text_signal = RwSignal::new(String::new());
 
     // 初始化声线 ID
-    let initial_voice_id = get_str_param("voice_id", "longxiaoxia");
-    let voice_signal = RwSignal::new(initial_voice_id.clone());
+    let url_voice_id = get_str_param_opt("voice_id");
+    let initial_voice_id = RwSignal::new(url_voice_id.clone().unwrap_or_default());
+    let voice_signal = RwSignal::new(url_voice_id.unwrap_or_default());
 
     // 初始化参数
     let initial_pitch = get_f32_param("pitch", 1.0);
@@ -129,7 +122,19 @@ pub fn HomePage() -> impl IntoView {
     let instruction_text = RwSignal::new(String::new());
 
     // Resource 用于异步获取数据
-    let voices_resource = Resource::new(|| (), |_| apiold::list_voice_models());
+    let voices_resource = Resource::new(|| (), |_| api::voice::list_voice_models());
+
+    Effect::new(move |_| {
+        if voice_signal.get().is_empty() {
+            if let Some(Ok(voices)) = voices_resource.get() {
+                if let Some(first_voice) = voices.first() {
+                    let id = first_voice.id.to_string();
+                    initial_voice_id.set(id.clone());
+                    voice_signal.set(id);
+                }
+            }
+        }
+    });
 
     // 创建 Action 处理生成请求
     // Action 自动管理 pending (加载中) 和 value (返回值) 状态
@@ -143,47 +148,42 @@ pub fn HomePage() -> impl IntoView {
         let instruction = instruction_text.get();
 
         async move {
-            // 获取基础模型信息
-            let base_model = match apiold::get_voice_model(voice_id.clone()).await {
-                Ok(model) => model,
+            let voice_model_id = match uuid::Uuid::parse_str(&voice_id) {
+                Ok(id) => id,
                 Err(e) => {
-                    debug_error!("获取语音模型失败: {}", e);
-                    return Err(e);
+                    debug_error!("无效的语音模型 ID: {}", e);
+                    return Err(ServerFnError::new("无效的语音模型 ID"));
                 }
             };
 
-            // 创建 VoiceMetaInfo 对象
-            let metadata = if is_instruction {
-                apiold::VoiceMetadata::Instruction(instruction)
-            } else {
-                apiold::VoiceMetadata::Parametric(VoiceParams {
-                    pitch,
-                    speed,
-                    volume,
-                })
+            // 创建 VoiceMeta 对象
+            let voice_meta = api::voice::VoiceMeta {
+                voice_model_id,
+                parametric: if !is_instruction {
+                    Some(api::voice::Parametic {
+                        pitch,
+                        speed,
+                        volume,
+                    })
+                } else {
+                    None
+                },
+                instruction: if is_instruction {
+                    Some(instruction)
+                } else {
+                    None
+                },
             };
 
-            let voice_meta = apiold::VoiceMetaInfo {
-                base_model,
-                metadata,
-            };
-
-            debug_log!(
-                "生成音频: voice_id={}, text={}, pitch={}, speed={}",
-                voice_id,
-                text,
-                pitch,
-                speed
-            );
-
-            let result = apiold::generate_audio(voice_meta.clone(), text.clone()).await;
+            let result = api::voice::generate_voice(voice_meta.clone(), text.clone()).await;
 
             // 生成成功后保存数据供分享使用
-            if let Ok(audio_data) = &result {
+            if let Ok(audio_url) = &result {
                 set_generated_text.set(text.clone());
                 set_generated_voice_name.set(voice_id.clone());
                 set_generated_voice_id.set(voice_id.clone());
-                set_generated_audio_data.set(audio_data.clone());
+                // TODO: Fetch audio data from URL if needed for sharing
+                // set_generated_audio_data.set(audio_data.clone());
                 set_show_share_popup.set(true);
                 // 设置默认分享内容
                 set_share_title.set(format!("我的{}", voice_id));
@@ -278,7 +278,7 @@ pub fn HomePage() -> impl IntoView {
                         <ParameterControlCard
                             selected_param=param_signal
                             selected_voice=voice_signal
-                            initial_voice_id=initial_voice_id.clone()
+                            initial_voice_id=initial_voice_id
                             initial_param=VoiceParams {
                                 pitch: initial_pitch,
                                 speed: initial_speed,
@@ -697,11 +697,6 @@ pub async fn share_voice_filter_to_db(
     }
 }
 
-fn base64_encode(data: &[u8]) -> String {
-    use base64::Engine as _;
-    base64::engine::general_purpose::STANDARD.encode(data)
-}
-
 #[component]
 pub fn TextInputCard(
     /// 用于存储输入文本的信号，由父组件传入
@@ -1082,7 +1077,7 @@ pub fn VoiceSelectorCard(
     /// 当前选中的声线 ID (双向绑定)
     selected_voice: RwSignal<String>,
     /// 声线列表资源
-    voices_resource: Resource<Result<Vec<apiold::VoiceModelInfo>, ServerFnError>>,
+    voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
 ) -> impl IntoView {
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
@@ -1132,9 +1127,9 @@ pub fn VoiceSelectorCard(
                                 <div class="flex flex-col gap-3 h-full overflow-y-auto pr-2">
                                     <For
                                         each=move || voices.clone()
-                                        key=|voice| voice.id.clone()
+                                        key=|voice| voice.id.to_string()
                                         children=move |voice| {
-                                            let voice_id = voice.id.clone();
+                                            let voice_id = voice.id.to_string();
                                             let stored_voice_id = StoredValue::new(voice_id);
                                             // 移除 let is_active = ... 变量定义，直接在属性中使用
                                             // 或者使用 StoredValue 来存储 voice_id 以避免多次克隆的开销（对于字符串 ID 来说微乎其微）
@@ -1164,11 +1159,11 @@ pub fn VoiceSelectorCard(
                                                 >
                                                     <div>
                                                         <div class="font-medium group-hover:text-primary transition-colors">
-                                                            {voice.name.clone()}
+                                                            {voice.info.name.clone()}
                                                         </div>
                                                         <div class="text-sm text-gray-500">
                                                             {move || {
-                                                                let desc = voice.description.clone();
+                                                                let desc = voice.info.description.clone();
                                                                 if desc.is_empty() {
                                                                     "暂无描述".to_string()
                                                                 } else {
@@ -1336,7 +1331,7 @@ pub fn ParameterControlCard(
     /// 当前选中的声线
     selected_voice: RwSignal<String>,
     /// 初始基线：声线ID
-    initial_voice_id: String,
+    initial_voice_id: RwSignal<String>,
     /// 初始基线：参数
     initial_param: VoiceParams,
     /// 触发分享弹窗
@@ -1346,36 +1341,35 @@ pub fn ParameterControlCard(
     /// 指令文本
     instruction_text: RwSignal<String>,
     /// 声线列表资源
-    voices_resource: Resource<Result<Vec<apiold::VoiceModelInfo>, ServerFnError>>,
+    voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
 ) -> impl IntoView {
     // 判定是否有改动
     let is_modified = Memo::new(move |_| {
         let v = selected_voice.get();
         let p = selected_param.get();
-        let dv = v != initial_voice_id;
+        let dv = v != initial_voice_id.get();
         let dp = (p.pitch - initial_param.pitch).abs() > 1e-4
             || (p.speed - initial_param.speed).abs() > 1e-4;
         dv || dp
     });
 
-    let selected_category = move || {
+    let selected_ability = move || {
         let voice_id = selected_voice.get();
         if let Some(Ok(voices)) = voices_resource.get() {
-            if let Some(voice) = voices.iter().find(|v| v.id == voice_id) {
-                if let apiold::VoiceModelCategory::Official(ref cat) = voice.category {
-                    return cat.clone();
-                }
+            if let Some(voice) = voices.iter().find(|v| v.id.to_string() == voice_id) {
+                return Some(voice.ability.clone());
             }
         }
-        String::new()
+        None
     };
 
-    create_effect(move |_| {
-        let cat = selected_category();
-        if cat == "qwen3-tts" {
-            is_instruction_mode.set(true);
-        } else if cat == "cosyvoice-v3" || cat == "cosyvoice-v3-flash" {
-            is_instruction_mode.set(false);
+    Effect::new(move |_| {
+        if let Some(ability) = selected_ability() {
+            if ability.instruction_control && !ability.parametric_control {
+                is_instruction_mode.set(true);
+            } else if ability.parametric_control && !ability.instruction_control {
+                is_instruction_mode.set(false);
+            }
         }
     });
 
@@ -1392,11 +1386,12 @@ pub fn ParameterControlCard(
                     <Suspense fallback=move || {
                         view! { <div class="w-6 h-6 bg-gray-100 rounded-full animate-pulse"></div> }
                     }>
-                        // cat == "qwen3-tts"
-                        // 目前先隐藏切换按钮，后续根据模型支持情况再决定是否显示
                         <Show when=move || {
-                            let cat = selected_category();
-                            false
+                            if let Some(ability) = selected_ability() {
+                                ability.instruction_control && ability.parametric_control
+                            } else {
+                                false
+                            }
                         }>
                             <button
                                 class="text-gray-400 hover:text-primary transition-colors flex items-center justify-center w-6 h-6 rounded-full"
@@ -1428,28 +1423,37 @@ pub fn ParameterControlCard(
             }>
                 <div class="space-y-8">
                     {move || {
-                        let cat = selected_category();
-                        if cat == "qwen3-tts" || cat == "cosyvoice-v3"
-                            || cat == "cosyvoice-v3-flash"
-                        {
-                            view! {
-                                <Show
-                                    when=move || is_instruction_mode.get()
-                                    fallback=move || {
-                                        view! {
-                                            <TraditionalParams selected_param=selected_param />
-                                        }
+                        if let Some(ability) = selected_ability() {
+                            if ability.instruction_control || ability.parametric_control {
+                                let show_instruction = if is_instruction_mode.get() {
+                                    ability.instruction_control
+                                } else {
+                                    !ability.parametric_control
+                                };
+                                if show_instruction {
+
+                                    view! {
+                                        <InstructionParams instruction_text=instruction_text />
                                     }
-                                >
-                                    <InstructionParams instruction_text=instruction_text />
-                                </Show>
+                                        .into_any()
+                                } else {
+                                    view! { <TraditionalParams selected_param=selected_param /> }
+                                        .into_any()
+                                }
+                            } else {
+                                view! {
+                                    <div class="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-200">
+                                        <i class="fa-solid fa-circle-info text-4xl mb-3 opacity-50"></i>
+                                        <p>"此模型不支持参数调节"</p>
+                                    </div>
+                                }
+                                    .into_any()
                             }
-                                .into_any()
                         } else {
                             view! {
                                 <div class="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-200">
                                     <i class="fa-solid fa-circle-info text-4xl mb-3 opacity-50"></i>
-                                    <p>"此模型不支持参数调节"</p>
+                                    <p>"加载中..."</p>
                                 </div>
                             }
                                 .into_any()
@@ -1463,8 +1467,8 @@ pub fn ParameterControlCard(
 
 #[component]
 pub fn AudioResultCard(
-    /// 生成动作 (Action) - 返回二进制音频数据
-    generate_action: Action<(), Result<Vec<u8>, ServerFnError>>,
+    /// 生成动作 (Action) - 返回音频 URL
+    generate_action: Action<(), Result<String, ServerFnError>>,
 ) -> impl IntoView {
     // 获取 Action 的状态信号
     let is_pending = generate_action.pending();
@@ -1646,29 +1650,7 @@ pub fn AudioResultCard(
                         }
                             .into_any()
                     }
-                    (false, Some(Ok(audio_bytes))) => {
-                        #[cfg(target_arch = "wasm32")]
-                        let audio_url = {
-                            use wasm_bindgen::JsCast;
-                            let blob = web_sys::Blob::new_with_u8_array_sequence(
-                                &wasm_bindgen::JsValue::from(
-                                    &web_sys::js_sys::Array::of1(
-                                        &wasm_bindgen::JsValue::from(
-                                            js_sys::Uint8Array::from(audio_bytes.as_slice()),
-                                        ),
-                                    ),
-                                ),
-                            );
-                            if let Ok(blob) = blob {
-                                web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default()
-                            } else {
-                                String::new()
-                            }
-                        };
-                        #[cfg(not(target_arch = "wasm32"))]
-                        let audio_url = String::new();
-                        // 将二进制音频数据转换为 Blob URL
-
+                    (false, Some(Ok(audio_url))) => {
                         view! {
                             // 使用 Flex 布局垂直排列 Canvas 和 Controls
                             <div class="w-full animate-slide-up flex flex-col">
@@ -1689,34 +1671,22 @@ pub fn AudioResultCard(
                                         <span>"生成完成"</span>
                                         <button
                                             class="text-primary hover:text-secondary hover:underline flex items-center"
-                                            on:click=move |_| {
-                                                #[cfg(target_arch = "wasm32")]
-                                                {
-                                                    let bytes = audio_bytes.clone();
-                                                    use wasm_bindgen::JsCast;
-                                                    if let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(
-                                                        &wasm_bindgen::JsValue::from(
-                                                            &web_sys::js_sys::Array::of1(
-                                                                &wasm_bindgen::JsValue::from(
-                                                                    js_sys::Uint8Array::from(bytes.as_slice()),
-                                                                ),
-                                                            ),
-                                                        ),
-                                                    ) {
-                                                        if let Ok(url) = web_sys::Url::create_object_url_with_blob(
-                                                            &blob,
-                                                        ) {
-                                                            let a = web_sys::window()
-                                                                .and_then(|w| w.document())
-                                                                .and_then(|d| d.create_element("a").ok())
-                                                                .and_then(|a| {
-                                                                    a.dyn_into::<web_sys::HtmlAnchorElement>().ok()
-                                                                });
-                                                            if let Some(a) = a {
-                                                                a.set_href(&url);
-                                                                a.set_download("tts_audio.mp3");
-                                                                a.click();
-                                                            }
+                                            on:click={
+                                                let value = audio_url.clone();
+                                                move |_| {
+                                                    #[cfg(target_arch = "wasm32")]
+                                                    {
+                                                        use wasm_bindgen::JsCast;
+                                                        let a = web_sys::window()
+                                                            .and_then(|w| w.document())
+                                                            .and_then(|d| d.create_element("a").ok())
+                                                            .and_then(|a| {
+                                                                a.dyn_into::<web_sys::HtmlAnchorElement>().ok()
+                                                            });
+                                                        if let Some(a) = a {
+                                                            a.set_href(&value);
+                                                            a.set_download("tts_audio.mp3");
+                                                            a.click();
                                                         }
                                                     }
                                                 }
@@ -1731,7 +1701,7 @@ pub fn AudioResultCard(
                                         controls
                                         autoplay
                                         class="w-full h-8 custom-audio-player"
-                                        src=audio_url
+                                        src=audio_url.clone()
                                         on:play=move |_| is_playing.set(true)
                                         on:pause=move |_| is_playing.set(false)
                                         crossorigin="anonymous"
