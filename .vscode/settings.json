@@ -4,5 +4,8 @@
         "leptosfmt",
         "--stdin",
         "--rustfmt"
-    ]
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "cargo check": true
+    }
 }
