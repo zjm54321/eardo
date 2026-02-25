@@ -41,11 +41,13 @@ EarDo 希望把专业声学参数“看得懂、调得动、存得下、传得�
 - **入门爱好者**：不懂声学也能通过预设与滑条听出变化，逐步沉淀个人声线。
 
 ## 核心功能
-- **文本转语音（TTS）**：调用阿里云 CosyVoice v3 flash，生成 MP3。可调语速 rate、音高 pitch。
-- **参数化调声**：`pitch`、`speed` 预设，默认值保证“开箱即听”。
+- **AI 文本改写**：集成 DeepSeek-V3.1/OpenAI 模型，支持场景化改写（汇报、讲解、创意等），可控时长与受众。
+- **文本转语音（TTS）**：调用阿里云 CosyVoice v3 flash，生成 MP3。可调语速 speed、音高 pitch、音量 volume。
+- **参数化调声与指令模式**：参数模式可直接调节 `pitch`、`speed`、`volume`；指令模式支持自然语言输入（如"温柔点、快一些"）。
 - **播放与分发**：生成音频直接 `<audio>` 播放；作品随帖子发布，支持搜索与详情。
 - **账号与会话**：注册/登录/登出、头像、昵称、简介；会话用 HttpOnly Cookie。
 - **作品流**：列表、搜索、详情、点赞/评论（接口已备），音频直链 `/api/post/audio/{post_id}`。
+- **渐进式配置**：专用 Setup 页面可视化构建声线预设，支持快速切换与分享链接。
 
 ## 系统架构
 ```
@@ -66,7 +68,12 @@ SQLite (用户 / 会话 / 声线 / 帖子 / 音频)
 
 ## 交互与页面导览
 - **欢迎页**：品牌展示与引导 CTA，默认入口。
-- **首页 /home**：主要调声与生成入口，文本输入 + 参数滑条 + 生成按钮。
+- **首页 /home**：主要调声与生成入口，支持双模式：
+	- **参数模式**：文本输入 + 声线选择 + 参数滑条（pitch/speed/volume）+ 生成。
+	- **指令模式**：文本输入 + 自然语言指令 + 生成（如"温柔、放慢速度"）。
+	- 集成 AI 文本改写：场景化改写（汇报/讲解/创意等）可控时长与受众。
+	- 快速导航到渐进式配置页。
+- **渐进式配置 /setup**：可视化构建声线预设，即时预听，支持保存为链接分享。
 - **声音广场 /voice**：浏览作品卡片，播放、查看描述与互动计数。
 - **声音滤镜 /filters**：预设声线/滤镜列表（数据结构已备，后端可扩展）。
 - **帮助 /help**：操作指引与常见问题。
@@ -74,14 +81,18 @@ SQLite (用户 / 会话 / 声线 / 帖子 / 音频)
 - **个人资料 /profile**：头像、昵称、简介；支持 base64 头像上传。
 
 ## 端到端链路
-1. **输入阶段**：用户输入文本，调整 `pitch/speed`（默认值保证即用）。
-2. **生成阶段**：`generate_audio` Server Function 解析元数据 → 通过 WebSocket 调用 CosyVoice → 流式累积 MP3。
-3. **存储阶段**：音频可存入数据库或作为帖子内容的一部分；接口 `/api/audio/{id}`、`/api/post/audio/{post_id}` 暴露流式播放。
-4. **分发阶段**：作品流展示作者、时间、描述、点赞/评论计数和音频链接；支持搜索与详情。
+1. **输入阶段**：用户输入文本，可选 AI 改写（选择场景、受众、时长）。
+2. **调声阶段**：选择声线，支持两种调声方式：
+	- **参数模式**：精确调节 `pitch/speed/volume` 滑条，默认值保证开箱即用。
+	- **指令模式**：输入自然语言指令，后端解析并转化为参数。
+3. **生成阶段**：生成 VoiceMeta 元数据 → 通过 WebSocket 调用 CosyVoice → 流式累积 MP3。
+4. **存储阶段**：音频存入数据库或作为帖子内容的一部分；接口 `/api/audio/{id}`、`/api/post/audio/{post_id}` 暴露流式播放。
+5. **分发阶段**：作品流展示作者、时间、描述、点赞/评论计数和音频链接；支持搜索与详情；支持分享链接预填参数（`?meta_id=xxx`）。
 
 ## 数据与接口总览
 - **数据模型（摘要）**
-	- `VoiceParams`：`pitch`/`speed`（见 [app/src/api.rs](app/src/api.rs)）。
+	- `Parametic`：`pitch`/`speed`/`volume`（见 [app/src/api.rs](app/src/api.rs)）。
+	- `VoiceMeta`：声线配置，支持参数模式（Parametric）或指令模式（Instruction 自然语言）。
 	- `VoiceMetaInfo`：声线/滤镜元数据，含 `base_model_id`、`pitch`、`speed`、`volume` 等。
 	- `VoiceModelInfo`：基础声线模型信息（名称、分类、描述）。
 	- `PostInfo`：帖子/作品，metadata 内含作者、时间、描述、点赞/评论计数、音频链接。
@@ -89,9 +100,10 @@ SQLite (用户 / 会话 / 声线 / 帖子 / 音频)
 - **接口分组（Server Functions）**
 	- 认证：`register`、`login`、`logout`、`get_current_user`。
 	- 用户：`get_user_profile`、`update_user_profile`（支持 base64 头像）。
-	- 声线与元数据：`list_voice_models`、`get_voice_model`、`update_voice_model`、`delete_voice_model`；`list_voice_metadata`、`get_voice_metadata`、`update_voice_metadata`、`delete_voice_metadata`、`generate_audio`。
+	- 声线与元数据：`list_voice_models`、`get_voice_model`、`update_voice_model`、`delete_voice_model`；`list_voice_metadata`、`get_voice_metadata`、`update_voice_metadata`、`delete_voice_metadata`、`generate_voice`、`generate_meta`。
+	- AI 改写：`ai_rewrite_text`（调用 OpenAI/DeepSeek，支持场景化改写）。
 	- 帖子：`list_posts`、`search_post`、`get_post`、`create_post`、`update_post`、`delete_post`、`comment_on_post`、`like_dislike_post`。
-	- 媒体流：`/api/audio/{id}`、`/api/avatar/{user_id}`、`/api/post/audio/{post_id}`。
+	- 媒体流：`/api/audio/{id}`、`/api/avatar/{user_id}`、`/api/post/audio/{post_id}`、`/api/voice_avatar/{voice_id}`。
 
 ## 性能与容量预估
 - **推理延迟**：CosyVoice v3 flash 典型 1–3 秒（视网络与文本长度而定）。
@@ -133,7 +145,8 @@ SQLite (用户 / 会话 / 声线 / 帖子 / 音频)
 	- 补足前端错误提示与生成进度；
 	- 加入缓存与并发限流；
 	- 上线声线库与基础 DSP 滤镜；
-	- 完善移动端样式与可访问性。
+	- 完善移动端样式与可访问性；
+	- **AI 改写与指令模式全量上线**（已集成 OpenAI/DeepSeek）。
 - **中期**：
 	- 接入 RVC 变声与更多官方声线预设；
 	- 作品分享卡片、榜单、评论/点赞全量上线；
@@ -144,15 +157,21 @@ SQLite (用户 / 会话 / 声线 / 帖子 / 音频)
 	- 多模型编排、移动端/边缘推理。
 
 ## 常见问题 FAQ
-- **需要 GPU 吗？** 现阶段不需要，TTS 走云端 CosyVoice。
-- **为什么生成失败？** 常见原因：未配置 `ALIYUN_API_KEY`、网络不可达、输入文本过长或空白。
-- **音频在哪存？** 默认存 SQLite 的 BLOB，可按需切换到对象存储。
+- **需要 GPU 吗？** 现阶段不需要，TTS 走云端 CosyVoice；AI 改写调用云端 OpenAI/DeepSeek。
+- **为什么生成失败？** 常见原因：未配置 `ALIYUN_API_KEY` 或 `OPENAI_API_KEY`、网络不可达、输入文本过长或空白。
+- **参数模式与指令模式有什么区别？** 参数模式精确调节三个滑条；指令模式输入自然语言让系统解析。
+- **音频在哪存？** 默认存 PostgreSQL BLOB，可按需切换到对象存储。
 - **能否自带声线？** 当前支持通过元数据指定 `base_model_id`，后续将上线声线库与上传入口。
-- **并发会不会顶不住？** 小规模 OK，若上量需切换数据库、增加缓存与限流。
+- **并发会不会顶不住？** 小规模 OK，若上量需增加缓存、限流和数据库连接池。
+- **如何分享调过的参数？** 生成后可通过 `?meta_id=xxx` 链接分享，他人打开时会自动加载参数。
 
 ## 源码索引
 - 前端壳与路由：[app/src/lib.rs](app/src/lib.rs)、[app/src/pages.rs](app/src/pages.rs)
-- 数据与接口定义：[app/src/api.rs](app/src/api.rs)、[app/src/data.rs](app/src/data.rs)
+- 首页（双模式调声 + AI 改写）：[app/src/pages/homepage.rs](app/src/pages/homepage.rs)
+- 渐进式配置页：[app/src/pages/voicesetup.rs](app/src/pages/voicesetup.rs)
+- 数据与接口定义：[app/src/api.rs](app/src/api.rs)
+- 用户认证实现：[app/src/api/userimpl.rs](app/src/api/userimpl.rs)
+- 语音服务实现：[app/src/api/voiceimpl.rs](app/src/api/voiceimpl.rs)
+- CosyVoice WebSocket 调用：[app/src/api/voice_backend.rs](app/src/api/voice_backend.rs)
+- 帖子与作品流实现：[app/src/api/postimpl.rs](app/src/api/postimpl.rs)
 - 服务端入口与注入：[server/src/main.rs](server/src/main.rs)
-- 生成与元数据：[app/src/api/voicedata.rs](app/src/api/voicedata.rs)、[app/src/api/voice_backend_api.rs](app/src/api/voice_backend_api.rs)
-- 帖子与作品流：[app/src/api/post.rs](app/src/api/post.rs)
