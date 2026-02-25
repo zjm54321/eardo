@@ -1,0 +1,1663 @@
+use crate::api;
+use crate::api::voice::Parametic;
+use leptos::logging::{debug_error, debug_log};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::use_query_map;
+
+use super::homepage::{ai_rewrite_text, share_voice_filter_to_db, CreatePostPayload};
+
+// ─── 主组件 ────────────────────────────────────────────────────
+
+#[component]
+pub fn VoiceSetupPage() -> impl IntoView {
+    // URL 参数
+    let query = use_query_map();
+    let get_str_param_opt = |key: &str| {
+        query.with_untracked(|q| q.get(key).map(|s| s.to_string()))
+    };
+
+    // ── 步骤状态 ──
+    let current_step = RwSignal::new(1u8);
+
+    // ── 声线 ──
+    let voice_signal = RwSignal::new(String::new());
+    let initial_voice_id = RwSignal::new(String::new());
+    let voices_resource = Resource::new(|| (), |_| api::voice::list_voice_models());
+
+    // ── 参数 ──
+    let param_signal = RwSignal::new(Parametic {
+        pitch: 1.0,
+        speed: 1.0,
+        volume: 1.0,
+    });
+    let is_instruction_mode = RwSignal::new(false);
+    let instruction_text = RwSignal::new(String::new());
+
+    // ── 文本 ──
+    let text_signal = RwSignal::new(String::new());
+
+    // ── 生成 & 分享状态 ──
+    let (_generated_text, set_generated_text) = signal(String::new());
+    let (_generated_voice_name, set_generated_voice_name) = signal(String::new());
+    let (generated_voice_id, set_generated_voice_id) = signal(String::new());
+    let (generated_audio_data, set_generated_audio_data) = signal(Vec::<u8>::new());
+    let (show_share_modal, set_show_share_modal) = signal(false);
+    let (share_title, set_share_title) = signal(String::new());
+    let (share_content, set_share_content) = signal(String::new());
+    let (show_filter_share, set_show_filter_share) = signal(false);
+    let (filter_share_title, set_filter_share_title) = signal(String::new());
+    let (filter_share_intro, set_filter_share_intro) = signal(String::new());
+
+    // ── meta_id 预加载 ──
+    let url_meta_id = get_str_param_opt("meta_id");
+    let meta_resource = Resource::new_blocking(
+        move || url_meta_id.clone(),
+        move |meta_id_opt| async move {
+            if let Some(meta_id_str) = meta_id_opt {
+                if let Ok(meta_id) = uuid::Uuid::parse_str(&meta_id_str) {
+                    api::voice::get_meta(meta_id).await.ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        },
+    );
+
+    Effect::new(move |_| {
+        if let Some(Some(meta)) = meta_resource.get() {
+            voice_signal.set(meta.voice_model_id.to_string());
+            initial_voice_id.set(meta.voice_model_id.to_string());
+            if let Some(parametric) = meta.parametric {
+                is_instruction_mode.set(false);
+                param_signal.set(parametric);
+            } else if let Some(instruction) = meta.instruction {
+                is_instruction_mode.set(true);
+                instruction_text.set(instruction);
+            }
+        }
+    });
+
+    // 默认选中第一个声线
+    Effect::new(move |_| {
+        if voice_signal.get().is_empty() {
+            if let Some(Ok(voices)) = voices_resource.get() {
+                if let Some(first_voice) = voices.first() {
+                    let id = first_voice.id.to_string();
+                    initial_voice_id.set(id.clone());
+                    voice_signal.set(id);
+                }
+            }
+        }
+    });
+
+    // ── 生成 Action ──
+    let generate_action = Action::new(move |_| {
+        let text = text_signal.get();
+        let voice_id = voice_signal.get();
+        let pitch = param_signal.get().pitch;
+        let speed = param_signal.get().speed;
+        let volume = param_signal.get().volume;
+        let is_instruction = is_instruction_mode.get();
+        let instruction = instruction_text.get();
+        async move {
+            let voice_model_id = match uuid::Uuid::parse_str(&voice_id) {
+                Ok(id) => id,
+                Err(e) => {
+                    debug_error!("无效的语音模型 ID: {}", e);
+                    return Err(ServerFnError::new("无效的语音模型 ID"));
+                }
+            };
+            let voice_meta = api::voice::VoiceMeta {
+                voice_model_id,
+                parametric: if !is_instruction {
+                    Some(api::voice::Parametic {
+                        pitch,
+                        speed,
+                        volume,
+                    })
+                } else {
+                    None
+                },
+                instruction: if is_instruction {
+                    Some(instruction)
+                } else {
+                    None
+                },
+            };
+            let voice_meta_id = match api::voice::generate_meta(voice_meta).await {
+                Ok(id) => id,
+                Err(e) => {
+                    debug_error!("生成语音元数据失败: {}", e);
+                    return Err(ServerFnError::new("生成语音元数据失败"));
+                }
+            };
+            let result = api::voice::generate_voice(voice_meta_id, text.clone()).await;
+            if let Ok(_library_id) = &result {
+                set_generated_text.set(text.clone());
+                set_generated_voice_name.set(voice_id.clone());
+                set_generated_voice_id.set(voice_id.clone());
+                set_share_title.set("我的声音作品".to_string());
+                set_share_content.set(format!("使用 AI 声音创作平台生成：{}", text));
+            }
+            result
+        }
+    });
+
+    // 生成成功自动跳到第四步
+    Effect::new(move |_| {
+        if let Some(Ok(_)) = generate_action.value().get() {
+            current_step.set(4);
+        }
+    });
+
+    // ── 创建帖子 Action ──
+    let create_post_action = Action::new(move |payload: &CreatePostPayload| {
+        let payload = payload.clone();
+        async move {
+            let post = api::post::VoicePost {
+                id: uuid::Uuid::new_v4(),
+                title: payload.title,
+                content: payload.content,
+                library_id: uuid::Uuid::parse_str(&payload.voice_id).unwrap_or_default(),
+                author: uuid::Uuid::nil(),
+                status: api::post::PostStatus::Normal,
+                comments_count: 0,
+                likes_count: 0,
+            };
+            api::post::create_voice_post(post).await
+        }
+    });
+
+    Effect::new(move |_| {
+        if let Some(Ok(_)) = create_post_action.value().get() {
+            debug_log!("帖子创建成功");
+            set_show_share_modal.set(false);
+        }
+    });
+
+    // ── 步骤标签 ──
+    let steps: Vec<(&str, &str)> = vec![
+        ("fa-microphone", "选择声线"),
+        ("fa-sliders", "配置参数"),
+        ("fa-pen-fancy", "输入文本"),
+        ("fa-play", "生成播放"),
+    ];
+
+    view! {
+        <div class="min-h-screen pb-12">
+            <div class="container mx-auto px-4 py-8 max-w-5xl">
+
+                // 右上角切换到经典模式按钮
+                <div class="flex justify-end mb-4">
+                    <a
+                        href="/home"
+                        class="inline-flex items-center px-4 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-medium transition-all group"
+                    >
+                        <i class="fa-solid fa-table-columns mr-2 group-hover:scale-110 transition-transform"></i>
+                        "经典模式"
+                        <i class="fa-solid fa-arrow-right ml-2 text-xs opacity-60 group-hover:translate-x-0.5 transition-transform"></i>
+                    </a>
+                </div>
+
+                // ── 进度指示器 ──
+                <div class="flex items-center justify-center mb-12">
+                    {steps
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, (icon, label))| {
+                            let step_num = (i + 1) as u8;
+                            let is_last = i == 3;
+                            view! {
+                                <div class="flex items-center">
+                                    <button
+                                        class="flex flex-col items-center group cursor-pointer"
+                                        on:click=move |_| {
+                                            if step_num <= current_step.get() {
+                                                current_step.set(step_num);
+                                            }
+                                        }
+                                    >
+                                        <div
+                                            class=move || {
+                                                let cur = current_step.get();
+                                                if cur == step_num {
+                                                    "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 text-lg bg-primary text-white shadow-lg scale-110"
+                                                } else if cur > step_num {
+                                                    "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 text-lg bg-green-500 text-white"
+                                                } else {
+                                                    "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 text-lg bg-gray-200 text-gray-400"
+                                                }
+                                            }
+                                        >
+                                            <i class=format!("fa-solid {}", icon)></i>
+                                        </div>
+                                        <span class=move || {
+                                            let cur = current_step.get();
+                                            if cur == step_num {
+                                                "mt-2 text-xs font-medium text-primary"
+                                            } else if cur > step_num {
+                                                "mt-2 text-xs font-medium text-green-600"
+                                            } else {
+                                                "mt-2 text-xs font-medium text-gray-400"
+                                            }
+                                        }>
+                                            {label}
+                                        </span>
+                                    </button>
+                                    {if !is_last {
+                                        view! {
+                                            <div class=move || {
+                                                if current_step.get() > step_num {
+                                                    "w-16 md:w-24 h-0.5 mx-2 mt-[-1rem] bg-green-400 transition-colors duration-300"
+                                                } else {
+                                                    "w-16 md:w-24 h-0.5 mx-2 mt-[-1rem] bg-gray-200 transition-colors duration-300"
+                                                }
+                                            }></div>
+                                        }
+                                            .into_any()
+                                    } else {
+                                        view! { <span></span> }.into_any()
+                                    }}
+                                </div>
+                            }
+                        })
+                        .collect_view()}
+                </div>
+
+                // ── 步骤内容 ──
+                <div class="relative min-h-[500px]">
+                    // Step 1: 选择声线
+                    <Show when=move || current_step.get() == 1>
+                        <StepVoiceSelect
+                            voice_signal=voice_signal
+                            voices_resource=voices_resource
+                            on_next=move || current_step.set(2)
+                        />
+                    </Show>
+
+                    // Step 2: 配置参数
+                    <Show when=move || current_step.get() == 2>
+                        <StepParamConfig
+                            param_signal=param_signal
+                            voice_signal=voice_signal
+                            is_instruction_mode=is_instruction_mode
+                            instruction_text=instruction_text
+                            voices_resource=voices_resource
+                            open_filter_share=set_show_filter_share
+                            on_back=move || current_step.set(1)
+                            on_next=move || current_step.set(3)
+                        />
+                    </Show>
+
+                    // Step 3: 输入文本
+                    <Show when=move || current_step.get() == 3>
+                        <StepTextInput
+                            text_signal=text_signal
+                            generate_action=generate_action
+                            on_back=move || current_step.set(2)
+                        />
+                    </Show>
+
+                    // Step 4: 生成 & 可视化
+                    <Show when=move || current_step.get() == 4>
+                        <StepGenerate
+                            generate_action=generate_action
+                            param_signal=param_signal
+                            voice_signal=voice_signal
+                            voices_resource=voices_resource
+                        />
+                    </Show>
+                </div>
+            </div>
+
+            // ── 分享作品模态 ──
+            <Show when=move || show_share_modal.get()>
+                <div
+                    class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+                    on:click=move |_| set_show_share_modal.set(false)
+                >
+                    <div
+                        class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                    >
+                        <div class="flex justify-between items-center p-6 border-b border-gray-200">
+                            <h2 class="text-2xl font-bold text-gray-800">"创建分享作品"</h2>
+                            <button
+                                class="text-gray-400 hover:text-gray-600"
+                                on:click=move |_| set_show_share_modal.set(false)
+                            >
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    "作品标题"
+                                </label>
+                                <input
+                                    type="text"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    placeholder="请输入作品标题..."
+                                    prop:value=move || share_title.get()
+                                    on:input=move |ev| set_share_title.set(event_target_value(&ev))
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    "作品描述"
+                                </label>
+                                <textarea
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                                    rows="6"
+                                    placeholder="请输入作品描述..."
+                                    prop:value=move || share_content.get()
+                                    on:input=move |ev| {
+                                        set_share_content.set(event_target_value(&ev))
+                                    }
+                                ></textarea>
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+                            <button
+                                class="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium"
+                                on:click=move |_| set_show_share_modal.set(false)
+                            >
+                                "取消"
+                            </button>
+                            <button
+                                class="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg font-medium disabled:opacity-50"
+                                on:click=move |_| {
+                                    let title = share_title.get();
+                                    let content = share_content.get();
+                                    let voice_id = generated_voice_id.get();
+                                    let audio_data = generated_audio_data.get();
+                                    if !title.trim().is_empty() && !content.trim().is_empty() {
+                                        create_post_action
+                                            .dispatch(CreatePostPayload {
+                                                title,
+                                                content,
+                                                voice_id,
+                                                audio_data,
+                                            });
+                                    }
+                                }
+                                disabled=move || {
+                                    share_title.get().trim().is_empty()
+                                        || share_content.get().trim().is_empty()
+                                }
+                            >
+                                "创建"
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
+
+            // ── 声音滤镜分享模态 ──
+            <Show when=move || show_filter_share.get()>
+                <div
+                    class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+                    on:click=move |_| set_show_filter_share.set(false)
+                >
+                    <div
+                        class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                    >
+                        <div class="flex justify-between items-center p-6 border-b border-gray-200">
+                            <h2 class="text-2xl font-bold text-gray-800">"分享声音滤镜"</h2>
+                            <button
+                                class="text-gray-400 hover:text-gray-600"
+                                on:click=move |_| set_show_filter_share.set(false)
+                            >
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                            <div class="grid grid-cols-1 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        "标题（最多60字）"
+                                    </label>
+                                    <input
+                                        type="text"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                        placeholder="为滤镜取一个标题"
+                                        prop:value=move || filter_share_title.get()
+                                        on:input=move |ev| {
+                                            let mut v = event_target_value(&ev);
+                                            if v.chars().count() > 60 {
+                                                v = v.chars().take(60).collect();
+                                            }
+                                            set_filter_share_title.set(v);
+                                        }
+                                    />
+                                    <div class="text-xs text-gray-400 text-right mt-1">
+                                        {move || {
+                                            format!("{}/60", filter_share_title.get().chars().count())
+                                        }}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        "介绍（最多60字）"
+                                    </label>
+                                    <input
+                                        type="text"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                        placeholder="简要介绍滤镜用途"
+                                        prop:value=move || filter_share_intro.get()
+                                        on:input=move |ev| {
+                                            let mut v = event_target_value(&ev);
+                                            if v.chars().count() > 60 {
+                                                v = v.chars().take(60).collect();
+                                            }
+                                            set_filter_share_intro.set(v);
+                                        }
+                                    />
+                                    <div class="text-xs text-gray-400 text-right mt-1">
+                                        {move || {
+                                            format!("{}/60", filter_share_intro.get().chars().count())
+                                        }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                <h4 class="text-sm font-semibold text-gray-700 mb-3">"具体参数"</h4>
+                                <div class="grid grid-cols-2 gap-3 text-sm text-gray-600">
+                                    <div>
+                                        <span class="text-gray-400">"声线："</span>
+                                        {move || voice_signal.get()}
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-400">"音高："</span>
+                                        {move || format!("{:.2}", param_signal.get().pitch)}
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-400">"语速："</span>
+                                        {move || format!("{:.2}", param_signal.get().speed)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
+                            <button
+                                class="px-6 py-2 bg-secondary hover:bg-secondary/90 text-white rounded-lg font-medium disabled:opacity-50"
+                                on:click=move |_| {
+                                    let title = filter_share_title.get();
+                                    let intro = filter_share_intro.get();
+                                    let p = param_signal.get();
+                                    let v = voice_signal.get();
+                                    spawn_local(async move {
+                                        match share_voice_filter_to_db(
+                                                title,
+                                                intro,
+                                                v,
+                                                p.pitch,
+                                                p.speed,
+                                            )
+                                            .await
+                                        {
+                                            Ok(_) => debug_log!("滤镜分享已入库"),
+                                            Err(e) => {
+                                                leptos::logging::error!("滤镜分享失败: {}", e)
+                                            }
+                                        }
+                                    });
+                                    set_show_filter_share.set(false);
+                                }
+                                disabled=move || {
+                                    filter_share_title.get().trim().is_empty()
+                                        || filter_share_intro.get().trim().is_empty()
+                                }
+                            >
+                                <i class="fa-solid fa-share mr-2"></i>
+                                "分享"
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
+        </div>
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Step 1 · 选择声线（卡片式）
+// ═══════════════════════════════════════════════════════════════
+
+#[component]
+fn StepVoiceSelect(
+    voice_signal: RwSignal<String>,
+    voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+    on_next: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    view! {
+        <div class="animate-fade-in">
+            <div class="text-center mb-8">
+                <h2 class="text-2xl font-bold text-dark mb-2">"选择一个声线"</h2>
+                <p class="text-gray-500">"每种声线都有独特的音色风格，选择最适合你的那一个"</p>
+            </div>
+
+            <Suspense fallback=move || {
+                view! {
+                    <div class="flex justify-center py-16">
+                        <div class="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+                    </div>
+                }
+            }>
+                {move || {
+                    match voices_resource.get() {
+                        Some(Ok(voices)) => {
+                            let on_next = on_next.clone();
+                            view! {
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                    <For
+                                        each=move || voices.clone()
+                                        key=|v| v.id.to_string()
+                                        children=move |voice| {
+                                            let vid = voice.id.to_string();
+                                            let stored_id = StoredValue::new(vid);
+                                            let avatar_url = voice.avatar_url.clone();
+                                            let name = voice.info.name.clone();
+                                            let desc = voice.info.description.clone();
+                                            view! {
+                                                <div
+                                                    class=move || {
+                                                        let base = "flex items-stretch bg-white rounded-xl border-2 cursor-pointer transition-all duration-200 overflow-hidden group hover:shadow-lg";
+                                                        if voice_signal.get() == stored_id.get_value() {
+                                                            format!("{} border-primary shadow-md ring-2 ring-primary/30", base)
+                                                        } else {
+                                                            format!("{} border-gray-200", base)
+                                                        }
+                                                    }
+                                                    on:click=move |_| {
+                                                        voice_signal.set(stored_id.get_value())
+                                                    }
+                                                >
+                                                    // 左侧图片
+                                                    <div class="w-24 h-24 md:w-28 md:h-28 flex-shrink-0 bg-gray-100 flex items-center justify-center overflow-hidden">
+                                                        <img
+                                                            src=avatar_url.clone()
+                                                            alt=name.clone()
+                                                            class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                        />
+                                                    </div>
+                                                    // 右侧内容
+                                                    <div class="flex-1 p-4 flex flex-col justify-between min-w-0">
+                                                        <div>
+                                                            <h4 class="font-bold text-gray-800 text-lg mb-1 truncate group-hover:text-primary transition-colors">
+                                                                {name.clone()}
+                                                            </h4>
+                                                            <p class="text-sm text-gray-500 line-clamp-2">
+                                                                {if desc.is_empty() {
+                                                                    "暂无描述".to_string()
+                                                                } else {
+                                                                    desc.clone()
+                                                                }}
+                                                            </p>
+                                                        </div>
+                                                        // 选择按钮
+                                                        <div class="flex justify-end mt-2">
+                                                            <div
+                                                                class="text-xs px-3 py-1 rounded-full transition-all"
+                                                                class:bg-primary=move || {
+                                                                    voice_signal.get() == stored_id.get_value()
+                                                                }
+                                                                class:text-white=move || {
+                                                                    voice_signal.get() == stored_id.get_value()
+                                                                }
+                                                                class:bg-gray-100=move || {
+                                                                    voice_signal.get() != stored_id.get_value()
+                                                                }
+                                                                class:text-gray-500=move || {
+                                                                    voice_signal.get() != stored_id.get_value()
+                                                                }
+                                                            >
+                                                                {move || {
+                                                                    if voice_signal.get() == stored_id.get_value() {
+                                                                        "已选择"
+                                                                    } else {
+                                                                        "选择"
+                                                                    }
+                                                                }}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                    />
+                                </div>
+
+                                // 下一步按钮
+                                <div class="flex justify-center">
+                                    <button
+                                        class="px-10 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-50"
+                                        on:click=move |_| on_next()
+                                        disabled=move || voice_signal.get().is_empty()
+                                    >
+                                        "下一步"
+                                        <i class="fa-solid fa-arrow-right ml-2"></i>
+                                    </button>
+                                </div>
+                            }
+                                .into_any()
+                        }
+                        Some(Err(e)) => {
+                            debug_error!("加载声线库失败: {:?}", e);
+                            view! {
+                                <div class="text-red-500 text-center py-8 bg-red-50 rounded-xl border border-red-200">
+                                    <i class="fa-solid fa-circle-exclamation mr-2"></i>
+                                    "加载失败，请刷新重试"
+                                </div>
+                            }
+                                .into_any()
+                        }
+                        None => {
+                            view! {
+                                <div class="flex justify-center py-16">
+                                    <div class="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+                                </div>
+                            }
+                                .into_any()
+                        }
+                    }
+                }}
+            </Suspense>
+        </div>
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Step 2 · 配置参数
+// ═══════════════════════════════════════════════════════════════
+
+#[component]
+fn StepParamConfig(
+    param_signal: RwSignal<Parametic>,
+    voice_signal: RwSignal<String>,
+    is_instruction_mode: RwSignal<bool>,
+    instruction_text: RwSignal<String>,
+    voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+    open_filter_share: WriteSignal<bool>,
+    on_back: impl Fn() + 'static + Clone + Send,
+    on_next: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    let selected_ability = move || {
+        let voice_id = voice_signal.get();
+        if let Some(Ok(voices)) = voices_resource.get() {
+            if let Some(voice) = voices.iter().find(|v| v.id.to_string() == voice_id) {
+                return Some(voice.ability.clone());
+            }
+        }
+        None
+    };
+
+    let selected_voice_name = move || {
+        let voice_id = voice_signal.get();
+        if let Some(Ok(voices)) = voices_resource.get() {
+            if let Some(voice) = voices.iter().find(|v| v.id.to_string() == voice_id) {
+                return voice.info.name.clone();
+            }
+        }
+        "未知声线".to_string()
+    };
+
+    Effect::new(move |_| {
+        if let Some(ability) = selected_ability() {
+            if ability.instruction_control && !ability.parametric_control {
+                is_instruction_mode.set(true);
+            } else if ability.parametric_control && !ability.instruction_control {
+                is_instruction_mode.set(false);
+            }
+        }
+    });
+
+    view! {
+        <div class="animate-fade-in">
+            <div class="text-center mb-8">
+                <h2 class="text-2xl font-bold text-dark mb-2">"配置声音参数"</h2>
+                <p class="text-gray-500">
+                    "当前声线："
+                    <span class="text-primary font-semibold">{selected_voice_name}</span>
+                </p>
+            </div>
+
+            <div class="max-w-2xl mx-auto">
+                <div class="bg-white rounded-2xl p-8 shadow-soft border border-gray-100">
+                    // 模式切换标签
+                    <Suspense fallback=move || {
+                        view! {
+                            <div class="h-10 bg-gray-100 rounded-lg animate-pulse"></div>
+                        }
+                    }>
+                        <Show when=move || {
+                            selected_ability()
+                                .map(|a| a.instruction_control && a.parametric_control)
+                                .unwrap_or(false)
+                        }>
+                            <div class="flex bg-gray-100 rounded-lg p-1 mb-8">
+                                <button
+                                    class="flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all"
+                                    class:bg-white=move || !is_instruction_mode.get()
+                                    class:shadow-sm=move || !is_instruction_mode.get()
+                                    class:text-primary=move || !is_instruction_mode.get()
+                                    class:text-gray-500=move || is_instruction_mode.get()
+                                    on:click=move |_| is_instruction_mode.set(false)
+                                >
+                                    <i class="fa-solid fa-sliders mr-2"></i>
+                                    "传统参数"
+                                </button>
+                                <button
+                                    class="flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all"
+                                    class:bg-white=move || is_instruction_mode.get()
+                                    class:shadow-sm=move || is_instruction_mode.get()
+                                    class:text-primary=move || is_instruction_mode.get()
+                                    class:text-gray-500=move || !is_instruction_mode.get()
+                                    on:click=move |_| is_instruction_mode.set(true)
+                                >
+                                    <i class="fa-solid fa-comment-dots mr-2"></i>
+                                    "语言控制"
+                                </button>
+                            </div>
+                        </Show>
+                    </Suspense>
+
+                    // 参数内容
+                    <Suspense fallback=move || {
+                        view! {
+                            <div class="h-32 bg-gray-100 rounded-lg animate-pulse"></div>
+                        }
+                    }>
+                        {move || {
+                            if let Some(ability) = selected_ability() {
+                                if ability.instruction_control || ability.parametric_control {
+                                    let show_instruction = if is_instruction_mode.get() {
+                                        ability.instruction_control
+                                    } else {
+                                        !ability.parametric_control
+                                    };
+                                    if show_instruction {
+                                        view! {
+                                            <SetupInstructionParams instruction_text=instruction_text />
+                                        }
+                                            .into_any()
+                                    } else {
+                                        view! {
+                                            <SetupTraditionalParams param_signal=param_signal />
+                                        }
+                                            .into_any()
+                                    }
+                                } else {
+                                    view! {
+                                        <div class="text-center py-12 text-gray-400">
+                                            <i class="fa-solid fa-circle-info text-4xl mb-3"></i>
+                                            <p>"此模型不支持参数调节，将使用默认配置"</p>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+                            } else {
+                                view! {
+                                    <div class="text-center py-12 text-gray-400">
+                                        <div class="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-3"></div>
+                                        <p>"加载中..."</p>
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                        }}
+                    </Suspense>
+
+                    // 分享滤镜按钮
+                    <div class="mt-6 pt-6 border-t border-gray-100 flex justify-end">
+                        <button
+                            class="text-sm px-4 py-2 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
+                            on:click=move |_| open_filter_share.set(true)
+                        >
+                            <i class="fa-solid fa-share mr-2"></i>
+                            "分享为滤镜"
+                        </button>
+                    </div>
+                </div>
+
+                // 导航按钮
+                <div class="flex justify-between mt-8">
+                    <button
+                        class="px-8 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-all"
+                        on:click=move |_| on_back()
+                    >
+                        <i class="fa-solid fa-arrow-left mr-2"></i>
+                        "上一步"
+                    </button>
+                    <button
+                        class="px-10 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all active:scale-[0.98]"
+                        on:click=move |_| on_next()
+                    >
+                        "下一步"
+                        <i class="fa-solid fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// 传统参数（音高、语速、音量）
+#[component]
+fn SetupTraditionalParams(param_signal: RwSignal<Parametic>) -> impl IntoView {
+    view! {
+        <div class="space-y-8">
+            // 音高
+            <div>
+                <div class="flex justify-between mb-3">
+                    <label class="font-semibold text-gray-700 flex items-center">
+                        <i class="fa-solid fa-music text-primary mr-2"></i>
+                        "音高 (Pitch)"
+                    </label>
+                    <span class="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold">
+                        {move || format!("{:.2}", param_signal.get().pitch)}
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.01"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                    prop:value=move || param_signal.get().pitch
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
+                        param_signal.update(|p| p.pitch = val);
+                    }
+                />
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>"0.5"</span>
+                    <span>"1.0"</span>
+                    <span>"2.0"</span>
+                </div>
+            </div>
+
+            // 语速
+            <div>
+                <div class="flex justify-between mb-3">
+                    <label class="font-semibold text-gray-700 flex items-center">
+                        <i class="fa-solid fa-gauge-high text-primary mr-2"></i>
+                        "语速 (Speed)"
+                    </label>
+                    <span class="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold">
+                        {move || format!("{:.2}x", param_signal.get().speed)}
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.01"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                    prop:value=move || param_signal.get().speed
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
+                        param_signal.update(|p| p.speed = val);
+                    }
+                />
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>"0.5x"</span>
+                    <span>"1.0x"</span>
+                    <span>"2.0x"</span>
+                </div>
+            </div>
+
+            // 音量
+            <div>
+                <div class="flex justify-between mb-3">
+                    <label class="font-semibold text-gray-700 flex items-center">
+                        <i class="fa-solid fa-volume-high text-primary mr-2"></i>
+                        "音量 (Volume)"
+                    </label>
+                    <span class="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold">
+                        {move || format!("{:.0}%", param_signal.get().volume * 100.0)}
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min="0.0"
+                    max="2.0"
+                    step="0.01"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                    prop:value=move || param_signal.get().volume
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
+                        param_signal.update(|p| p.volume = val);
+                    }
+                />
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>"0%"</span>
+                    <span>"100%"</span>
+                    <span>"200%"</span>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// 语言控制（指令模式）
+#[component]
+fn SetupInstructionParams(instruction_text: RwSignal<String>) -> impl IntoView {
+    let is_loading = RwSignal::new(false);
+
+    let ai_action = Action::new(move |input: &String| {
+        let input = input.clone();
+        async move {
+            let prompt = format!(
+                "你是语音指令优化助手。请根据以下原则，将用户的简单描述改写为高质量的语音合成指令：\n\
+                1) 具体而非模糊：使用描绘具体声音特质的词语。\n\
+                2) 多维而非单一：结合音调、语速、情感、特点等多个维度。\n\
+                3) 简洁而非冗余：确保每个词都有意义。\n\
+                4) 只输出改写后的指令文本。\n\n\
+                用户原始描述：\n{}",
+                input
+            );
+            ai_rewrite_text(prompt).await
+        }
+    });
+
+    Effect::new(move |_| {
+        if let Some(Ok(result)) = ai_action.value().get() {
+            instruction_text.set(result);
+            is_loading.set(false);
+        } else if let Some(Err(_)) = ai_action.value().get() {
+            is_loading.set(false);
+        }
+    });
+
+    view! {
+        <div class="space-y-4">
+            <div class="flex items-center mb-2">
+                <i class="fa-solid fa-comment-dots text-primary mr-2"></i>
+                <span class="font-semibold text-gray-700">"AI 语言控制"</span>
+            </div>
+            <p class="text-sm text-gray-500">
+                "用自然语言描述你想要的声音效果，AI 会理解并生成对应的语音"
+            </p>
+            <div class="relative">
+                <textarea
+                    class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none min-h-[120px]"
+                    placeholder="例如：用温柔的语气，语速稍微慢一点，像在讲故事一样..."
+                    prop:value=move || instruction_text.get()
+                    on:input=move |ev| instruction_text.set(event_target_value(&ev))
+                    disabled=move || is_loading.get()
+                ></textarea>
+                <button
+                    class="absolute bottom-3 right-3 w-9 h-9 rounded-full bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center transition-all disabled:opacity-50"
+                    on:click=move |_| {
+                        if !instruction_text.get().trim().is_empty() {
+                            is_loading.set(true);
+                            ai_action.dispatch(instruction_text.get());
+                        }
+                    }
+                    disabled=move || {
+                        is_loading.get() || instruction_text.get().trim().is_empty()
+                    }
+                    title="AI 优化指令"
+                >
+                    <Show
+                        when=move || is_loading.get()
+                        fallback=move || {
+                            view! { <i class="fa-solid fa-wand-magic-sparkles"></i> }
+                        }
+                    >
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                    </Show>
+                </button>
+            </div>
+        </div>
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Step 3 · 输入文本 + 表达助手浮窗
+// ═══════════════════════════════════════════════════════════════
+
+#[component]
+fn StepTextInput(
+    text_signal: RwSignal<String>,
+    generate_action: Action<(), Result<uuid::Uuid, ServerFnError>>,
+    on_back: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    let show_assistant = RwSignal::new(false);
+    let scene = RwSignal::new("汇报".to_string());
+    let audience = RwSignal::new("老师".to_string());
+    let duration = RwSignal::new("3".to_string());
+    let output_text = RwSignal::new(String::new());
+    let active_tab = RwSignal::new("assistant".to_string());
+    let status_text = RwSignal::new(String::new());
+
+    let ai_action = Action::new(move |action: &String| {
+        let action = action.clone();
+        let input = text_signal.get();
+        let scene = scene.get();
+        let audience = audience.get();
+        let duration = duration.get();
+        async move {
+            let prompt = format!(
+                "你是表达助手。请严格遵守：\n\
+                1) 不生成有害内容；\n\
+                2) 输出应清晰、可编辑、面向口播；\n\
+                3) 只输出结果内容，不要附加解释。\n\n\
+                任务：{action}\n\
+                场景：{scene}\n受众：{audience}\n时长：{duration}分钟\n\n\
+                原始文本：\n{input}",
+            );
+            ai_rewrite_text(prompt).await
+        }
+    });
+
+    Effect::new(move |_| {
+        if let Some(Ok(result)) = ai_action.value().get() {
+            output_text.set(result);
+            active_tab.set("assistant".to_string());
+            status_text.set("生成成功".to_string());
+        } else if let Some(Err(err)) = ai_action.value().get() {
+            status_text.set(format!("生成失败：{}", err));
+        }
+    });
+
+    let is_pending = generate_action.pending();
+
+    view! {
+        <div class="animate-fade-in relative">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-dark mb-2">"输入你的文本"</h2>
+                <p class="text-gray-500">"输入想要转换的文字内容"</p>
+            </div>
+
+            <div class="relative max-w-3xl mx-auto">
+                // 全屏文本输入框
+                <div class="relative">
+                    <textarea
+                        class="w-full min-h-[400px] p-6 text-lg leading-relaxed border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none bg-white shadow-sm"
+                        placeholder="请输入你想转换的文字...\n\n例如：\n你好，欢迎来到耳朵，这是一个参数化声音创作平台。\n在这里你可以选择不同的声线，调整参数，生成属于你的声音。"
+                        prop:value=move || text_signal.get()
+                        on:input=move |ev| text_signal.set(event_target_value(&ev))
+                    ></textarea>
+
+                    // 字数统计
+                    <div class="absolute bottom-4 left-6 text-sm text-gray-400">
+                        {move || format!("{} 字", text_signal.get().chars().count())}
+                    </div>
+
+                    // 表达助手浮窗按钮
+                    <button
+                        class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/80 hover:bg-primary/10 backdrop-blur-sm shadow-md hover:shadow-lg text-primary transition-all flex items-center justify-center group"
+                        on:click=move |_| show_assistant.set(!show_assistant.get())
+                        title="表达助手"
+                    >
+                        <i class="fa-solid fa-wand-magic-sparkles text-lg group-hover:scale-110 transition-transform"></i>
+                    </button>
+                </div>
+
+                // 表达助手浮窗
+                <Show when=move || show_assistant.get()>
+                    <div class="absolute top-16 right-0 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 z-20 overflow-hidden">
+                        <div class="flex items-center justify-between p-4 bg-primary/5 border-b border-gray-100">
+                            <h4 class="font-bold text-gray-800 flex items-center">
+                                <i class="fa-solid fa-wand-magic-sparkles text-primary mr-2"></i>
+                                "表达助手"
+                            </h4>
+                            <button
+                                class="text-gray-400 hover:text-gray-600"
+                                on:click=move |_| show_assistant.set(false)
+                            >
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <div class="p-4 space-y-3">
+                            <div class="grid grid-cols-3 gap-2">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">"场景"</label>
+                                    <select
+                                        class="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                        on:change=move |ev| scene.set(event_target_value(&ev))
+                                    >
+                                        <option>"汇报"</option>
+                                        <option>"科普"</option>
+                                        <option>"答辩"</option>
+                                        <option>"其他"</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">"受众"</label>
+                                    <select
+                                        class="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                        on:change=move |ev| audience.set(event_target_value(&ev))
+                                    >
+                                        <option>"老师"</option>
+                                        <option>"同学"</option>
+                                        <option>"公众"</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">"时长"</label>
+                                    <select
+                                        class="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                        on:change=move |ev| duration.set(event_target_value(&ev))
+                                    >
+                                        <option value="1">"1分钟"</option>
+                                        <option value="3" selected>"3分钟"</option>
+                                        <option value="5">"5分钟"</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap gap-2">
+                                <button
+                                    class="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                                    on:click=move |_| {
+                                        status_text.set("生成中...".to_string());
+                                        ai_action.dispatch("生成提纲".to_string());
+                                    }
+                                    disabled=move || ai_action.pending().get()
+                                >
+                                    "生成提纲"
+                                </button>
+                                <button
+                                    class="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                                    on:click=move |_| {
+                                        status_text.set("生成中...".to_string());
+                                        ai_action.dispatch("口播改写".to_string());
+                                    }
+                                    disabled=move || ai_action.pending().get()
+                                >
+                                    "口播改写"
+                                </button>
+                                <button
+                                    class="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                                    on:click=move |_| {
+                                        status_text.set("生成中...".to_string());
+                                        ai_action.dispatch("术语轻解释".to_string());
+                                    }
+                                    disabled=move || ai_action.pending().get()
+                                >
+                                    "术语轻解释"
+                                </button>
+                            </div>
+
+                            <div class="border rounded-lg">
+                                <div class="flex border-b text-xs">
+                                    <button
+                                        class=move || {
+                                            if active_tab.get() == "assistant" {
+                                                "flex-1 py-2 font-medium text-primary bg-primary/5"
+                                            } else {
+                                                "flex-1 py-2 font-medium"
+                                            }
+                                        }
+                                        on:click=move |_| {
+                                            active_tab.set("assistant".to_string())
+                                        }
+                                    >
+                                        "助手文本"
+                                    </button>
+                                    <button
+                                        class=move || {
+                                            if active_tab.get() == "original" {
+                                                "flex-1 py-2 font-medium border-l text-primary bg-primary/5"
+                                            } else {
+                                                "flex-1 py-2 font-medium border-l"
+                                            }
+                                        }
+                                        on:click=move |_| {
+                                            active_tab.set("original".to_string())
+                                        }
+                                    >
+                                        "原始文本"
+                                    </button>
+                                </div>
+                                <textarea
+                                    class="w-full min-h-[100px] resize-y border-0 rounded-b-lg p-3 text-sm focus:outline-none"
+                                    prop:value=move || {
+                                        if active_tab.get() == "assistant" {
+                                            output_text.get()
+                                        } else {
+                                            text_signal.get()
+                                        }
+                                    }
+                                    on:input=move |ev| {
+                                        let v = event_target_value(&ev);
+                                        if active_tab.get() == "assistant" {
+                                            output_text.set(v);
+                                        } else {
+                                            text_signal.set(v);
+                                        }
+                                    }
+                                ></textarea>
+                            </div>
+
+                            <div class="flex gap-2">
+                                <button
+                                    class="flex-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-medium"
+                                    on:click=move |_| {
+                                        text_signal.set(output_text.get());
+                                        show_assistant.set(false);
+                                    }
+                                >
+                                    "一键填入"
+                                </button>
+                                <button
+                                    class="flex-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-medium"
+                                    on:click=move |_| {
+                                        let mut v = text_signal.get();
+                                        if !v.trim().is_empty()
+                                            && !output_text.get().trim().is_empty()
+                                        {
+                                            v.push_str("\n\n");
+                                        }
+                                        v.push_str(&output_text.get());
+                                        text_signal.set(v);
+                                    }
+                                >
+                                    "追加"
+                                </button>
+                            </div>
+
+                            <Show when=move || !status_text.get().is_empty()>
+                                <p
+                                    class="text-xs"
+                                    class:text-primary=move || status_text.get() == "生成成功"
+                                    class:text-red-500=move || {
+                                        status_text.get().starts_with("生成失败")
+                                    }
+                                    class:text-gray-500=move || status_text.get() == "生成中..."
+                                >
+                                    {move || status_text.get()}
+                                </p>
+                            </Show>
+                        </div>
+                    </div>
+                </Show>
+
+                // 导航：上一步 + 生成按钮
+                <div class="flex justify-between mt-8">
+                    <button
+                        class="px-8 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-all"
+                        on:click=move |_| on_back()
+                    >
+                        <i class="fa-solid fa-arrow-left mr-2"></i>
+                        "上一步"
+                    </button>
+                    <button
+                        class="px-12 py-4 bg-gradient-to-r from-primary to-amber-400 hover:from-primary/90 hover:to-amber-400/90 text-white rounded-2xl font-black text-xl shadow-xl hover:shadow-2xl transition-all active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                        on:click=move |_| { generate_action.dispatch(()); }
+                        disabled=move || {
+                            text_signal.get().trim().is_empty() || is_pending.get()
+                        }
+                    >
+                        {move || {
+                            if is_pending.get() {
+                                view! {
+                                    <>
+                                        <i class="fa-solid fa-circle-notch fa-spin mr-3"></i>
+                                        "生成中..."
+                                    </>
+                                }
+                                    .into_view()
+                            } else {
+                                view! {
+                                    <>
+                                        <i class="fa-solid fa-bolt mr-3"></i>
+                                        "生成声音"
+                                    </>
+                                }
+                                    .into_view()
+                            }
+                        }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Step 4 · 生成 & 可视化
+// ═══════════════════════════════════════════════════════════════
+
+#[component]
+fn StepGenerate(
+    generate_action: Action<(), Result<uuid::Uuid, ServerFnError>>,
+    param_signal: RwSignal<Parametic>,
+    voice_signal: RwSignal<String>,
+    voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+) -> impl IntoView {
+    let value = generate_action.value();
+    let is_pending = generate_action.pending();
+    let is_playing = RwSignal::new(false);
+
+    let audio_ref = NodeRef::<leptos::html::Audio>::new();
+    let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
+
+    let selected_voice_name = move || {
+        let voice_id = voice_signal.get();
+        if let Some(Ok(voices)) = voices_resource.get() {
+            if let Some(voice) = voices.iter().find(|v| v.id.to_string() == voice_id) {
+                return voice.info.name.clone();
+            }
+        }
+        "未知".to_string()
+    };
+
+    let setup_visualizer = move || {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::closure::Closure;
+            use web_sys::{AnalyserNode, AudioContext, CanvasRenderingContext2d};
+
+            let audio_el = audio_ref.get();
+            let canvas_el = canvas_ref.get();
+
+            if let (Some(audio), Some(canvas)) = (audio_el, canvas_el) {
+                use wasm_bindgen::JsCast;
+                let audio: web_sys::HtmlAudioElement = audio.unchecked_into();
+                let canvas: web_sys::HtmlCanvasElement = canvas.unchecked_into();
+
+                let parent = canvas.parent_element().unwrap();
+                let width = parent.client_width() as u32;
+                let height = 300;
+                canvas.set_width(width);
+                canvas.set_height(height);
+
+                audio.set_cross_origin(Some("anonymous"));
+
+                let ctx = AudioContext::new()
+                    .unwrap_or_else(|_| panic!("Failed to create AudioContext"));
+                let analyser = ctx.create_analyser().unwrap();
+                analyser.set_fft_size(256);
+
+                let source = match ctx.create_media_element_source(&audio) {
+                    Ok(src) => src,
+                    Err(_) => return,
+                };
+
+                source.connect_with_audio_node(&analyser).unwrap();
+                analyser
+                    .connect_with_audio_node(&ctx.destination())
+                    .unwrap();
+
+                let buffer_length = analyser.frequency_bin_count();
+                let mut data_array = vec![0u8; buffer_length as usize];
+
+                let ctx_2d: CanvasRenderingContext2d = canvas
+                    .get_context("2d")
+                    .unwrap()
+                    .unwrap()
+                    .unchecked_into();
+
+                let f = std::rc::Rc::new(std::cell::RefCell::new(None));
+                let g = f.clone();
+
+                let canvas_width = width as f64;
+                let canvas_height = height as f64;
+                let center_x = canvas_width / 2.0;
+                let center_y = canvas_height / 2.0;
+                let radius = 60.0;
+
+                *g.borrow_mut() = Some(Closure::new(move || {
+                    analyser.get_byte_frequency_data(&mut data_array);
+                    ctx_2d.clear_rect(0.0, 0.0, canvas_width, canvas_height);
+
+                    ctx_2d.begin_path();
+                    ctx_2d
+                        .arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI)
+                        .unwrap();
+                    ctx_2d.set_stroke_style_str("rgba(75, 85, 99, 0.15)");
+                    ctx_2d.set_line_width(2.0);
+                    ctx_2d.stroke();
+
+                    let bars = buffer_length;
+                    ctx_2d.set_fill_style_str("#FBBF24");
+
+                    for i in 0..bars {
+                        let value = data_array[i as usize] as f64;
+                        let bar_height = (value / 255.0) * 80.0;
+                        let rad = (i as f64 / bars as f64) * 2.0 * std::f64::consts::PI;
+
+                        ctx_2d.save();
+                        ctx_2d.translate(center_x, center_y).unwrap();
+                        ctx_2d.rotate(rad).unwrap();
+
+                        if bar_height > 0.0 {
+                            ctx_2d.fill_rect(-1.5, radius, 3.0, bar_height);
+                        }
+                        ctx_2d.restore();
+                    }
+
+                    request_animation_frame(f.borrow().as_ref().unwrap());
+                }));
+
+                request_animation_frame(g.borrow().as_ref().unwrap());
+            }
+        }
+    };
+
+    Effect::new(move |_| {
+        if let Some(Ok(_)) = value.get() {
+            set_timeout(
+                move || setup_visualizer(),
+                std::time::Duration::from_millis(100),
+            );
+        }
+    });
+
+    view! {
+        <div class="animate-fade-in">
+            <div class="text-center mb-8">
+                <h2 class="text-2xl font-bold text-dark mb-2">"生成结果"</h2>
+                <p class="text-gray-500">"试听你的声音作品"</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                // ── 左栏：参数面板 ──
+                <div class="lg:col-span-1 space-y-4">
+                    <div class="bg-white rounded-2xl p-6 shadow-soft border border-gray-100">
+                        <h4 class="font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fa-solid fa-info-circle text-primary mr-2"></i>
+                            "当前配置"
+                        </h4>
+                        <div class="space-y-3 text-sm">
+                            <div class="flex justify-between py-2 border-b border-gray-50">
+                                <span class="text-gray-500">"声线"</span>
+                                <span class="font-medium text-gray-800">
+                                    {selected_voice_name}
+                                </span>
+                            </div>
+                            <div class="flex justify-between py-2 border-b border-gray-50">
+                                <span class="text-gray-500">"音高"</span>
+                                <span class="font-medium text-gray-800">
+                                    {move || format!("{:.2}", param_signal.get().pitch)}
+                                </span>
+                            </div>
+                            <div class="flex justify-between py-2 border-b border-gray-50">
+                                <span class="text-gray-500">"语速"</span>
+                                <span class="font-medium text-gray-800">
+                                    {move || format!("{:.2}x", param_signal.get().speed)}
+                                </span>
+                            </div>
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-500">"音量"</span>
+                                <span class="font-medium text-gray-800">
+                                    {move || {
+                                        format!("{:.0}%", param_signal.get().volume * 100.0)
+                                    }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    // 分享按钮（模糊效果）
+                    <div class="space-y-3">
+                        <button
+                            class="w-full py-3 bg-primary/20 text-primary/60 rounded-xl font-medium cursor-not-allowed backdrop-blur-sm relative overflow-hidden"
+                            disabled
+                        >
+                            <div class="absolute inset-0 bg-white/40 backdrop-blur-[2px]"></div>
+                            <span class="relative z-10">
+                                <i class="fa-solid fa-share-nodes mr-2"></i>
+                                "创建分享"
+                            </span>
+                        </button>
+                        <button
+                            class="w-full py-3 bg-secondary/20 text-secondary/60 rounded-xl font-medium cursor-not-allowed backdrop-blur-sm relative overflow-hidden"
+                            disabled
+                        >
+                            <div class="absolute inset-0 bg-white/40 backdrop-blur-[2px]"></div>
+                            <span class="relative z-10">
+                                <i class="fa-solid fa-filter mr-2"></i>
+                                "分享为滤镜"
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                // ── 右栏：可视化 + 播放 ──
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden">
+                        {move || {
+                            match (is_pending.get(), value.get()) {
+                                (true, _) => {
+                                    view! {
+                                        <div class="flex flex-col items-center justify-center py-20">
+                                            <div class="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-6"></div>
+                                            <p class="text-gray-500 text-lg">
+                                                "AI 正在合成您的声音..."
+                                            </p>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+                                (false, Some(Ok(library_id))) => {
+                                    let audio_url = format!("/api/audio/{}", library_id);
+                                    view! {
+                                        <div class="flex flex-col">
+                                            // 可视化区域
+                                            <div class="w-full h-[300px] bg-gradient-to-b from-gray-50 to-white flex items-center justify-center overflow-hidden">
+                                                <canvas
+                                                    node_ref=canvas_ref
+                                                    class="z-10"
+                                                    width="600"
+                                                    height="300"
+                                                ></canvas>
+                                            </div>
+
+                                            // 播放器
+                                            <div class="p-6 border-t border-gray-100">
+                                                <div class="flex items-center justify-between text-sm text-gray-500 mb-3">
+                                                    <span class="flex items-center">
+                                                        <i class="fa-solid fa-check-circle text-green-500 mr-2"></i>
+                                                        "生成完成"
+                                                    </span>
+                                                    <button
+                                                        class="text-primary hover:text-primary/80 flex items-center hover:underline"
+                                                        on:click={
+                                                            #[allow(unused_variables)]
+                                                            let url = audio_url.clone();
+                                                            move |_| {
+                                                                #[cfg(target_arch = "wasm32")]
+                                                                {
+                                                                    use wasm_bindgen::JsCast;
+                                                                    let a = web_sys::window()
+                                                                        .and_then(|w| w.document())
+                                                                        .and_then(|d| d.create_element("a").ok())
+                                                                        .and_then(|a| {
+                                                                            a
+                                                                                .dyn_into::<web_sys::HtmlAnchorElement>()
+                                                                                .ok()
+                                                                        });
+                                                                    if let Some(a) = a {
+                                                                        a.set_href(&url);
+                                                                        a.set_download("tts_audio.mp3");
+                                                                        a.click();
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    >
+                                                        <i class="fa-solid fa-download mr-1"></i>
+                                                        "下载"
+                                                    </button>
+                                                </div>
+
+                                                <audio
+                                                    node_ref=audio_ref
+                                                    controls
+                                                    autoplay
+                                                    class="w-full h-10"
+                                                    src=audio_url.clone()
+                                                    on:play=move |_| is_playing.set(true)
+                                                    on:pause=move |_| is_playing.set(false)
+                                                    crossorigin="anonymous"
+                                                ></audio>
+                                            </div>
+
+                                            // 底部分享按钮（模糊）
+                                            <div class="p-4 border-t border-gray-100 bg-gray-50/50 flex justify-center">
+                                                <button
+                                                    class="px-8 py-2.5 bg-primary/20 text-primary/60 rounded-xl font-medium cursor-not-allowed relative overflow-hidden"
+                                                    disabled
+                                                >
+                                                    <div class="absolute inset-0 bg-white/40 backdrop-blur-[2px]"></div>
+                                                    <span class="relative z-10">
+                                                        <i class="fa-solid fa-share mr-2"></i>
+                                                        "分享到广场"
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+                                (false, Some(Err(e))) => {
+                                    debug_error!("生成失败: {:?}", e);
+                                    view! {
+                                        <div class="text-center py-16 text-red-500">
+                                            <i class="fa-solid fa-triangle-exclamation text-5xl mb-4 opacity-50"></i>
+                                            <p class="text-lg font-medium">"生成失败"</p>
+                                            <p class="text-sm opacity-70 mt-2">{e.to_string()}</p>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+                                _ => {
+                                    view! {
+                                        <div class="flex flex-col items-center justify-center py-20 text-gray-400">
+                                            <i class="fa-solid fa-headphones text-6xl mb-4 opacity-30"></i>
+                                            <p class="text-lg">"等待生成..."</p>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+                            }
+                        }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// 辅助函数
+#[cfg(target_arch = "wasm32")]
+fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
+    use wasm_bindgen::JsCast;
+    web_sys::window()
+        .unwrap()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn request_animation_frame(_f: &impl std::any::Any) {}

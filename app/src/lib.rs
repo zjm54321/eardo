@@ -56,6 +56,7 @@ pub fn App() -> impl IntoView {
 
                     // 原首页功能移动到 /home
                     <Route path=StaticSegment("home") view=pages::homepage::HomePage />
+                    <Route path=StaticSegment("setup") view=pages::voicesetup::VoiceSetupPage />
 
                     <Route path=StaticSegment("voice") view=pages::playground::Playground />
                     <Route path=StaticSegment("filters") view=pages::voicefilter::VoiceFilterPage />

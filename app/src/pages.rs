@@ -6,6 +6,7 @@ pub mod help; // 帮助中心
 pub mod homepage;
 pub mod playground;
 pub mod voicefilter;
+pub mod voicesetup;
 pub mod welcome; // 新增
 
 #[component]

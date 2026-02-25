@@ -8,10 +8,10 @@ use leptos_router::hooks::use_query_map;
 // 用于 create_post_action 的有效负载
 #[derive(Clone)]
 pub struct CreatePostPayload {
-    title: String,
-    content: String,
-    voice_id: String,
-    audio_data: Vec<u8>,
+    pub title: String,
+    pub content: String,
+    pub voice_id: String,
+    pub audio_data: Vec<u8>,
 }
 
 #[server]
@@ -267,6 +267,18 @@ pub fn HomePage() -> impl IntoView {
     view! {
         <div class="min-h-screen bg-base-100 pb-12">
             <div class="container mx-auto px-4 py-8 md:py-12 max-w-6xl">
+
+                // 右上角切换到 Setup 模式按钮
+                <div class="flex justify-end mb-4">
+                    <a
+                        href="/setup"
+                        class="inline-flex items-center px-4 py-2 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-sm font-medium transition-all group"
+                    >
+                        <i class="fa-solid fa-wand-magic-sparkles mr-2 group-hover:rotate-12 transition-transform"></i>
+                        "渐进式配置"
+                        <i class="fa-solid fa-arrow-right ml-2 text-xs opacity-60 group-hover:translate-x-0.5 transition-transform"></i>
+                    </a>
+                </div>
 
                 <section class="text-center mb-12">
                     <h2 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold mb-4 text-shadow text-dark">
