@@ -2,10 +2,9 @@ use crate::api;
 use crate::api::voice::Parametic;
 use leptos::logging::{debug_error, debug_log};
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 use leptos_router::hooks::use_query_map;
 
-use super::homepage::{ai_rewrite_text, share_voice_filter_to_db, CreatePostPayload};
+use super::homepage::{ai_rewrite_text, CreatePostPayload};
 
 // ─── 主组件 ────────────────────────────────────────────────────
 
@@ -45,10 +44,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
     let (show_share_modal, set_show_share_modal) = signal(false);
     let (share_title, set_share_title) = signal(String::new());
     let (share_content, set_share_content) = signal(String::new());
-    let (show_filter_share, set_show_filter_share) = signal(false);
-    let (filter_share_title, set_filter_share_title) = signal(String::new());
-    let (filter_share_intro, set_filter_share_intro) = signal(String::new());
-
     // ── meta_id 预加载 ──
     let url_meta_id = get_str_param_opt("meta_id");
     let meta_resource = Resource::new_blocking(
@@ -190,14 +185,14 @@ pub fn VoiceSetupPage() -> impl IntoView {
         <div class="min-h-screen pb-12">
             <div class="container mx-auto px-4 py-8 max-w-5xl">
 
-                // 右上角切换到经典模式按钮
+                // 右上角切换到专业模式按钮
                 <div class="flex justify-end mb-4">
                     <a
                         href="/home"
                         class="inline-flex items-center px-4 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-medium transition-all group"
                     >
                         <i class="fa-solid fa-table-columns mr-2 group-hover:scale-110 transition-transform"></i>
-                        "经典模式"
+                        "专业模式"
                         <i class="fa-solid fa-arrow-right ml-2 text-xs opacity-60 group-hover:translate-x-0.5 transition-transform"></i>
                     </a>
                 </div>
@@ -286,7 +281,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
                             is_instruction_mode=is_instruction_mode
                             instruction_text=instruction_text
                             voices_resource=voices_resource
-                            open_filter_share=set_show_filter_share
                             on_back=move || current_step.set(1)
                             on_next=move || current_step.set(3)
                         />
@@ -396,130 +390,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
                 </div>
             </Show>
 
-            // ── 声音滤镜分享模态 ──
-            <Show when=move || show_filter_share.get()>
-                <div
-                    class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-                    on:click=move |_| set_show_filter_share.set(false)
-                >
-                    <div
-                        class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col"
-                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
-                    >
-                        <div class="flex justify-between items-center p-6 border-b border-gray-200">
-                            <h2 class="text-2xl font-bold text-gray-800">"分享声音滤镜"</h2>
-                            <button
-                                class="text-gray-400 hover:text-gray-600"
-                                on:click=move |_| set_show_filter_share.set(false)
-                            >
-                                <i class="fa-solid fa-xmark text-xl"></i>
-                            </button>
-                        </div>
-                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
-                            <div class="grid grid-cols-1 gap-4">
-                                <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                        "标题（最多60字）"
-                                    </label>
-                                    <input
-                                        type="text"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                        placeholder="为滤镜取一个标题"
-                                        prop:value=move || filter_share_title.get()
-                                        on:input=move |ev| {
-                                            let mut v = event_target_value(&ev);
-                                            if v.chars().count() > 60 {
-                                                v = v.chars().take(60).collect();
-                                            }
-                                            set_filter_share_title.set(v);
-                                        }
-                                    />
-                                    <div class="text-xs text-gray-400 text-right mt-1">
-                                        {move || {
-                                            format!("{}/60", filter_share_title.get().chars().count())
-                                        }}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                        "介绍（最多60字）"
-                                    </label>
-                                    <input
-                                        type="text"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                        placeholder="简要介绍滤镜用途"
-                                        prop:value=move || filter_share_intro.get()
-                                        on:input=move |ev| {
-                                            let mut v = event_target_value(&ev);
-                                            if v.chars().count() > 60 {
-                                                v = v.chars().take(60).collect();
-                                            }
-                                            set_filter_share_intro.set(v);
-                                        }
-                                    />
-                                    <div class="text-xs text-gray-400 text-right mt-1">
-                                        {move || {
-                                            format!("{}/60", filter_share_intro.get().chars().count())
-                                        }}
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                <h4 class="text-sm font-semibold text-gray-700 mb-3">"具体参数"</h4>
-                                <div class="grid grid-cols-2 gap-3 text-sm text-gray-600">
-                                    <div>
-                                        <span class="text-gray-400">"声线："</span>
-                                        {move || voice_signal.get()}
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-400">"音高："</span>
-                                        {move || format!("{:.2}", param_signal.get().pitch)}
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-400">"语速："</span>
-                                        {move || format!("{:.2}", param_signal.get().speed)}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
-                            <button
-                                class="px-6 py-2 bg-secondary hover:bg-secondary/90 text-white rounded-lg font-medium disabled:opacity-50"
-                                on:click=move |_| {
-                                    let title = filter_share_title.get();
-                                    let intro = filter_share_intro.get();
-                                    let p = param_signal.get();
-                                    let v = voice_signal.get();
-                                    spawn_local(async move {
-                                        match share_voice_filter_to_db(
-                                                title,
-                                                intro,
-                                                v,
-                                                p.pitch,
-                                                p.speed,
-                                            )
-                                            .await
-                                        {
-                                            Ok(_) => debug_log!("滤镜分享已入库"),
-                                            Err(e) => {
-                                                leptos::logging::error!("滤镜分享失败: {}", e)
-                                            }
-                                        }
-                                    });
-                                    set_show_filter_share.set(false);
-                                }
-                                disabled=move || {
-                                    filter_share_title.get().trim().is_empty()
-                                        || filter_share_intro.get().trim().is_empty()
-                                }
-                            >
-                                <i class="fa-solid fa-share mr-2"></i>
-                                "分享"
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </Show>
         </div>
     }
 }
@@ -553,6 +423,7 @@ fn StepVoiceSelect(
                         Some(Ok(voices)) => {
                             let on_next = on_next.clone();
                             view! {
+                                <div class="max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                                     <For
                                         each=move || voices.clone()
@@ -631,9 +502,10 @@ fn StepVoiceSelect(
                                         }
                                     />
                                 </div>
+                                </div>
 
                                 // 下一步按钮
-                                <div class="flex justify-center">
+                                <div class="flex justify-center mt-6">
                                     <button
                                         class="px-10 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-50"
                                         on:click=move |_| on_next()
@@ -682,7 +554,6 @@ fn StepParamConfig(
     is_instruction_mode: RwSignal<bool>,
     instruction_text: RwSignal<String>,
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
-    open_filter_share: WriteSignal<bool>,
     on_back: impl Fn() + 'static + Clone + Send,
     on_next: impl Fn() + 'static + Clone + Send,
 ) -> impl IntoView {
@@ -811,17 +682,6 @@ fn StepParamConfig(
                             }
                         }}
                     </Suspense>
-
-                    // 分享滤镜按钮
-                    <div class="mt-6 pt-6 border-t border-gray-100 flex justify-end">
-                        <button
-                            class="text-sm px-4 py-2 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
-                            on:click=move |_| open_filter_share.set(true)
-                        >
-                            <i class="fa-solid fa-share mr-2"></i>
-                            "分享为滤镜"
-                        </button>
-                    </div>
                 </div>
 
                 // 导航按钮
@@ -1508,16 +1368,6 @@ fn StepGenerate(
                             <span class="relative z-10">
                                 <i class="fa-solid fa-share-nodes mr-2"></i>
                                 "创建分享"
-                            </span>
-                        </button>
-                        <button
-                            class="w-full py-3 bg-secondary/20 text-secondary/60 rounded-xl font-medium cursor-not-allowed backdrop-blur-sm relative overflow-hidden"
-                            disabled
-                        >
-                            <div class="absolute inset-0 bg-white/40 backdrop-blur-[2px]"></div>
-                            <span class="relative z-10">
-                                <i class="fa-solid fa-filter mr-2"></i>
-                                "分享为滤镜"
                             </span>
                         </button>
                     </div>

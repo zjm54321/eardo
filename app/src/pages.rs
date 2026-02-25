@@ -43,7 +43,7 @@ pub fn Header() -> impl IntoView {
                 <nav class="absolute left-1/2 transform -translate-x-1/2 hidden md:flex items-center space-x-1">
                     // 1. 首页
                     <A
-                        href="/home"
+                        href="/setup"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
                     >
                         <i class="fa-solid fa-house text-gray-400 group-hover:text-primary transition-colors"></i>
