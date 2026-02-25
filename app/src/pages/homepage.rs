@@ -768,7 +768,7 @@ pub fn TraditionalParams(selected_param: RwSignal<Parametic>) -> impl IntoView {
         </div>
 
         // --- 2. 语速 (Speed) ---
-        <div class="mt-8 pb-8">
+        <div class="mt-8">
             <div class="flex justify-between mb-2">
                 <label class="font-medium text-gray-700">"语速 (Speed)"</label>
                 <span class="text-sm text-primary font-bold">
@@ -790,6 +790,32 @@ pub fn TraditionalParams(selected_param: RwSignal<Parametic>) -> impl IntoView {
                     }
                 />
                 <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0x"</span>
+            </div>
+        </div>
+
+        // --- 3. 音量 (Volume) ---
+        <div class="mt-8 pb-8">
+            <div class="flex justify-between mb-2">
+                <label class="font-medium text-gray-700">"音量 (Volume)"</label>
+                <span class="text-sm text-primary font-bold">
+                    {move || format!("{}", selected_param.get().volume)}
+                </span>
+            </div>
+            <div class="relative flex items-center">
+                <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0"</span>
+                <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.01"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
+                    prop:value=move || selected_param.get().volume
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
+                        selected_param.update(|p| p.volume = val);
+                    }
+                />
+                <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0"</span>
             </div>
         </div>
     }
