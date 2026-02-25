@@ -1,18 +1,8 @@
 use crate::api;
 use crate::api::voice::Parametic;
-use leptos::logging::{debug_error, debug_log};
+use leptos::logging::debug_error;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 use leptos_router::hooks::use_query_map;
-
-// 用于 create_post_action 的有效负载
-#[derive(Clone)]
-pub struct CreatePostPayload {
-    pub title: String,
-    pub content: String,
-    pub voice_id: String,
-    pub audio_data: Vec<u8>,
-}
 
 #[server]
 pub async fn ai_rewrite_text(input: String) -> Result<String, ServerFnError> {
@@ -78,7 +68,6 @@ pub fn HomePage() -> impl IntoView {
     let text_signal = RwSignal::new(String::new());
 
     // 初始化声线 ID 和参数（默认值）
-    let initial_voice_id = RwSignal::new(String::new());
     let voice_signal = RwSignal::new(String::new());
 
     let param_signal = RwSignal::new(Parametic {
@@ -86,21 +75,6 @@ pub fn HomePage() -> impl IntoView {
         speed: 1.0,
         volume: 1.0,
     });
-
-    // 保存生成成功的数据用于分享
-    let (_generated_text, set_generated_text) = signal(String::new());
-    let (_generated_voice_name, set_generated_voice_name) = signal(String::new());
-    let (generated_voice_id, set_generated_voice_id) = signal(String::new());
-    let (generated_audio_data, set_generated_audio_data) = signal(Vec::<u8>::new());
-    let (show_share_popup, set_show_share_popup) = signal(false);
-    let (show_share_modal, set_show_share_modal) = signal(false);
-    let (share_title, set_share_title) = signal(String::new());
-    let (share_content, set_share_content) = signal(String::new());
-
-    // 声音滤镜分享弹窗状态与字段
-    let (show_filter_share, set_show_filter_share) = signal(false);
-    let (filter_share_title, set_filter_share_title) = signal(String::new());
-    let (filter_share_intro, set_filter_share_intro) = signal(String::new());
 
     // 指令参数状态
     let is_instruction_mode = RwSignal::new(true);
@@ -131,7 +105,6 @@ pub fn HomePage() -> impl IntoView {
         if let Some(Some(meta)) = meta_resource.get() {
             // 设置 voice_model_id
             voice_signal.set(meta.voice_model_id.to_string());
-            initial_voice_id.set(meta.voice_model_id.to_string());
             
             // 设置参数或指令模式
             if let Some(parametric) = meta.parametric {
@@ -149,7 +122,6 @@ pub fn HomePage() -> impl IntoView {
             if let Some(Ok(voices)) = voices_resource.get() {
                 if let Some(first_voice) = voices.first() {
                     let id = first_voice.id.to_string();
-                    initial_voice_id.set(id.clone());
                     voice_signal.set(id);
                 }
             }
@@ -205,62 +177,7 @@ pub fn HomePage() -> impl IntoView {
 
             let result = api::voice::generate_voice(voice_meta_id, text.clone()).await;
 
-            // 生成成功后保存数据供分享使用
-            if let Ok(library_id) = &result {
-                #[allow(unused_variables)]
-                let audio_url = format!("/api/audio/{}", library_id);
-                set_generated_text.set(text.clone());
-                set_generated_voice_name.set(voice_id.clone());
-                set_generated_voice_id.set(voice_id.clone());
-                // TODO: Fetch audio data from URL if needed for sharing
-                // set_generated_audio_data.set(audio_data.clone());
-                set_show_share_popup.set(true);
-                // 设置默认分享内容
-                set_share_title.set(format!("我的{}", voice_id));
-                set_share_content.set(format!("我使用{}创建了:{}", voice_id, text));
-            }
-
             result
-        }
-    });
-
-    // 创建帖子的 Action
-    let create_post_action = Action::new(move |payload: &CreatePostPayload| {
-        let payload = payload.clone();
-        async move {
-            let post = api::post::VoicePost {
-                id: uuid::Uuid::new_v4(),
-                title: payload.title,
-                content: payload.content,
-                library_id: uuid::Uuid::parse_str(&payload.voice_id).unwrap_or_default(),
-                author: uuid::Uuid::nil(), // TODO: 获取当前用户ID
-                status: api::post::PostStatus::Normal,
-                comments_count: 0,
-                likes_count: 0,
-            };
-            api::post::create_voice_post(post).await
-        }
-    });
-
-    // 监听 create_post_action 的完成
-    Effect::new(move |_| {
-        match create_post_action.value().get() {
-            Some(Ok(_)) => {
-                debug_log!("帖子创建成功");
-                set_show_share_modal.set(false);
-                set_generated_text.set(String::new());
-                set_generated_voice_name.set(String::new());
-                set_generated_voice_id.set(String::new());
-                set_generated_audio_data.set(Vec::new());
-                set_share_title.set(String::new());
-                set_share_content.set(String::new());
-            }
-            Some(Err(e)) => {
-                debug_error!("帖子创建失败: {}", e);
-            }
-            None => {
-                // 还没有结果
-            }
         }
     });
 
@@ -307,13 +224,6 @@ pub fn HomePage() -> impl IntoView {
                         <ParameterControlCard
                             selected_param=param_signal
                             selected_voice=voice_signal
-                            initial_voice_id=initial_voice_id
-                            initial_param=Parametic {
-                                pitch: 1.0,
-                                speed: 1.0,
-                                volume: 1.0,
-                            }
-                            open_filter_share=set_show_filter_share
                             is_instruction_mode=is_instruction_mode
                             instruction_text=instruction_text
                             voices_resource=voices_resource
@@ -324,416 +234,7 @@ pub fn HomePage() -> impl IntoView {
                 </div>
             </div>
 
-            // 分享弹窗
-            <Show when=move || show_share_popup.get()>
-                <div
-                    class="fixed bottom-6 right-6 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-40 animate-in slide-in-from-bottom-4 duration-300"
-                    style="width: 280px;"
-                >
-                    <div class="flex items-start justify-between mb-3">
-                        <h4 class="font-semibold text-gray-800">"是否分享此作品"</h4>
-                        <button
-                            class="text-gray-400 hover:text-gray-600 transition-colors"
-                            on:click=move |_| set_show_share_popup.set(false)
-                        >
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                    </div>
-                    <p class="text-sm text-gray-500 mb-4">
-                        "分享到社区，与其他用户一起欣赏你的创作"
-                    </p>
-                    <div class="flex gap-3">
-                        <button
-                            class="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors text-sm font-medium"
-                            on:click=move |_| set_show_share_popup.set(false)
-                        >
-                            稍后再说
-                        </button>
-                        <button
-                            class="flex-1 px-3 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors text-sm font-medium"
-                            on:click=move |_| {
-                                set_show_share_popup.set(false);
-                                set_show_share_modal.set(true);
-                            }
-                        >
-                            是的
-                        </button>
-                    </div>
-                </div>
-            </Show>
-
-            // 分享模态窗口
-            <Show when=move || show_share_modal.get()>
-                <div
-                    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-                    on:click=move |_| set_show_share_modal.set(false)
-                >
-                    <div
-                        class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
-                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
-                    >
-                        // 头部
-                        <div class="flex justify-between items-center p-6 border-b border-gray-200">
-                            <h2 class="text-2xl font-bold text-gray-800">"创建分享作品"</h2>
-                            <button
-                                class="text-gray-400 hover:text-gray-600 transition-colors"
-                                on:click=move |_| set_show_share_modal.set(false)
-                            >
-                                <i class="fa-solid fa-xmark text-xl"></i>
-                            </button>
-                        </div>
-
-                        // 内容区域 (可滚动)
-                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
-                            // 标题输入
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    "作品标题"
-                                </label>
-                                <input
-                                    type="text"
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
-                                    placeholder="请输入作品标题..."
-                                    prop:value=move || share_title.get()
-                                    on:input=move |ev| set_share_title.set(event_target_value(&ev))
-                                />
-                            </div>
-
-                            // 内容输入
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    "作品描述"
-                                </label>
-                                <textarea
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-none"
-                                    rows="8"
-                                    placeholder="请输入作品描述..."
-                                    prop:value=move || share_content.get()
-                                    on:input=move |ev| {
-                                        set_share_content.set(event_target_value(&ev))
-                                    }
-                                ></textarea>
-                            </div>
-
-                            // 提示信息
-                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                <p class="text-xs text-blue-700">
-                                    <i class="fa-solid fa-circle-info mr-2"></i>
-                                    "分享后将在社区中显示，所有用户都可以欣赏和互动"
-                                </p>
-                            </div>
-                        </div>
-
-                        // 底部操作栏
-                        <div class="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
-                            <button
-                                class="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors font-medium"
-                                on:click=move |_| set_show_share_modal.set(false)
-                            >
-                                "取消"
-                            </button>
-                            <button
-                                class="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                on:click=move |_| {
-                                    let title = share_title.get();
-                                    let content = share_content.get();
-                                    let voice_id = generated_voice_id.get();
-                                    let audio_data = generated_audio_data.get();
-                                    if title.trim().is_empty() || content.trim().is_empty() {
-                                        return;
-                                    }
-                                    create_post_action
-                                        .dispatch(CreatePostPayload {
-                                            title,
-                                            content,
-                                            voice_id,
-                                            audio_data,
-                                        });
-                                }
-                                disabled=move || {
-                                    share_title.get().trim().is_empty()
-                                        || share_content.get().trim().is_empty()
-                                }
-                            >
-                                "创建"
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </Show>
-
-            // 声音滤镜分享全屏弹窗
-            <Show when=move || show_filter_share.get()>
-                <div
-                    class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-                    on:click=move |_| set_show_filter_share.set(false)
-                >
-                    <div
-                        class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col"
-                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
-                    >
-                        <div class="flex justify-between items-center p-6 border-b border-gray-200">
-                            <h2 class="text-2xl font-bold text-gray-800">"分享声音滤镜"</h2>
-                            <button
-                                class="text-gray-400 hover:text-gray-600"
-                                on:click=move |_| set_show_filter_share.set(false)
-                            >
-                                <i class="fa-solid fa-xmark text-xl"></i>
-                            </button>
-                        </div>
-
-                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
-                            // 标题与介绍（限制 60 字）
-                            <div class="grid grid-cols-1 gap-4">
-                                <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                        "标题（最多60字）"
-                                    </label>
-                                    <input
-                                        type="text"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                        placeholder="为滤镜取一个标题"
-                                        prop:value=move || filter_share_title.get()
-                                        on:input=move |ev| {
-                                            let mut v = event_target_value(&ev);
-                                            if v.chars().count() > 60 {
-                                                v = v.chars().take(60).collect();
-                                            }
-                                            set_filter_share_title.set(v);
-                                        }
-                                    />
-                                    <div class="text-xs text-gray-400 text-right mt-1">
-                                        {move || {
-                                            format!("{}/60", filter_share_title.get().chars().count())
-                                        }}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                        "介绍（最多60字）"
-                                    </label>
-                                    <input
-                                        type="text"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                        placeholder="简要介绍滤镜用途"
-                                        prop:value=move || filter_share_intro.get()
-                                        on:input=move |ev| {
-                                            let mut v = event_target_value(&ev);
-                                            if v.chars().count() > 60 {
-                                                v = v.chars().take(60).collect();
-                                            }
-                                            set_filter_share_intro.set(v);
-                                        }
-                                    />
-                                    <div class="text-xs text-gray-400 text-right mt-1">
-                                        {move || {
-                                            format!("{}/60", filter_share_intro.get().chars().count())
-                                        }}
-                                    </div>
-                                </div>
-                            </div>
-
-                            // 参数预览
-                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                <h4 class="text-sm font-semibold text-gray-700 mb-3">
-                                    "具体参数"
-                                </h4>
-                                <div class="grid grid-cols-2 gap-3 text-sm text-gray-600">
-                                    <div>
-                                        <span class="text-gray-400">"声线："</span>
-                                        {move || voice_signal.get()}
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-400">"音高："</span>
-                                        {move || format!("{:.2}", param_signal.get().pitch)}
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-400">"语速："</span>
-                                        {move || format!("{:.2}", param_signal.get().speed)}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
-                            <button
-                                class="px-6 py-2 bg-secondary hover:bg-secondary/90 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                on:click=move |_| {
-                                    let title = filter_share_title.get();
-                                    let intro = filter_share_intro.get();
-                                    let p = param_signal.get();
-                                    let v = voice_signal.get();
-                                    spawn_local(async move {
-                                        match share_voice_filter_to_db(
-                                                title,
-                                                intro,
-                                                v,
-                                                p.pitch,
-                                                p.speed,
-                                            )
-                                            .await
-                                        {
-                                            Ok(_id) => {
-                                                leptos::logging::debug_log!("滤镜分享已入库");
-                                            }
-                                            Err(e) => {
-                                                leptos::logging::error!("滤镜分享失败: {}", e);
-                                            }
-                                        }
-                                    });
-                                    set_show_filter_share.set(false);
-                                }
-                                disabled=move || {
-                                    filter_share_title.get().trim().is_empty()
-                                        || filter_share_intro.get().trim().is_empty()
-                                }
-                            >
-                                <i class="fa-solid fa-share mr-2"></i>
-                                "分享"
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </Show>
         </div>
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn copy_to_clipboard(text: &str) {
-    use js_sys::{Function, Reflect};
-    use wasm_bindgen::JsCast;
-    use wasm_bindgen::JsValue;
-
-    if let Some(window) = web_sys::window() {
-        // 尝试 navigator.clipboard.writeText
-        if let Ok(nav) = Reflect::get(&window, &JsValue::from_str("navigator")) {
-            if let Ok(clipboard) = Reflect::get(&nav, &JsValue::from_str("clipboard")) {
-                if let Ok(write_text) = Reflect::get(&clipboard, &JsValue::from_str("writeText")) {
-                    if let Some(f) = write_text.dyn_ref::<Function>() {
-                        let _ = f.call1(&clipboard, &JsValue::from_str(text));
-                        return;
-                    }
-                }
-            }
-        }
-
-        // 回退方案：创建隐藏的 textarea，使用 execCommand('copy')
-        if let Some(document) = window.document() {
-            if let Ok(el) = document.create_element("textarea") {
-                if let Ok(textarea) = el.dyn_into::<web_sys::HtmlTextAreaElement>() {
-                    textarea.set_value(text);
-                    let _ =
-                        textarea.set_attribute("style", "position:fixed;top:-1000px;left:-1000px;");
-                    if let Some(body) = document.body() {
-                        let _ = body.append_child(&textarea);
-                        textarea.select();
-                        if let Ok(exec_cmd) = js_sys::Reflect::get(
-                            &document,
-                            &wasm_bindgen::JsValue::from_str("execCommand"),
-                        ) {
-                            if let Some(f) = exec_cmd.dyn_ref::<js_sys::Function>() {
-                                let _ =
-                                    f.call1(&document, &wasm_bindgen::JsValue::from_str("copy"));
-                            }
-                        }
-                        let _ = body.remove_child(&textarea);
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn copy_to_clipboard(_text: &str) {}
-
-// 将当前声线与参数作为“声音滤镜”分享入库
-#[server]
-pub async fn share_voice_filter_to_db(
-    title: String,
-    intro: String,
-    base_model_id: String,
-    pitch: f32,
-    speed: f32,
-) -> Result<String, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        use anyhow::Context;
-        use axum_extra::extract::cookie::Cookie;
-        use http::HeaderMap;
-        use leptos::prelude::use_context;
-        use uuid::Uuid;
-
-        let pool = use_context::<sqlx::PgPool>()
-            .ok_or_else(|| ServerFnError::new("未找到数据库连接池"))?;
-
-        // 从 Cookie 读取 session_token
-        let headers =
-            use_context::<HeaderMap>().ok_or_else(|| ServerFnError::new("未找到请求头信息"))?;
-        let cookie_header = headers
-            .get("cookie")
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| ServerFnError::new("未找到 Cookie"))?;
-        let mut session_token: Option<String> = None;
-        for cookie_str in cookie_header.split(';') {
-            if let Ok(c) = Cookie::parse(cookie_str.trim()) {
-                if c.name() == "session_token" {
-                    session_token = Some(c.value().to_string());
-                    break;
-                }
-            }
-        }
-        let token = session_token.ok_or_else(|| ServerFnError::new("未登录或会话失效"))?;
-
-        // 查 user_id
-        let (user_id,): (Uuid,) =
-            sqlx::query_as("SELECT user_id FROM user_session WHERE id = $1 AND expires_at > NOW()")
-                .bind(Uuid::parse_str(&token).unwrap_or_default())
-                .fetch_one(&pool)
-                .await
-                .map_err(|_| ServerFnError::new("会话已过期或无效"))?;
-
-        // 生成 ID 并插入 voice_meta_infos
-        let id = Uuid::new_v4();
-        sqlx::query(
-            r#"INSERT INTO voice_meta
-               (id, voice_model_id, parametric)
-             VALUES ($1, $2, $3)"#,
-        )
-        .bind(id)
-        .bind(Uuid::parse_str(&base_model_id).unwrap_or_default())
-        .bind(crate::api::voice::Parametic {
-            pitch,
-            speed,
-            volume: 1.0,
-        })
-        .execute(&pool)
-        .await
-        .context("创建声音滤镜失败")
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let post_id = Uuid::new_v4();
-        sqlx::query(
-            r#"INSERT INTO voice_meta_post
-               (id, title, content, meta_id, author, status)
-             VALUES ($1, $2, $3, $4, $5, 'Normal')"#,
-        )
-        .bind(post_id)
-        .bind(&title)
-        .bind(&intro)
-        .bind(id)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .context("创建声音滤镜帖子失败")
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        Ok(post_id.to_string())
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Ok(String::new())
     }
 }
 
@@ -1370,12 +871,6 @@ pub fn ParameterControlCard(
     selected_param: RwSignal<Parametic>,
     /// 当前选中的声线
     selected_voice: RwSignal<String>,
-    /// 初始基线：声线ID
-    initial_voice_id: RwSignal<String>,
-    /// 初始基线：参数
-    initial_param: Parametic,
-    /// 触发分享弹窗
-    open_filter_share: WriteSignal<bool>,
     /// 是否为指令模式
     is_instruction_mode: RwSignal<bool>,
     /// 指令文本
@@ -1383,16 +878,6 @@ pub fn ParameterControlCard(
     /// 声线列表资源
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
 ) -> impl IntoView {
-    // 判定是否有改动
-    let is_modified = Memo::new(move |_| {
-        let v = selected_voice.get();
-        let p = selected_param.get();
-        let dv = v != initial_voice_id.get();
-        let dp = (p.pitch - initial_param.pitch).abs() > 1e-4
-            || (p.speed - initial_param.speed).abs() > 1e-4;
-        dv || dp
-    });
-
     let selected_ability = move || {
         let voice_id = selected_voice.get();
         if let Some(Ok(voices)) = voices_resource.get() {
@@ -1442,18 +927,6 @@ pub fn ParameterControlCard(
                             </button>
                         </Show>
                     </Suspense>
-                </div>
-                <div class="flex items-center gap-3">
-                    <Show when=move || is_modified.get()>
-                        <button
-                            class="text-sm px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex items-center"
-                            on:click=move |_| open_filter_share.set(true)
-                            title="分享当前声线与参数"
-                        >
-                            <i class="fa-solid fa-share mr-2"></i>
-                            "分享"
-                        </button>
-                    </Show>
                 </div>
             </div>
 

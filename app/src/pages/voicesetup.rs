@@ -1,10 +1,10 @@
 use crate::api;
 use crate::api::voice::Parametic;
-use leptos::logging::{debug_error, debug_log};
+use leptos::logging::debug_error;
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
 
-use super::homepage::{ai_rewrite_text, CreatePostPayload};
+use super::homepage::ai_rewrite_text;
 
 // ─── 主组件 ────────────────────────────────────────────────────
 
@@ -36,14 +36,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
     // ── 文本 ──
     let text_signal = RwSignal::new(String::new());
 
-    // ── 生成 & 分享状态 ──
-    let (_generated_text, set_generated_text) = signal(String::new());
-    let (_generated_voice_name, set_generated_voice_name) = signal(String::new());
-    let (generated_voice_id, set_generated_voice_id) = signal(String::new());
-    let (generated_audio_data, set_generated_audio_data) = signal(Vec::<u8>::new());
-    let (show_share_modal, set_show_share_modal) = signal(false);
-    let (share_title, set_share_title) = signal(String::new());
-    let (share_content, set_share_content) = signal(String::new());
     // ── meta_id 预加载 ──
     let url_meta_id = get_str_param_opt("meta_id");
     let meta_resource = Resource::new_blocking(
@@ -130,13 +122,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
                 }
             };
             let result = api::voice::generate_voice(voice_meta_id, text.clone()).await;
-            if let Ok(_library_id) = &result {
-                set_generated_text.set(text.clone());
-                set_generated_voice_name.set(voice_id.clone());
-                set_generated_voice_id.set(voice_id.clone());
-                set_share_title.set("我的声音作品".to_string());
-                set_share_content.set(format!("使用 AI 声音创作平台生成：{}", text));
-            }
             result
         }
     });
@@ -145,31 +130,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
     Effect::new(move |_| {
         if let Some(Ok(_)) = generate_action.value().get() {
             current_step.set(4);
-        }
-    });
-
-    // ── 创建帖子 Action ──
-    let create_post_action = Action::new(move |payload: &CreatePostPayload| {
-        let payload = payload.clone();
-        async move {
-            let post = api::post::VoicePost {
-                id: uuid::Uuid::new_v4(),
-                title: payload.title,
-                content: payload.content,
-                library_id: uuid::Uuid::parse_str(&payload.voice_id).unwrap_or_default(),
-                author: uuid::Uuid::nil(),
-                status: api::post::PostStatus::Normal,
-                comments_count: 0,
-                likes_count: 0,
-            };
-            api::post::create_voice_post(post).await
-        }
-    });
-
-    Effect::new(move |_| {
-        if let Some(Ok(_)) = create_post_action.value().get() {
-            debug_log!("帖子创建成功");
-            set_show_share_modal.set(false);
         }
     });
 
@@ -306,89 +266,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
                     </Show>
                 </div>
             </div>
-
-            // ── 分享作品模态 ──
-            <Show when=move || show_share_modal.get()>
-                <div
-                    class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-                    on:click=move |_| set_show_share_modal.set(false)
-                >
-                    <div
-                        class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
-                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
-                    >
-                        <div class="flex justify-between items-center p-6 border-b border-gray-200">
-                            <h2 class="text-2xl font-bold text-gray-800">"创建分享作品"</h2>
-                            <button
-                                class="text-gray-400 hover:text-gray-600"
-                                on:click=move |_| set_show_share_modal.set(false)
-                            >
-                                <i class="fa-solid fa-xmark text-xl"></i>
-                            </button>
-                        </div>
-                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    "作品标题"
-                                </label>
-                                <input
-                                    type="text"
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                    placeholder="请输入作品标题..."
-                                    prop:value=move || share_title.get()
-                                    on:input=move |ev| set_share_title.set(event_target_value(&ev))
-                                />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    "作品描述"
-                                </label>
-                                <textarea
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                                    rows="6"
-                                    placeholder="请输入作品描述..."
-                                    prop:value=move || share_content.get()
-                                    on:input=move |ev| {
-                                        set_share_content.set(event_target_value(&ev))
-                                    }
-                                ></textarea>
-                            </div>
-                        </div>
-                        <div class="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
-                            <button
-                                class="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium"
-                                on:click=move |_| set_show_share_modal.set(false)
-                            >
-                                "取消"
-                            </button>
-                            <button
-                                class="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg font-medium disabled:opacity-50"
-                                on:click=move |_| {
-                                    let title = share_title.get();
-                                    let content = share_content.get();
-                                    let voice_id = generated_voice_id.get();
-                                    let audio_data = generated_audio_data.get();
-                                    if !title.trim().is_empty() && !content.trim().is_empty() {
-                                        create_post_action
-                                            .dispatch(CreatePostPayload {
-                                                title,
-                                                content,
-                                                voice_id,
-                                                audio_data,
-                                            });
-                                    }
-                                }
-                                disabled=move || {
-                                    share_title.get().trim().is_empty()
-                                        || share_content.get().trim().is_empty()
-                                }
-                            >
-                                "创建"
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </Show>
 
         </div>
     }
@@ -1357,20 +1234,6 @@ fn StepGenerate(
                             </div>
                         </div>
                     </div>
-
-                    // 分享按钮（模糊效果）
-                    <div class="space-y-3">
-                        <button
-                            class="w-full py-3 bg-primary/20 text-primary/60 rounded-xl font-medium cursor-not-allowed backdrop-blur-sm relative overflow-hidden"
-                            disabled
-                        >
-                            <div class="absolute inset-0 bg-white/40 backdrop-blur-[2px]"></div>
-                            <span class="relative z-10">
-                                <i class="fa-solid fa-share-nodes mr-2"></i>
-                                "创建分享"
-                            </span>
-                        </button>
-                    </div>
                 </div>
 
                 // ── 右栏：可视化 + 播放 ──
@@ -1451,20 +1314,6 @@ fn StepGenerate(
                                                     on:pause=move |_| is_playing.set(false)
                                                     crossorigin="anonymous"
                                                 ></audio>
-                                            </div>
-
-                                            // 底部分享按钮（模糊）
-                                            <div class="p-4 border-t border-gray-100 bg-gray-50/50 flex justify-center">
-                                                <button
-                                                    class="px-8 py-2.5 bg-primary/20 text-primary/60 rounded-xl font-medium cursor-not-allowed relative overflow-hidden"
-                                                    disabled
-                                                >
-                                                    <div class="absolute inset-0 bg-white/40 backdrop-blur-[2px]"></div>
-                                                    <span class="relative z-10">
-                                                        <i class="fa-solid fa-share mr-2"></i>
-                                                        "分享到广场"
-                                                    </span>
-                                                </button>
                                             </div>
                                         </div>
                                     }
