@@ -1,5 +1,6 @@
 use crate::api;
 use crate::api::voice::Parametic;
+use crate::pages::share::ShareVoiceConfigModal;
 use leptos::logging::debug_error;
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
@@ -80,6 +81,9 @@ pub fn HomePage() -> impl IntoView {
     let is_instruction_mode = RwSignal::new(true);
     let instruction_text = RwSignal::new(String::new());
 
+    // 分享弹窗状态
+    let (show_share, set_show_share) = signal(false);
+
     // Resource 用于异步获取数据
     let voices_resource = Resource::new(|| (), |_| api::voice::list_voice_models());
 
@@ -105,7 +109,7 @@ pub fn HomePage() -> impl IntoView {
         if let Some(Some(meta)) = meta_resource.get() {
             // 设置 voice_model_id
             voice_signal.set(meta.voice_model_id.to_string());
-            
+
             // 设置参数或指令模式
             if let Some(parametric) = meta.parametric {
                 is_instruction_mode.set(false);
@@ -220,7 +224,7 @@ pub fn HomePage() -> impl IntoView {
                     <div class="lg:col-span-2 space-y-8">
                         // 1. 文字输入
                         <TextInputCard text=text_signal />
-                        // 2. 参数调节 + 分享按钮
+                        // 2. 参数调节
                         <ParameterControlCard
                             selected_param=param_signal
                             selected_voice=voice_signal
@@ -234,6 +238,25 @@ pub fn HomePage() -> impl IntoView {
                 </div>
             </div>
 
+            // 右侧浮窗分享按钮
+            <button
+                class="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 rounded-full bg-primary text-white shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all flex items-center justify-center group"
+                title="分享当前声音配置"
+                on:click=move |_| set_show_share.set(true)
+            >
+                <i class="fa-solid fa-share-nodes text-lg group-hover:rotate-12 transition-transform"></i>
+            </button>
+
+            // 分享声音配置弹窗
+            <ShareVoiceConfigModal
+                show=show_share
+                set_show=set_show_share
+                voice_model_id=voice_signal
+                parametric=param_signal
+                is_instruction_mode=is_instruction_mode
+                instruction_text=instruction_text
+                voices_resource=voices_resource
+            />
         </div>
     }
 }

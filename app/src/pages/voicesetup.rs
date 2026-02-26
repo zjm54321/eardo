@@ -1,5 +1,6 @@
 use crate::api;
 use crate::api::voice::Parametic;
+use crate::pages::share::ShareVoiceConfigModal;
 use leptos::logging::debug_error;
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
@@ -32,6 +33,9 @@ pub fn VoiceSetupPage() -> impl IntoView {
     });
     let is_instruction_mode = RwSignal::new(false);
     let instruction_text = RwSignal::new(String::new());
+
+    // ── 分享弹窗 ──
+    let (show_share, set_show_share) = signal(false);
 
     // ── 文本 ──
     let text_signal = RwSignal::new(String::new());
@@ -241,6 +245,7 @@ pub fn VoiceSetupPage() -> impl IntoView {
                             is_instruction_mode=is_instruction_mode
                             instruction_text=instruction_text
                             voices_resource=voices_resource
+                            set_show_share=set_show_share
                             on_back=move || current_step.set(1)
                             on_next=move || current_step.set(3)
                         />
@@ -267,6 +272,16 @@ pub fn VoiceSetupPage() -> impl IntoView {
                 </div>
             </div>
 
+            // 分享声音配置弹窗
+            <ShareVoiceConfigModal
+                show=show_share
+                set_show=set_show_share
+                voice_model_id=voice_signal
+                parametric=param_signal
+                is_instruction_mode=is_instruction_mode
+                instruction_text=instruction_text
+                voices_resource=voices_resource
+            />
         </div>
     }
 }
@@ -431,6 +446,7 @@ fn StepParamConfig(
     is_instruction_mode: RwSignal<bool>,
     instruction_text: RwSignal<String>,
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+    set_show_share: WriteSignal<bool>,
     on_back: impl Fn() + 'static + Clone + Send,
     on_next: impl Fn() + 'static + Clone + Send,
 ) -> impl IntoView {
@@ -560,6 +576,15 @@ fn StepParamConfig(
                         }}
                     </Suspense>
                 </div>
+
+                // 分享按钮
+                <button
+                    class="w-full mt-6 py-3.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold text-base shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    on:click=move |_| set_show_share.set(true)
+                >
+                    <i class="fa-solid fa-share-nodes text-lg"></i>
+                    "分享此声音配置"
+                </button>
 
                 // 导航按钮
                 <div class="flex justify-between mt-8">

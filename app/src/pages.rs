@@ -5,6 +5,7 @@ pub mod auth;
 pub mod help; // 帮助中心
 pub mod homepage;
 pub mod playground;
+pub mod share;
 pub mod voicefilter;
 pub mod voicesetup;
 pub mod welcome; // 新增
