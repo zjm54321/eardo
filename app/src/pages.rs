@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 pub mod auth;
+pub mod component;
 pub mod help; // 帮助中心
 pub mod homepage;
 pub mod playground;
