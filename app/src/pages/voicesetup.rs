@@ -1123,6 +1123,7 @@ fn StepGenerate(
     set_show_voice_share: WriteSignal<bool>,
     set_show_share: WriteSignal<bool>,
 ) -> impl IntoView {
+    let _ = is_instruction_mode;
     let value = generate_action.value();
     let is_pending = generate_action.pending();
     let is_playing = RwSignal::new(false);
@@ -1154,7 +1155,7 @@ fn StepGenerate(
         #[cfg(target_arch = "wasm32")]
         {
             use wasm_bindgen::closure::Closure;
-            use web_sys::{AnalyserNode, AudioContext, CanvasRenderingContext2d};
+            use web_sys::{AudioContext, CanvasRenderingContext2d};
 
             let audio_el = audio_ref.get();
             let canvas_el = canvas_ref.get();
@@ -1467,6 +1468,7 @@ fn StepGenerate(
 
 // 辅助函数
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
     use wasm_bindgen::JsCast;
     web_sys::window()
@@ -1476,4 +1478,5 @@ fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 fn request_animation_frame(_f: &impl std::any::Any) {}

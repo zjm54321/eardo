@@ -1,6 +1,8 @@
 use std::str::FromStr;
 
-use crate::api::post::{VoicePost, search_voice_post};
+use crate::api::post::VoicePost;
+#[cfg(feature = "ssr")]
+use crate::api::post::search_voice_post;
 use crate::api::user::{
     self, get_user_profile, login, logout, register, update_user_avatar, update_user_profile,
 };

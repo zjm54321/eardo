@@ -1090,7 +1090,7 @@ pub fn AudioResultCard(
         #[cfg(target_arch = "wasm32")]
         {
             use wasm_bindgen::closure::Closure;
-            use web_sys::{AnalyserNode, AudioContext, CanvasRenderingContext2d};
+            use web_sys::{AudioContext, CanvasRenderingContext2d};
 
             let audio_el = audio_ref.get();
             let canvas_el = canvas_ref.get();
@@ -1367,6 +1367,7 @@ pub fn AudioResultCard(
 
 // 辅助函数：requestAnimationFrame
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
     use wasm_bindgen::JsCast;
     web_sys::window()
@@ -1376,4 +1377,5 @@ fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 fn request_animation_frame(_f: &impl std::any::Any) {} // SSR 空实现

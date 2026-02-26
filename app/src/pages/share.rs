@@ -512,71 +512,7 @@ pub fn ShareVoiceConfigModal(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 右下角弹出提示：生成成功后询问是否分享
-// ═══════════════════════════════════════════════════════════════
 
-#[component]
-pub fn ShareVoicePopup(
-    /// 是否显示
-    show: ReadSignal<bool>,
-    /// 关闭
-    set_show: WriteSignal<bool>,
-    /// 点击"分享"后打开完整弹窗
-    set_show_modal: WriteSignal<bool>,
-) -> impl IntoView {
-    let close = move || set_show.set(false);
-    let open_modal = move || {
-        set_show.set(false);
-        set_show_modal.set(true);
-    };
-
-    view! {
-        {move || {
-            if !show.get() {
-                return view! { <div class="hidden"></div> }.into_any();
-            }
-
-            view! {
-                <div class="fixed bottom-6 right-6 z-40 w-72 bg-white rounded-xl shadow-lg border border-gray-200 p-5 animate-in slide-in-from-bottom-4 duration-300">
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="flex items-center gap-2">
-                            <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                                <i class="fa-solid fa-check text-green-500 text-sm"></i>
-                            </div>
-                            <h4 class="font-semibold text-gray-800 text-sm">"生成成功！"</h4>
-                        </div>
-                        <button
-                            class="text-gray-400 hover:text-gray-600 transition-colors -mt-1 -mr-1"
-                            on:click=move |_| close()
-                        >
-                            <i class="fa-solid fa-xmark text-xs"></i>
-                        </button>
-                    </div>
-                    <p class="text-xs text-gray-500 mb-4">
-                        "把这段声音分享给更多人听听？"
-                    </p>
-                    <div class="flex gap-2">
-                        <button
-                            class="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-xs font-medium"
-                            on:click=move |_| close()
-                        >
-                            "暂不"
-                        </button>
-                        <button
-                            class="flex-1 px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors text-xs font-medium"
-                            on:click=move |_| open_modal()
-                        >
-                            <i class="fa-solid fa-share-nodes mr-1"></i>
-                            "去分享"
-                        </button>
-                    </div>
-                </div>
-            }
-                .into_any()
-        }}
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════
 // 分享生成的声音（VoicePost）

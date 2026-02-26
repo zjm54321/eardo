@@ -1,10 +1,10 @@
-use crate::api::post::{
-    Action, PostStatus, VoicePost, VoicePostID, action_voice_post, get_voice_post_comments,
-    list_voice_post,
-};
+use crate::api::post::{PostStatus, VoicePost, list_voice_post};
+#[cfg(feature = "ssr")]
+use crate::api::post::{Action, VoicePostID, action_voice_post, get_voice_post_comments};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssr")]
 use std::str::FromStr;
 
 #[server]
@@ -72,28 +72,6 @@ impl PostMetadata {
     }
 }
 
-fn format_local_time(raw: &str) -> String {
-    #[cfg(feature = "csr")]
-    {
-        use wasm_bindgen::JsValue;
-
-        let iso = if raw.contains('T') {
-            raw.to_string()
-        } else {
-            format!("{}Z", raw.replace(' ', "T"))
-        };
-
-        js_sys::Date::new(&JsValue::from_str(&iso))
-            .to_locale_string("default", &JsValue::UNDEFINED)
-            .as_string()
-            .unwrap_or_else(|| raw.to_string())
-    }
-
-    #[cfg(not(feature = "csr"))]
-    {
-        raw.to_string()
-    }
-}
 
 #[component]
 pub fn Playground() -> impl IntoView {
