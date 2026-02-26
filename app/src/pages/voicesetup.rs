@@ -643,9 +643,26 @@ fn SetupTraditionalParams(param_signal: RwSignal<Parametic>) -> impl IntoView {
                         <i class="fa-solid fa-music text-primary mr-2"></i>
                         "音高 (Pitch)"
                     </label>
-                    <span class="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold">
-                        {move || format!("{:.2}", param_signal.get().pitch)}
-                    </span>
+                    <input
+                        type="text"
+                        inputmode="decimal"
+                        class="w-20 text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold text-center outline-none focus:ring-2 focus:ring-primary/30 hover:bg-primary/20 transition-colors cursor-pointer"
+                        prop:value=move || format!("{:.2}", param_signal.get().pitch)
+                        on:blur=move |ev| {
+                            let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0).clamp(0.5, 2.0);
+                            param_signal.update(|p| p.pitch = val);
+                        }
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                let _ = ev.target()
+                                    .and_then(|t| {
+                                        use wasm_bindgen::JsCast;
+                                        t.dyn_into::<web_sys::HtmlElement>().ok()
+                                    })
+                                    .map(|el| el.blur());
+                            }
+                        }
+                    />
                 </div>
                 <input
                     type="range"
@@ -659,10 +676,10 @@ fn SetupTraditionalParams(param_signal: RwSignal<Parametic>) -> impl IntoView {
                         param_signal.update(|p| p.pitch = val);
                     }
                 />
-                <div class="flex justify-between text-xs text-gray-400 mt-1">
-                    <span>"0.5"</span>
-                    <span>"1.0"</span>
-                    <span>"2.0"</span>
+                <div class="relative h-4 text-xs text-gray-400 mt-1">
+                    <span class="absolute left-0">"0.5"</span>
+                    <span class="absolute" style="left:33.33%;transform:translateX(-50%)">"1.0"</span>
+                    <span class="absolute right-0">"2.0"</span>
                 </div>
             </div>
 
@@ -673,9 +690,27 @@ fn SetupTraditionalParams(param_signal: RwSignal<Parametic>) -> impl IntoView {
                         <i class="fa-solid fa-gauge-high text-primary mr-2"></i>
                         "语速 (Speed)"
                     </label>
-                    <span class="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold">
-                        {move || format!("{:.2}x", param_signal.get().speed)}
-                    </span>
+                    <input
+                        type="text"
+                        inputmode="decimal"
+                        class="w-20 text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold text-center outline-none focus:ring-2 focus:ring-primary/30 hover:bg-primary/20 transition-colors cursor-pointer"
+                        prop:value=move || format!("{:.2}x", param_signal.get().speed)
+                        on:blur=move |ev| {
+                            let raw = event_target_value(&ev);
+                            let val = raw.trim_end_matches('x').parse::<f32>().unwrap_or(1.0).clamp(0.5, 2.0);
+                            param_signal.update(|p| p.speed = val);
+                        }
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                let _ = ev.target()
+                                    .and_then(|t| {
+                                        use wasm_bindgen::JsCast;
+                                        t.dyn_into::<web_sys::HtmlElement>().ok()
+                                    })
+                                    .map(|el| el.blur());
+                            }
+                        }
+                    />
                 </div>
                 <input
                     type="range"
@@ -689,10 +724,10 @@ fn SetupTraditionalParams(param_signal: RwSignal<Parametic>) -> impl IntoView {
                         param_signal.update(|p| p.speed = val);
                     }
                 />
-                <div class="flex justify-between text-xs text-gray-400 mt-1">
-                    <span>"0.5x"</span>
-                    <span>"1.0x"</span>
-                    <span>"2.0x"</span>
+                <div class="relative h-4 text-xs text-gray-400 mt-1">
+                    <span class="absolute left-0">"0.5x"</span>
+                    <span class="absolute" style="left:33.33%;transform:translateX(-50%)">"1.0x"</span>
+                    <span class="absolute right-0">"2.0x"</span>
                 </div>
             </div>
 
@@ -703,9 +738,28 @@ fn SetupTraditionalParams(param_signal: RwSignal<Parametic>) -> impl IntoView {
                         <i class="fa-solid fa-volume-high text-primary mr-2"></i>
                         "音量 (Volume)"
                     </label>
-                    <span class="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold">
-                        {move || format!("{:.0}%", param_signal.get().volume * 100.0)}
-                    </span>
+                    <input
+                        type="text"
+                        inputmode="decimal"
+                        class="w-20 text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold text-center outline-none focus:ring-2 focus:ring-primary/30 hover:bg-primary/20 transition-colors cursor-pointer"
+                        prop:value=move || format!("{:.0}%", param_signal.get().volume * 100.0)
+                        on:blur=move |ev| {
+                            let raw = event_target_value(&ev);
+                            let num = raw.trim_end_matches('%').parse::<f32>().unwrap_or(100.0);
+                            let vol = if num > 2.0 { num / 100.0 } else { num }.clamp(0.0, 2.0);
+                            param_signal.update(|p| p.volume = vol);
+                        }
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                let _ = ev.target()
+                                    .and_then(|t| {
+                                        use wasm_bindgen::JsCast;
+                                        t.dyn_into::<web_sys::HtmlElement>().ok()
+                                    })
+                                    .map(|el| el.blur());
+                            }
+                        }
+                    />
                 </div>
                 <input
                     type="range"
@@ -719,10 +773,10 @@ fn SetupTraditionalParams(param_signal: RwSignal<Parametic>) -> impl IntoView {
                         param_signal.update(|p| p.volume = val);
                     }
                 />
-                <div class="flex justify-between text-xs text-gray-400 mt-1">
-                    <span>"0%"</span>
-                    <span>"100%"</span>
-                    <span>"200%"</span>
+                <div class="relative h-4 text-xs text-gray-400 mt-1">
+                    <span class="absolute left-0">"0%"</span>
+                    <span class="absolute left-1/2 -translate-x-1/2">"100%"</span>
+                    <span class="absolute right-0">"200%"</span>
                 </div>
             </div>
         </div>

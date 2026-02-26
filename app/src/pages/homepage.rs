@@ -774,81 +774,149 @@ pub fn VoiceSelectorCard(
 #[component]
 pub fn TraditionalParams(selected_param: RwSignal<Parametic>) -> impl IntoView {
     view! {
-        <div>
-            <div class="flex justify-between mb-2">
-                <label class="font-medium text-gray-700">"音高 (Pitch)"</label>
-                <span class="text-sm text-primary font-bold">
-                    {move || format!("{}", selected_param.get().pitch)}
-                </span>
-            </div>
-            <div class="relative flex items-center">
-                <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0.5"</span>
+        <div class="space-y-8">
+            // 音高
+            <div>
+                <div class="flex justify-between mb-3">
+                    <label class="font-semibold text-gray-700 flex items-center">
+                        <i class="fa-solid fa-music text-primary mr-2"></i>
+                        "音高 (Pitch)"
+                    </label>
+                    <input
+                        type="text"
+                        inputmode="decimal"
+                        class="w-20 text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold text-center outline-none focus:ring-2 focus:ring-primary/30 hover:bg-primary/20 transition-colors cursor-pointer"
+                        prop:value=move || format!("{:.2}", selected_param.get().pitch)
+                        on:blur=move |ev| {
+                            let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0).clamp(0.5, 2.0);
+                            selected_param.update(|p| p.pitch = val);
+                        }
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                let _ = ev.target()
+                                    .and_then(|t| {
+                                        use wasm_bindgen::JsCast;
+                                        t.dyn_into::<web_sys::HtmlElement>().ok()
+                                    })
+                                    .map(|el| el.blur());
+                            }
+                        }
+                    />
+                </div>
                 <input
                     type="range"
                     min="0.5"
                     max="2.0"
                     step="0.01"
-                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
-                    // 双向绑定逻辑
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
                     prop:value=move || selected_param.get().pitch
                     on:input=move |ev| {
-                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(0.0);
+                        let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
                         selected_param.update(|p| p.pitch = val);
                     }
                 />
-                <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0"</span>
+                <div class="relative h-4 text-xs text-gray-400 mt-1">
+                    <span class="absolute left-0">"0.5"</span>
+                    <span class="absolute" style="left:33.33%;transform:translateX(-50%)">"1.0"</span>
+                    <span class="absolute right-0">"2.0"</span>
+                </div>
             </div>
-        </div>
 
-        // --- 2. 语速 (Speed) ---
-        <div class="mt-8">
-            <div class="flex justify-between mb-2">
-                <label class="font-medium text-gray-700">"语速 (Speed)"</label>
-                <span class="text-sm text-primary font-bold">
-                    {move || format!("{:.2}x", selected_param.get().speed)}
-                </span>
-            </div>
-            <div class="relative flex items-center">
-                <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0.5x"</span>
+            // 语速
+            <div>
+                <div class="flex justify-between mb-3">
+                    <label class="font-semibold text-gray-700 flex items-center">
+                        <i class="fa-solid fa-gauge-high text-primary mr-2"></i>
+                        "语速 (Speed)"
+                    </label>
+                    <input
+                        type="text"
+                        inputmode="decimal"
+                        class="w-20 text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold text-center outline-none focus:ring-2 focus:ring-primary/30 hover:bg-primary/20 transition-colors cursor-pointer"
+                        prop:value=move || format!("{:.2}x", selected_param.get().speed)
+                        on:blur=move |ev| {
+                            let raw = event_target_value(&ev);
+                            let val = raw.trim_end_matches('x').parse::<f32>().unwrap_or(1.0).clamp(0.5, 2.0);
+                            selected_param.update(|p| p.speed = val);
+                        }
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                let _ = ev.target()
+                                    .and_then(|t| {
+                                        use wasm_bindgen::JsCast;
+                                        t.dyn_into::<web_sys::HtmlElement>().ok()
+                                    })
+                                    .map(|el| el.blur());
+                            }
+                        }
+                    />
+                </div>
                 <input
                     type="range"
                     min="0.5"
                     max="2.0"
                     step="0.01"
-                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
                     prop:value=move || selected_param.get().speed
                     on:input=move |ev| {
                         let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
                         selected_param.update(|p| p.speed = val);
                     }
                 />
-                <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0x"</span>
+                <div class="relative h-4 text-xs text-gray-400 mt-1">
+                    <span class="absolute left-0">"0.5x"</span>
+                    <span class="absolute" style="left:33.33%;transform:translateX(-50%)">"1.0x"</span>
+                    <span class="absolute right-0">"2.0x"</span>
+                </div>
             </div>
-        </div>
 
-        // --- 3. 音量 (Volume) ---
-        <div class="mt-8 pb-8">
-            <div class="flex justify-between mb-2">
-                <label class="font-medium text-gray-700">"音量 (Volume)"</label>
-                <span class="text-sm text-primary font-bold">
-                    {move || format!("{}", selected_param.get().volume)}
-                </span>
-            </div>
-            <div class="relative flex items-center">
-                <span class="text-xs text-gray-400 absolute left-0 -bottom-5">"0"</span>
+            // 音量
+            <div>
+                <div class="flex justify-between mb-3">
+                    <label class="font-semibold text-gray-700 flex items-center">
+                        <i class="fa-solid fa-volume-high text-primary mr-2"></i>
+                        "音量 (Volume)"
+                    </label>
+                    <input
+                        type="text"
+                        inputmode="decimal"
+                        class="w-20 text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-bold text-center outline-none focus:ring-2 focus:ring-primary/30 hover:bg-primary/20 transition-colors cursor-pointer"
+                        prop:value=move || format!("{:.0}%", selected_param.get().volume * 100.0)
+                        on:blur=move |ev| {
+                            let raw = event_target_value(&ev);
+                            let num = raw.trim_end_matches('%').parse::<f32>().unwrap_or(100.0);
+                            let vol = if num > 2.0 { num / 100.0 } else { num }.clamp(0.0, 2.0);
+                            selected_param.update(|p| p.volume = vol);
+                        }
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                let _ = ev.target()
+                                    .and_then(|t| {
+                                        use wasm_bindgen::JsCast;
+                                        t.dyn_into::<web_sys::HtmlElement>().ok()
+                                    })
+                                    .map(|el| el.blur());
+                            }
+                        }
+                    />
+                </div>
                 <input
                     type="range"
-                    min="0"
-                    max="2"
+                    min="0.0"
+                    max="2.0"
                     step="0.01"
-                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-primary-focus transition-all"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
                     prop:value=move || selected_param.get().volume
                     on:input=move |ev| {
                         let val = event_target_value(&ev).parse::<f32>().unwrap_or(1.0);
                         selected_param.update(|p| p.volume = val);
                     }
                 />
-                <span class="text-xs text-gray-400 absolute right-0 -bottom-5">"2.0"</span>
+                <div class="relative h-4 text-xs text-gray-400 mt-1">
+                    <span class="absolute left-0">"0%"</span>
+                    <span class="absolute left-1/2 -translate-x-1/2">"100%"</span>
+                    <span class="absolute right-0">"200%"</span>
+                </div>
             </div>
         </div>
     }
