@@ -1,6 +1,6 @@
 use crate::api;
 use crate::api::voice::Parametic;
-use crate::pages::share::ShareVoiceConfigModal;
+use crate::pages::share::{ShareVoiceConfigModal, ShareVoicePopup, ShareVoicePostModal};
 use leptos::logging::debug_error;
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
@@ -81,8 +81,12 @@ pub fn HomePage() -> impl IntoView {
     let is_instruction_mode = RwSignal::new(true);
     let instruction_text = RwSignal::new(String::new());
 
-    // 分享弹窗状态
+    // 分享弹窗状态（声音配置）
     let (show_share, set_show_share) = signal(false);
+
+    // 分享弹窗状态（生成的声音）
+    let (show_voice_popup, set_show_voice_popup) = signal(false);
+    let (show_voice_share, set_show_voice_share) = signal(false);
 
     // Resource 用于异步获取数据
     let voices_resource = Resource::new(|| (), |_| api::voice::list_voice_models());
@@ -185,6 +189,23 @@ pub fn HomePage() -> impl IntoView {
         }
     });
 
+    // 生成成功后弹出右下角分享提示
+    Effect::new(move |_| {
+        if let Some(Ok(_)) = generate_action.value().get() {
+            set_show_voice_popup.set(true);
+        }
+    });
+
+    // 从 generate_action 结果派生 library_id
+    let library_id_signal = Signal::derive(move || {
+        generate_action
+            .value()
+            .get()
+            .and_then(|r| r.ok())
+            .map(|id| id.to_string())
+            .unwrap_or_default()
+    });
+
     view! {
         <div class="min-h-screen bg-base-100 pb-12">
             <div class="container mx-auto px-4 py-8 md:py-12 max-w-6xl">
@@ -255,6 +276,23 @@ pub fn HomePage() -> impl IntoView {
                 parametric=param_signal
                 is_instruction_mode=is_instruction_mode
                 instruction_text=instruction_text
+                voices_resource=voices_resource
+            />
+
+            // 右下角弹出提示（生成成功后自动出现）
+            <ShareVoicePopup
+                show=show_voice_popup
+                set_show=set_show_voice_popup
+                set_show_modal=set_show_voice_share
+            />
+
+            // 分享声音作品弹窗
+            <ShareVoicePostModal
+                show=show_voice_share
+                set_show=set_show_voice_share
+                library_id=library_id_signal
+                voice_model_id=voice_signal
+                text_signal=text_signal
                 voices_resource=voices_resource
             />
         </div>

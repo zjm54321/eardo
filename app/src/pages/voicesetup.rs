@@ -1,6 +1,6 @@
 use crate::api;
 use crate::api::voice::Parametic;
-use crate::pages::share::ShareVoiceConfigModal;
+use crate::pages::share::{ShareVoiceConfigModal, ShareVoicePostModal};
 use leptos::logging::debug_error;
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
@@ -36,6 +36,9 @@ pub fn VoiceSetupPage() -> impl IntoView {
 
     // ── 分享弹窗 ──
     let (show_share, set_show_share) = signal(false);
+
+    // ── 分享声音作品弹窗 ──
+    let (show_voice_share, set_show_voice_share) = signal(false);
 
     // ── 文本 ──
     let text_signal = RwSignal::new(String::new());
@@ -135,6 +138,16 @@ pub fn VoiceSetupPage() -> impl IntoView {
         if let Some(Ok(_)) = generate_action.value().get() {
             current_step.set(4);
         }
+    });
+
+    // 从 generate_action 结果派生 library_id
+    let library_id_signal = Signal::derive(move || {
+        generate_action
+            .value()
+            .get()
+            .and_then(|r| r.ok())
+            .map(|id| id.to_string())
+            .unwrap_or_default()
     });
 
     // ── 步骤标签 ──
@@ -267,6 +280,7 @@ pub fn VoiceSetupPage() -> impl IntoView {
                             param_signal=param_signal
                             voice_signal=voice_signal
                             voices_resource=voices_resource
+                            set_show_voice_share=set_show_voice_share
                         />
                     </Show>
                 </div>
@@ -280,6 +294,16 @@ pub fn VoiceSetupPage() -> impl IntoView {
                 parametric=param_signal
                 is_instruction_mode=is_instruction_mode
                 instruction_text=instruction_text
+                voices_resource=voices_resource
+            />
+
+            // 分享声音作品弹窗
+            <ShareVoicePostModal
+                show=show_voice_share
+                set_show=set_show_voice_share
+                library_id=library_id_signal
+                voice_model_id=voice_signal
+                text_signal=text_signal
                 voices_resource=voices_resource
             />
         </div>
@@ -1095,6 +1119,7 @@ fn StepGenerate(
     param_signal: RwSignal<Parametic>,
     voice_signal: RwSignal<String>,
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+    set_show_voice_share: WriteSignal<bool>,
 ) -> impl IntoView {
     let value = generate_action.value();
     let is_pending = generate_action.pending();
@@ -1369,6 +1394,17 @@ fn StepGenerate(
                     </div>
                 </div>
             </div>
+
+            // 分享声音作品按钮
+            <Show when=move || generate_action.value().get().is_some_and(|r| r.is_ok())>
+                <button
+                    class="w-full mt-6 py-3.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold text-base shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    on:click=move |_| set_show_voice_share.set(true)
+                >
+                    <i class="fa-solid fa-share-nodes text-lg"></i>
+                    "分享这段声音"
+                </button>
+            </Show>
         </div>
     }
 }

@@ -515,3 +515,374 @@ pub fn ShareVoiceConfigModal(
         }}
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// 右下角弹出提示：生成成功后询问是否分享
+// ═══════════════════════════════════════════════════════════════
+
+#[component]
+pub fn ShareVoicePopup(
+    /// 是否显示
+    show: ReadSignal<bool>,
+    /// 关闭
+    set_show: WriteSignal<bool>,
+    /// 点击"分享"后打开完整弹窗
+    set_show_modal: WriteSignal<bool>,
+) -> impl IntoView {
+    let close = move || set_show.set(false);
+    let open_modal = move || {
+        set_show.set(false);
+        set_show_modal.set(true);
+    };
+
+    view! {
+        {move || {
+            if !show.get() {
+                return view! { <div class="hidden"></div> }.into_any();
+            }
+
+            view! {
+                <div class="fixed bottom-6 right-6 z-40 w-72 bg-white rounded-xl shadow-lg border border-gray-200 p-5 animate-in slide-in-from-bottom-4 duration-300">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                                <i class="fa-solid fa-check text-green-500 text-sm"></i>
+                            </div>
+                            <h4 class="font-semibold text-gray-800 text-sm">"生成成功！"</h4>
+                        </div>
+                        <button
+                            class="text-gray-400 hover:text-gray-600 transition-colors -mt-1 -mr-1"
+                            on:click=move |_| close()
+                        >
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-4">
+                        "把这段声音分享给更多人听听？"
+                    </p>
+                    <div class="flex gap-2">
+                        <button
+                            class="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-xs font-medium"
+                            on:click=move |_| close()
+                        >
+                            "暂不"
+                        </button>
+                        <button
+                            class="flex-1 px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors text-xs font-medium"
+                            on:click=move |_| open_modal()
+                        >
+                            <i class="fa-solid fa-share-nodes mr-1"></i>
+                            "去分享"
+                        </button>
+                    </div>
+                </div>
+            }
+                .into_any()
+        }}
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 分享生成的声音（VoicePost）
+// ═══════════════════════════════════════════════════════════════
+
+#[component]
+pub fn ShareVoicePostModal(
+    /// 控制弹窗显示/隐藏
+    show: ReadSignal<bool>,
+    /// 关闭弹窗
+    set_show: WriteSignal<bool>,
+    /// 生成的 VoiceLibraryID（字符串）
+    library_id: Signal<String>,
+    /// 默认标题来源：声线名称
+    voice_model_id: RwSignal<String>,
+    /// 默认内容来源：生成时的文本
+    text_signal: RwSignal<String>,
+    /// 声线列表（查模型名称）
+    voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+) -> impl IntoView {
+    // ── 表单状态 ──
+    let (title, set_title) = signal(String::new());
+    let (content, set_content) = signal(String::new());
+    let (share_result, set_share_result) = signal::<Option<Result<(), String>>>(None);
+
+    // 查找模型名称
+    let voice_model_name = move || -> String {
+        let id = voice_model_id.get();
+        if let Some(Ok(voices)) = voices_resource.get() {
+            if let Some(voice) = voices.iter().find(|v| v.id.to_string() == id) {
+                return voice.info.name.clone();
+            }
+        }
+        "AI 语音作品".to_string()
+    };
+
+    // 弹窗打开时用默认值填充
+    Effect::new(move |_| {
+        if show.get() {
+            set_title.set(voice_model_name());
+            set_content.set(text_signal.get());
+            set_share_result.set(None);
+        }
+    });
+
+    // ── 分享 Action ──
+    let share_action = Action::new(
+        move |(title_val, content_val, lib_id_str): &(String, String, String)| {
+            let title_val = title_val.clone();
+            let content_val = content_val.clone();
+            let lib_id_str = lib_id_str.clone();
+
+            async move {
+                let lib_id = Uuid::parse_str(&lib_id_str)
+                    .map_err(|e| format!("无效的音频 ID: {}", e))?;
+
+                let post = api::post::VoicePost {
+                    id: Uuid::nil(),
+                    title: title_val,
+                    content: content_val,
+                    library_id: lib_id,
+                    author: Uuid::nil(),
+                    status: api::post::PostStatus::Normal,
+                    comments_count: 0,
+                    likes_count: 0,
+                };
+
+                api::post::create_voice_post(post)
+                    .await
+                    .map_err(|e| format!("创建分享失败: {}", e))?;
+
+                Ok::<(), String>(())
+            }
+        },
+    );
+
+    // 监听结果
+    Effect::new(move |_| {
+        if let Some(result) = share_action.value().get() {
+            match result {
+                Ok(()) => set_share_result.set(Some(Ok(()))),
+                Err(e) => set_share_result.set(Some(Err(e.to_string()))),
+            }
+        }
+    });
+
+    let handle_submit = move |_: web_sys::MouseEvent| {
+        let t = title.get();
+        let c = content.get();
+        let lib = library_id.get();
+        if t.trim().is_empty() || c.trim().is_empty() || lib.is_empty() {
+            return;
+        }
+        share_action.dispatch((t, c, lib));
+    };
+
+    let is_pending = share_action.pending();
+    let close = move || set_show.set(false);
+
+    view! {
+        {move || {
+            if !show.get() {
+                return view! { <div class="hidden"></div> }.into_any();
+            }
+
+            view! {
+                // 遮罩
+                <div
+                    class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+                    on:click=move |_| close()
+                >
+                    // 弹窗
+                    <div
+                        class="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden"
+                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                    >
+                        {move || {
+                            let audio_url_inner = format!("/api/audio/{}", library_id.get());
+
+                            match share_result.get() {
+                                // ── 成功 ──
+                                Some(Ok(())) => {
+                                    view! {
+                                        <div class="p-8 text-center space-y-6">
+                                            <div class="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center">
+                                                <i class="fa-solid fa-check text-green-500 text-2xl"></i>
+                                            </div>
+                                            <div>
+                                                <h3 class="text-xl font-bold text-gray-800 mb-2">
+                                                    "分享成功！"
+                                                </h3>
+                                                <p class="text-sm text-gray-500">
+                                                    "你的声音作品已发布到社区"
+                                                </p>
+                                            </div>
+                                            <button
+                                                class="w-full px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl transition-colors font-medium"
+                                                on:click=move |_| close()
+                                            >
+                                                "完成"
+                                            </button>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+
+                                // ── 失败 ──
+                                Some(Err(err_msg)) => {
+                                    view! {
+                                        <div class="p-8 text-center space-y-6">
+                                            <div class="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center">
+                                                <i class="fa-solid fa-xmark text-red-500 text-2xl"></i>
+                                            </div>
+                                            <div>
+                                                <h3 class="text-xl font-bold text-gray-800 mb-2">
+                                                    "分享失败"
+                                                </h3>
+                                                <p class="text-sm text-red-500">{err_msg}</p>
+                                            </div>
+                                            <div class="flex gap-3">
+                                                <button
+                                                    class="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl transition-colors font-medium"
+                                                    on:click=move |_| close()
+                                                >
+                                                    "关闭"
+                                                </button>
+                                                <button
+                                                    class="flex-1 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl transition-colors font-medium"
+                                                    on:click=move |_| set_share_result.set(None)
+                                                >
+                                                    "重试"
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+
+                                // ── 表单 ──
+                                None => {
+                                    view! {
+                                        <>
+                                            // 头部
+                                            <div class="flex justify-between items-center px-6 py-5 border-b border-gray-100">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                                                        <i class="fa-solid fa-music text-green-600"></i>
+                                                    </div>
+                                                    <div>
+                                                        <h2 class="text-lg font-bold text-gray-800">
+                                                            "分享声音作品"
+                                                        </h2>
+                                                        <p class="text-xs text-gray-400">
+                                                            "让更多人听到你的创作"
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all"
+                                                    on:click=move |_| close()
+                                                >
+                                                    <i class="fa-solid fa-xmark"></i>
+                                                </button>
+                                            </div>
+
+                                            // 表单
+                                            <div class="px-6 py-5 space-y-5">
+                                                // 标题
+                                                <div>
+                                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                                        "标题"
+                                                        <span class="text-red-400 ml-0.5">"*"</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition-all text-sm"
+                                                        placeholder="给这段声音起个名字..."
+                                                        maxlength="100"
+                                                        prop:value=move || title.get()
+                                                        on:input=move |ev| set_title.set(event_target_value(&ev))
+                                                    />
+                                                </div>
+
+                                                // 介绍
+                                                <div>
+                                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                                        "介绍"
+                                                        <span class="text-red-400 ml-0.5">"*"</span>
+                                                    </label>
+                                                    <textarea
+                                                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition-all resize-none text-sm leading-relaxed"
+                                                        rows="3"
+                                                        placeholder="描述一下这段声音..."
+                                                        prop:value=move || content.get()
+                                                        on:input=move |ev| set_content.set(event_target_value(&ev))
+                                                    ></textarea>
+                                                </div>
+
+                                                // 音频预览
+                                                <div class="bg-gray-50 rounded-xl p-4 space-y-3">
+                                                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                                        "音频预览"
+                                                    </p>
+                                                    <audio
+                                                        controls
+                                                        class="w-full h-10"
+                                                        src=audio_url_inner
+                                                        crossorigin="anonymous"
+                                                    ></audio>
+                                                </div>
+                                            </div>
+
+                                            // 底部
+                                            <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+                                                <button
+                                                    class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors text-sm font-medium"
+                                                    on:click=move |_| close()
+                                                    disabled=move || is_pending.get()
+                                                >
+                                                    "取消"
+                                                </button>
+                                                <button
+                                                    class="px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                                    on:click=handle_submit
+                                                    disabled=move || {
+                                                        is_pending.get()
+                                                            || title.get().trim().is_empty()
+                                                            || content.get().trim().is_empty()
+                                                            || library_id.get().is_empty()
+                                                    }
+                                                >
+                                                    {move || {
+                                                        if is_pending.get() {
+                                                            view! {
+                                                                <>
+                                                                    <i class="fa-solid fa-circle-notch fa-spin"></i>
+                                                                    "分享中..."
+                                                                </>
+                                                            }
+                                                                .into_any()
+                                                        } else {
+                                                            view! {
+                                                                <>
+                                                                    <i class="fa-solid fa-share-nodes"></i>
+                                                                    "分享"
+                                                                </>
+                                                            }
+                                                                .into_any()
+                                                        }
+                                                    }}
+                                                </button>
+                                            </div>
+                                        </>
+                                    }
+                                        .into_any()
+                                }
+                            }
+                        }}
+                    </div>
+                </div>
+            }
+                .into_any()
+        }}
+    }
+}
