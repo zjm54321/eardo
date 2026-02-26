@@ -13,9 +13,7 @@ use super::homepage::ai_rewrite_text;
 pub fn VoiceSetupPage() -> impl IntoView {
     // URL 参数
     let query = use_query_map();
-    let get_str_param_opt = |key: &str| {
-        query.with_untracked(|q| q.get(key).map(|s| s.to_string()))
-    };
+    let get_str_param_opt = |key: &str| query.with_untracked(|q| q.get(key).map(|s| s.to_string()));
 
     // ── 步骤状态 ──
     let current_step = RwSignal::new(1u8);
@@ -94,7 +92,6 @@ pub fn VoiceSetupPage() -> impl IntoView {
         let pitch = param_signal.get().pitch;
         let speed = param_signal.get().speed;
         let volume = param_signal.get().volume;
-        let is_instruction = is_instruction_mode.get();
         let instruction = instruction_text.get();
         async move {
             let voice_model_id = match uuid::Uuid::parse_str(&voice_id) {
@@ -106,16 +103,12 @@ pub fn VoiceSetupPage() -> impl IntoView {
             };
             let voice_meta = api::voice::VoiceMeta {
                 voice_model_id,
-                parametric: if !is_instruction {
-                    Some(api::voice::Parametic {
-                        pitch,
-                        speed,
-                        volume,
-                    })
-                } else {
-                    None
-                },
-                instruction: if is_instruction {
+                parametric: Some(api::voice::Parametic {
+                    pitch,
+                    speed,
+                    volume,
+                }),
+                instruction: if !instruction.trim().is_empty() {
                     Some(instruction)
                 } else {
                     None
@@ -530,29 +523,32 @@ fn StepParamConfig(
                                 .map(|a| a.instruction_control && a.parametric_control)
                                 .unwrap_or(false)
                         }>
-                            <div class="flex bg-gray-100 rounded-lg p-1 mb-8">
-                                <button
-                                    class="flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all"
-                                    class:bg-white=move || !is_instruction_mode.get()
-                                    class:shadow-sm=move || !is_instruction_mode.get()
-                                    class:text-primary=move || !is_instruction_mode.get()
-                                    class:text-gray-500=move || is_instruction_mode.get()
-                                    on:click=move |_| is_instruction_mode.set(false)
-                                >
-                                    <i class="fa-solid fa-sliders mr-2"></i>
-                                    "传统参数"
-                                </button>
-                                <button
-                                    class="flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all"
-                                    class:bg-white=move || is_instruction_mode.get()
-                                    class:shadow-sm=move || is_instruction_mode.get()
-                                    class:text-primary=move || is_instruction_mode.get()
-                                    class:text-gray-500=move || !is_instruction_mode.get()
-                                    on:click=move |_| is_instruction_mode.set(true)
-                                >
-                                    <i class="fa-solid fa-comment-dots mr-2"></i>
-                                    "语言控制"
-                                </button>
+                            <div class="mb-8">
+                                <div class="flex bg-gray-100 rounded-lg p-1 gap-1">
+                                    <button
+                                        class="flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2"
+                                        class:bg-white=move || !is_instruction_mode.get()
+                                        class:shadow-sm=move || !is_instruction_mode.get()
+                                        class:text-primary=move || !is_instruction_mode.get()
+                                        class:text-gray-500=move || is_instruction_mode.get()
+                                        on:click=move |_| is_instruction_mode.set(false)
+                                    >
+                                        <i class="fa-solid fa-sliders"></i>
+                                        "传统参数"
+                                    </button>
+                                    <button
+                                        class="flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2"
+                                        class:bg-white=move || is_instruction_mode.get()
+                                        class:shadow-sm=move || is_instruction_mode.get()
+                                        class:text-primary=move || is_instruction_mode.get()
+                                        class:text-gray-500=move || !is_instruction_mode.get()
+                                        on:click=move |_| is_instruction_mode.set(true)
+                                    >
+                                        <i class="fa-solid fa-comment-dots"></i>
+                                        "语言控制"
+                                    </button>
+                                </div>
+                                <p class="text-center text-xs text-gray-400 mt-2">"两种参数可同时配置，均会生效"</p>
                             </div>
                         </Show>
                     </Suspense>
@@ -1176,8 +1172,8 @@ fn StepGenerate(
 
                 audio.set_cross_origin(Some("anonymous"));
 
-                let ctx = AudioContext::new()
-                    .unwrap_or_else(|_| panic!("Failed to create AudioContext"));
+                let ctx =
+                    AudioContext::new().unwrap_or_else(|_| panic!("Failed to create AudioContext"));
                 let analyser = ctx.create_analyser().unwrap();
                 analyser.set_fft_size(256);
 
@@ -1194,11 +1190,8 @@ fn StepGenerate(
                 let buffer_length = analyser.frequency_bin_count();
                 let mut data_array = vec![0u8; buffer_length as usize];
 
-                let ctx_2d: CanvasRenderingContext2d = canvas
-                    .get_context("2d")
-                    .unwrap()
-                    .unwrap()
-                    .unchecked_into();
+                let ctx_2d: CanvasRenderingContext2d =
+                    canvas.get_context("2d").unwrap().unwrap().unchecked_into();
 
                 let f = std::rc::Rc::new(std::cell::RefCell::new(None));
                 let g = f.clone();

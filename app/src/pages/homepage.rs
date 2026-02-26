@@ -143,7 +143,6 @@ pub fn HomePage() -> impl IntoView {
         let pitch = param_signal.get().pitch;
         let speed = param_signal.get().speed;
         let volume = param_signal.get().volume;
-        let is_instruction = is_instruction_mode.get();
         let instruction = instruction_text.get();
 
         async move {
@@ -155,19 +154,15 @@ pub fn HomePage() -> impl IntoView {
                 }
             };
 
-            // 创建 VoiceMeta 对象
+            // 创建 VoiceMeta 对象（两种参数同时生效）
             let voice_meta = api::voice::VoiceMeta {
                 voice_model_id,
-                parametric: if !is_instruction {
-                    Some(api::voice::Parametic {
-                        pitch,
-                        speed,
-                        volume,
-                    })
-                } else {
-                    None
-                },
-                instruction: if is_instruction {
+                parametric: Some(api::voice::Parametic {
+                    pitch,
+                    speed,
+                    volume,
+                }),
+                instruction: if !instruction.trim().is_empty() {
                     Some(instruction)
                 } else {
                     None
@@ -972,34 +967,52 @@ pub fn ParameterControlCard(
 
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
-            // 标题
-            <div class="flex items-center justify-between mb-6">
-                <div class="flex items-center gap-2">
-                    <h3 class="text-lg font-semibold flex items-center">
-                        <i class="fa-solid fa-sliders text-primary mr-2"></i>
-                        "参数调节"
-                    </h3>
-                    // 切换按钮
-                    <Suspense fallback=move || {
-                        view! { <div class="w-6 h-6 bg-gray-100 rounded-full animate-pulse"></div> }
+            // 标题 + 切换块
+            <div class="flex items-center gap-3 mb-6 flex-wrap">
+                <h3 class="text-lg font-semibold flex items-center shrink-0">
+                    <i class="fa-solid fa-sliders text-primary mr-2"></i>
+                    "参数调节"
+                </h3>
+                // 切换块（紧邻标题右侧）
+                <Suspense fallback=move || {
+                    view! { <div class="h-8 w-44 bg-gray-100 rounded-lg animate-pulse"></div> }
+                }>
+                    <Show when=move || {
+                        if let Some(ability) = selected_ability() {
+                            ability.instruction_control && ability.parametric_control
+                        } else {
+                            false
+                        }
                     }>
-                        <Show when=move || {
-                            if let Some(ability) = selected_ability() {
-                                ability.instruction_control && ability.parametric_control
-                            } else {
-                                false
-                            }
-                        }>
-                            <button
-                                class="text-gray-400 hover:text-primary transition-colors flex items-center justify-center w-6 h-6 rounded-full"
-                                on:click=move |_| is_instruction_mode.update(|m| *m = !*m)
-                                title="切换参数模式"
-                            >
-                                <i class="fa-solid fa-arrows-rotate"></i>
-                            </button>
-                        </Show>
-                    </Suspense>
-                </div>
+                        <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                                <button
+                                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                                    class:bg-white=move || !is_instruction_mode.get()
+                                    class:shadow-sm=move || !is_instruction_mode.get()
+                                    class:text-primary=move || !is_instruction_mode.get()
+                                    class:text-gray-500=move || is_instruction_mode.get()
+                                    on:click=move |_| is_instruction_mode.set(false)
+                                >
+                                    <i class="fa-solid fa-sliders text-[10px]"></i>
+                                    "传统参数"
+                                </button>
+                                <button
+                                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                                    class:bg-white=move || is_instruction_mode.get()
+                                    class:shadow-sm=move || is_instruction_mode.get()
+                                    class:text-primary=move || is_instruction_mode.get()
+                                    class:text-gray-500=move || !is_instruction_mode.get()
+                                    on:click=move |_| is_instruction_mode.set(true)
+                                >
+                                    <i class="fa-solid fa-comment-dots text-[10px]"></i>
+                                    "语言控制"
+                                </button>
+                            </div>
+                            <span class="text-[10px] text-gray-400 whitespace-nowrap">"两种参数可同时配置"</span>
+                        </div>
+                    </Show>
+                </Suspense>
             </div>
 
             // 内容区域
