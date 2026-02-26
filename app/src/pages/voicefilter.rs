@@ -1,4 +1,7 @@
-use crate::api::post::{action_voice_meta_post, get_voice_meta_post_comments, list_voice_meta_post, Action, PostStatus, VoiceMetaPost, VoiceMetaPostID};
+use crate::api::post::{
+    Action, PostStatus, VoiceMetaPost, VoiceMetaPostID, action_voice_meta_post,
+    get_voice_meta_post_comments, list_voice_meta_post,
+};
 use crate::api::user::UserID;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -19,12 +22,16 @@ pub async fn add_meta_post_comment(post_id: String, content: String) -> Result<(
 }
 
 #[server]
-pub async fn get_meta_post_comments(post_id: String) -> Result<Vec<(String, String)>, ServerFnError> {
+pub async fn get_meta_post_comments(
+    post_id: String,
+) -> Result<Vec<(String, String)>, ServerFnError> {
     let id = VoiceMetaPostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
     let comments = get_voice_meta_post_comments(id).await?;
-    Ok(comments.into_iter().map(|(user_id, content)| (user_id.to_string(), content)).collect())
+    Ok(comments
+        .into_iter()
+        .map(|(user_id, content)| (user_id.to_string(), content))
+        .collect())
 }
-
 
 // 用于显示的滤镜结构
 #[derive(Debug, Clone)]

@@ -76,17 +76,13 @@ pub fn ShareVoiceConfigModal(
 
         async move {
             // 解析声线 ID
-            let voice_model_uuid = Uuid::parse_str(&voice_id_str)
-                .map_err(|e| format!("无效的声线 ID: {}", e))?;
+            let voice_model_uuid =
+                Uuid::parse_str(&voice_id_str).map_err(|e| format!("无效的声线 ID: {}", e))?;
 
             // 构建 VoiceMeta
             let voice_meta = api::voice::VoiceMeta {
                 voice_model_id: voice_model_uuid,
-                parametric: if !is_instruction {
-                    Some(params)
-                } else {
-                    None
-                },
+                parametric: if !is_instruction { Some(params) } else { None },
                 instruction: if is_instruction {
                     Some(instruction)
                 } else {
@@ -101,7 +97,7 @@ pub fn ShareVoiceConfigModal(
 
             // 第二步：创建分享帖子
             let post = api::post::VoiceMetaPost {
-                id: Uuid::nil(),     // 由服务端自动分配
+                id: Uuid::nil(), // 由服务端自动分配
                 title: title_val,
                 content: content_val,
                 meta_id,
@@ -634,8 +630,8 @@ pub fn ShareVoicePostModal(
             let lib_id_str = lib_id_str.clone();
 
             async move {
-                let lib_id = Uuid::parse_str(&lib_id_str)
-                    .map_err(|e| format!("无效的音频 ID: {}", e))?;
+                let lib_id =
+                    Uuid::parse_str(&lib_id_str).map_err(|e| format!("无效的音频 ID: {}", e))?;
 
                 let post = api::post::VoicePost {
                     id: Uuid::nil(),

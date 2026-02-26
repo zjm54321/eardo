@@ -70,7 +70,7 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
 
     async fn get(&self, post_id: VoiceMetaPostID) -> anyhow::Result<VoiceMetaPost> {
         let current_user_id = get_user_id_from_session(&self.pool).await.ok();
-        
+
         let post = if let Some(user_id) = current_user_id {
             sqlx::query_as::<_, VoiceMetaPost>(
                 "SELECT p.id, p.title, p.content, p.meta_id, p.author, p.status, p.comments_count, p.likes_count,
@@ -196,7 +196,7 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
             Some(PostStatus::Recommended) => Some("Recommended"),
             None => None,
         };
-        
+
         let current_user_id = get_user_id_from_session(&self.pool).await.ok();
 
         let posts = if let Some(user_id) = current_user_id {
