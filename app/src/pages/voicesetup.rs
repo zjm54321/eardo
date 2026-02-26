@@ -280,7 +280,10 @@ pub fn VoiceSetupPage() -> impl IntoView {
                             param_signal=param_signal
                             voice_signal=voice_signal
                             voices_resource=voices_resource
+                            is_instruction_mode=is_instruction_mode
+                            instruction_text=instruction_text
                             set_show_voice_share=set_show_voice_share
+                            set_show_share=set_show_share
                         />
                     </Show>
                 </div>
@@ -1119,7 +1122,10 @@ fn StepGenerate(
     param_signal: RwSignal<Parametic>,
     voice_signal: RwSignal<String>,
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+    is_instruction_mode: RwSignal<bool>,
+    instruction_text: RwSignal<String>,
     set_show_voice_share: WriteSignal<bool>,
+    set_show_share: WriteSignal<bool>,
 ) -> impl IntoView {
     let value = generate_action.value();
     let is_pending = generate_action.pending();
@@ -1136,6 +1142,16 @@ fn StepGenerate(
             }
         }
         "未知".to_string()
+    };
+
+    let selected_ability = move || {
+        let voice_id = voice_signal.get();
+        if let Some(Ok(voices)) = voices_resource.get() {
+            if let Some(voice) = voices.iter().find(|v| v.id.to_string() == voice_id) {
+                return Some(voice.ability.clone());
+            }
+        }
+        None
     };
 
     let setup_visualizer = move || {
@@ -1248,46 +1264,92 @@ fn StepGenerate(
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                // ── 左栏：参数面板 ──
+                // ── 左栏：配置面板 + 分享配置按钮 ──
                 <div class="lg:col-span-1 space-y-4">
-                    <div class="bg-white rounded-2xl p-6 shadow-soft border border-gray-100">
-                        <h4 class="font-bold text-gray-800 mb-4 flex items-center">
+                    <div class="bg-white rounded-2xl p-6 shadow-soft border border-gray-100 space-y-4">
+                        <h4 class="font-bold text-gray-800 flex items-center">
                             <i class="fa-solid fa-info-circle text-primary mr-2"></i>
                             "当前配置"
                         </h4>
-                        <div class="space-y-3 text-sm">
-                            <div class="flex justify-between py-2 border-b border-gray-50">
-                                <span class="text-gray-500">"声线"</span>
-                                <span class="font-medium text-gray-800">
-                                    {selected_voice_name}
-                                </span>
-                            </div>
-                            <div class="flex justify-between py-2 border-b border-gray-50">
-                                <span class="text-gray-500">"音高"</span>
-                                <span class="font-medium text-gray-800">
-                                    {move || format!("{:.2}", param_signal.get().pitch)}
-                                </span>
-                            </div>
-                            <div class="flex justify-between py-2 border-b border-gray-50">
-                                <span class="text-gray-500">"语速"</span>
-                                <span class="font-medium text-gray-800">
-                                    {move || format!("{:.2}x", param_signal.get().speed)}
-                                </span>
-                            </div>
-                            <div class="flex justify-between py-2">
-                                <span class="text-gray-500">"音量"</span>
-                                <span class="font-medium text-gray-800">
-                                    {move || {
-                                        format!("{:.0}%", param_signal.get().volume * 100.0)
-                                    }}
-                                </span>
-                            </div>
+
+                        // 模型名称
+                        <div class="flex items-center gap-2 text-sm text-gray-700">
+                            <i class="fa-solid fa-microphone text-primary text-xs"></i>
+                            <span class="font-medium">"模型："</span>
+                            <span>{selected_voice_name}</span>
                         </div>
+
+                        // 指令（模型支持且非空时显示）
+                        {move || {
+                            let ability = selected_ability();
+                            let supports_instruction = ability.as_ref().map_or(false, |a| a.instruction_control);
+                            if supports_instruction {
+                                let text = instruction_text.get();
+                                if !text.trim().is_empty() {
+                                    let display: String = if text.chars().count() > 30 {
+                                        let s: String = text.chars().take(30).collect();
+                                        format!("{}...", s)
+                                    } else {
+                                        text
+                                    };
+                                    view! {
+                                        <div class="flex items-start gap-2 text-sm text-gray-700">
+                                            <i class="fa-solid fa-wand-magic-sparkles text-purple-500 text-xs mt-0.5"></i>
+                                            <span class="font-medium">"指令："</span>
+                                            <span class="text-gray-500">{display}</span>
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! { <div></div> }.into_any()
+                                }
+                            } else {
+                                view! { <div></div> }.into_any()
+                            }
+                        }}
+
+                        // 参数药丸（模型支持参数时显示）
+                        {move || {
+                            let ability = selected_ability();
+                            let supports_parametric = ability.as_ref().map_or(false, |a| a.parametric_control);
+                            if supports_parametric {
+                                let p = param_signal.get();
+                                view! {
+                                    <div class="flex flex-wrap gap-2">
+                                        <span class="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                                            <i class="fa-solid fa-gauge-high mr-1.5"></i>
+                                            "语速 "
+                                            {format!("{:.2}x", p.speed)}
+                                        </span>
+                                        <span class="inline-flex items-center px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+                                            <i class="fa-solid fa-arrow-up-right-dots mr-1.5"></i>
+                                            "音调 "
+                                            {format!("{:.2}", p.pitch)}
+                                        </span>
+                                        <span class="inline-flex items-center px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                            <i class="fa-solid fa-volume-high mr-1.5"></i>
+                                            "音量 "
+                                            {format!("{:.2}%", p.volume * 100.0)}
+                                        </span>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <div></div> }.into_any()
+                            }
+                        }}
                     </div>
+
+                    // 分享声音配置按钮
+                    <button
+                        class="w-full py-3 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl font-medium text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                        on:click=move |_| set_show_share.set(true)
+                    >
+                        <i class="fa-solid fa-share-nodes"></i>
+                        "分享声音配置"
+                    </button>
                 </div>
 
-                // ── 右栏：可视化 + 播放 ──
-                <div class="lg:col-span-2">
+                // ── 右栏：可视化 + 播放 + 分享按钮 ──
+                <div class="lg:col-span-2 space-y-4">
                     <div class="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden">
                         {move || {
                             match (is_pending.get(), value.get()) {
@@ -1392,19 +1454,20 @@ fn StepGenerate(
                             }
                         }}
                     </div>
+
+                    // 分享声音作品按钮（与可视化同宽）
+                    <Show when=move || generate_action.value().get().is_some_and(|r| r.is_ok())>
+                        <button
+                            class="w-full py-3.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold text-base shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                            on:click=move |_| set_show_voice_share.set(true)
+                        >
+                            <i class="fa-solid fa-share-nodes text-lg"></i>
+                            "分享这段声音"
+                        </button>
+                    </Show>
                 </div>
             </div>
 
-            // 分享声音作品按钮
-            <Show when=move || generate_action.value().get().is_some_and(|r| r.is_ok())>
-                <button
-                    class="w-full mt-6 py-3.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold text-base shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                    on:click=move |_| set_show_voice_share.set(true)
-                >
-                    <i class="fa-solid fa-share-nodes text-lg"></i>
-                    "分享这段声音"
-                </button>
-            </Show>
         </div>
     }
 }
