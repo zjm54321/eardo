@@ -239,21 +239,13 @@ pub fn HomePage() -> impl IntoView {
                             is_instruction_mode=is_instruction_mode
                             instruction_text=instruction_text
                             voices_resource=voices_resource
+                            set_show_share=set_show_share
                         />
                         // 3. 输出结果 (核心功能)
                         <AudioResultCard generate_action=generate_action set_show_voice_share=set_show_voice_share />
                     </div>
                 </div>
             </div>
-
-            // 右侧浮窗分享按钮
-            <button
-                class="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 rounded-full bg-primary text-white shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all flex items-center justify-center group"
-                title="分享当前声音配置"
-                on:click=move |_| set_show_share.set(true)
-            >
-                <i class="fa-solid fa-share-nodes text-lg group-hover:rotate-12 transition-transform"></i>
-            </button>
 
             // 分享声音配置弹窗
             <ShareVoiceConfigModal
@@ -944,6 +936,8 @@ pub fn ParameterControlCard(
     instruction_text: RwSignal<String>,
     /// 声线列表资源
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
+    /// 打开分享声音配置弹窗
+    set_show_share: WriteSignal<bool>,
 ) -> impl IntoView {
     let selected_ability = move || {
         let voice_id = selected_voice.get();
@@ -967,7 +961,7 @@ pub fn ParameterControlCard(
 
     view! {
         <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
-            // 标题 + 切换块
+            // 标题 + 切换块 + 分享按钮
             <div class="flex items-center gap-3 mb-6 flex-wrap">
                 <h3 class="text-lg font-semibold flex items-center shrink-0">
                     <i class="fa-solid fa-sliders text-primary mr-2"></i>
@@ -1013,6 +1007,16 @@ pub fn ParameterControlCard(
                         </div>
                     </Show>
                 </Suspense>
+
+                // 分享按钮（推到最右侧）
+                <button
+                    class="ml-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-700 text-sm font-medium transition-all"
+                    title="分享当前声音配置"
+                    on:click=move |_| set_show_share.set(true)
+                >
+                    <i class="fa-solid fa-share-nodes text-xs"></i>
+                    "分享"
+                </button>
             </div>
 
             // 内容区域
