@@ -1,6 +1,6 @@
 use crate::api;
 use crate::api::voice::Parametic;
-use crate::pages::share::{ShareVoiceConfigModal, ShareVoicePopup, ShareVoicePostModal};
+use crate::pages::share::{ShareVoiceConfigModal, ShareVoicePostModal};
 use leptos::logging::debug_error;
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
@@ -85,7 +85,6 @@ pub fn HomePage() -> impl IntoView {
     let (show_share, set_show_share) = signal(false);
 
     // 分享弹窗状态（生成的声音）
-    let (show_voice_popup, set_show_voice_popup) = signal(false);
     let (show_voice_share, set_show_voice_share) = signal(false);
 
     // Resource 用于异步获取数据
@@ -189,13 +188,6 @@ pub fn HomePage() -> impl IntoView {
         }
     });
 
-    // 生成成功后弹出右下角分享提示
-    Effect::new(move |_| {
-        if let Some(Ok(_)) = generate_action.value().get() {
-            set_show_voice_popup.set(true);
-        }
-    });
-
     // 从 generate_action 结果派生 library_id
     let library_id_signal = Signal::derive(move || {
         generate_action
@@ -254,7 +246,7 @@ pub fn HomePage() -> impl IntoView {
                             voices_resource=voices_resource
                         />
                         // 3. 输出结果 (核心功能)
-                        <AudioResultCard generate_action=generate_action />
+                        <AudioResultCard generate_action=generate_action set_show_voice_share=set_show_voice_share />
                     </div>
                 </div>
             </div>
@@ -277,13 +269,6 @@ pub fn HomePage() -> impl IntoView {
                 is_instruction_mode=is_instruction_mode
                 instruction_text=instruction_text
                 voices_resource=voices_resource
-            />
-
-            // 右下角弹出提示（生成成功后自动出现）
-            <ShareVoicePopup
-                show=show_voice_popup
-                set_show=set_show_voice_popup
-                set_show_modal=set_show_voice_share
             />
 
             // 分享声音作品弹窗
@@ -1069,6 +1054,8 @@ pub fn ParameterControlCard(
 pub fn AudioResultCard(
     /// 生成动作 (Action) - 返回音频 URL
     generate_action: Action<(), Result<uuid::Uuid, ServerFnError>>,
+    /// 打开分享声音作品弹窗
+    set_show_voice_share: WriteSignal<bool>,
 ) -> impl IntoView {
     // 获取 Action 的状态信号
     let is_pending = generate_action.pending();
@@ -1206,36 +1193,55 @@ pub fn AudioResultCard(
                 "输出结果"
             </h3>
 
-            // --- 生成按钮 ---
+            // --- 生成 / 分享按钮 ---
             <div class="flex flex-wrap gap-3 mb-6">
-                <button
-                    id="generate-btn"
-                    class="bg-primary hover:bg-primary-focus text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 flex items-center justify-center w-full shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                    on:click=move |_| {
-                        generate_action.dispatch(());
+                {move || {
+                    let has_result = value.get().is_some_and(|r| r.is_ok());
+                    if has_result && !is_pending.get() {
+                        // 生成成功后：绿色分享按钮
+                        view! {
+                            <button
+                                class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 flex items-center justify-center w-full shadow-md hover:shadow-lg active:scale-[0.98]"
+                                on:click=move |_| set_show_voice_share.set(true)
+                            >
+                                <i class="fa-solid fa-share-nodes mr-2"></i>
+                                "分享这段声音"
+                            </button>
+                        }.into_any()
+                    } else {
+                        // 默认：生成按钮
+                        view! {
+                            <button
+                                id="generate-btn"
+                                class="bg-primary hover:bg-primary-focus text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 flex items-center justify-center w-full shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                                on:click=move |_| {
+                                    generate_action.dispatch(());
+                                }
+                                disabled=move || is_pending.get()
+                            >
+                                {move || {
+                                    if is_pending.get() {
+                                        view! {
+                                            <>
+                                                <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>
+                                                "正在生成..."
+                                            </>
+                                        }
+                                            .into_any()
+                                    } else {
+                                        view! {
+                                            <>
+                                                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
+                                                "生成音频"
+                                            </>
+                                        }
+                                            .into_any()
+                                    }
+                                }}
+                            </button>
+                        }.into_any()
                     }
-                    disabled=move || is_pending.get()
-                >
-                    {move || {
-                        if is_pending.get() {
-                            view! {
-                                <>
-                                    <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>
-                                    "正在生成..."
-                                </>
-                            }
-                                .into_view()
-                        } else {
-                            view! {
-                                <>
-                                    <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
-                                    "生成音频"
-                                </>
-                            }
-                                .into_view()
-                        }
-                    }}
-                </button>
+                }}
             </div>
 
             // --- 状态展示区域 ---
