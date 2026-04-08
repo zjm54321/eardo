@@ -406,6 +406,23 @@ impl VoicePostService for ServiceProvider<Postgres> {
     }
 
     async fn search(&self, query: &str) -> anyhow::Result<Vec<VoicePost>> {
+        if let Some(user_id) = query.trim().strip_prefix("uid:") {
+            let author = Uuid::parse_str(user_id.trim()).context("无效的用户ID搜索条件")?;
+
+            let posts = sqlx::query_as::<_, VoicePost>(
+                "SELECT id, title, content, library_id, author, status, comments_count, likes_count FROM voice_post 
+                 WHERE status != 'Deleted'::post_status AND status != 'Banned'::post_status 
+                 AND author = $1
+                 ORDER BY created_at DESC",
+            )
+            .bind(author)
+            .fetch_all(&self.pool)
+            .await
+            .context("按用户搜索帖子失败")?;
+
+            return Ok(posts);
+        }
+
         let search_pattern = format!("%{}%", query);
 
         let posts = sqlx::query_as::<_, VoicePost>(

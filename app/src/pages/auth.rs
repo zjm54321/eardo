@@ -278,7 +278,7 @@ pub fn RegisterPage() -> impl IntoView {
                         if ph.is_empty() {
                             None
                         } else {
-                            phonenumber::parse(None, &ph)
+                            phonenumber::parse(Some(CN), &ph)
                                 .or_else(|_| phonenumber::parse(None, &ph))
                                 .ok()
                                 .map(user::AuthID::Phone)
