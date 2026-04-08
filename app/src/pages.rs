@@ -153,10 +153,12 @@ pub fn Header() -> impl IntoView {
                                                         class="w-full text-left block px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
                                                         on:click=move |_| {
                                                             set_show_menu.set(false);
-                                                            let navigate = leptos_router::hooks::use_navigate();
                                                             leptos::task::spawn_local(async move {
                                                                 let _ = crate::api::user::logout().await;
-                                                                navigate("/", Default::default());
+                                                                #[cfg(target_arch = "wasm32")]
+                                                                if let Some(window) = web_sys::window() {
+                                                                    let _ = window.location().set_href("/");
+                                                                }
                                                             });
                                                         }
                                                     >
