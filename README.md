@@ -18,6 +18,7 @@
 - [数据与接口总览](#数据与接口总览)
 - [性能与容量预估](#性能与容量预估)
 - [部署与环境](#部署与环境)
+- [CI/CD 与生产发布](#cicd-与生产发布)
 - [安全与合规](#安全与合规)
 - [测试与验收](#测试与验收)
 - [路线图](#路线图)
@@ -127,6 +128,7 @@ PostgreSQL (用户 / 会话 / 声线模型 / 帖子 / 音频)
  | `PG_DATABASE_URL` | PostgreSQL 连接串            | `postgres://postgres:postgres@localhost:5432/eardo` |
  | `OPENAI_API_BASE` | AI 改写接口（OpenAI 兼容）   | —                                                   |
  | `OPENAI_API_KEY`  | AI 改写 API Key              | —                                                   |
+ | `LEPTOS_SITE_ADDR`| 服务监听地址                | `127.0.0.1:3000`                                    |
 
 - **本地快速启动**：
 	1. 启动 PostgreSQL 并执行 `sql/` 目录下的 Schema
@@ -139,6 +141,93 @@ PostgreSQL (用户 / 会话 / 声线模型 / 帖子 / 音频)
 	- 对象存储：头像/音频迁移至 OSS/S3，减轻 DB 压力；
 	- 缓存：加入 Redis 做 session/生成结果缓存；
 	- 限流：在 Axum 层增加请求限速中间件。
+
+## CI/CD 与生产发布
+- **当前工作流**：`.github/workflows/build.yml`
+  - `package-linux`：构建 Linux 生产包并上传 artifact；
+  - `deploy-production`：仅在 `main` 分支 `push` 时触发，直接复用 `package-linux` 产物，不重复构建；
+  - Windows / macOS 打包仍保留在手动触发（`workflow_dispatch`）场景。
+
+- **生产目录约定（Ubuntu）**：
+	```text
+	/opt/eardo/
+	  current -> /opt/eardo/releases/<git-sha>
+	  releases/
+	```
+
+- **systemd 推荐配置**：
+	- 服务文件：`/etc/systemd/system/eardo.service`
+	- 环境文件：`/etc/eardo/eardo.env`
+	- 工作目录：`/opt/eardo/current`
+	- 启动命令：`/opt/eardo/current/server`
+
+	示例：
+	```ini
+	[Unit]
+	Description=EarDo Rust Server
+	After=network-online.target
+	Wants=network-online.target
+
+	[Service]
+	Type=simple
+	User=ming
+	Group=ming
+	WorkingDirectory=/opt/eardo/current
+	EnvironmentFile=/etc/eardo/eardo.env
+	ExecStart=/opt/eardo/current/server
+	Restart=always
+	RestartSec=5
+	KillSignal=SIGINT
+	TimeoutStopSec=30
+
+	[Install]
+	WantedBy=multi-user.target
+	```
+
+	启用方式：
+	```bash
+	sudo systemctl daemon-reload
+	sudo systemctl enable eardo
+	sudo systemctl restart eardo
+	journalctl -u eardo -f
+	```
+
+- **GitHub Actions 部署流程**：
+	1. `main` 分支 push 后触发 `build.yml`；
+	2. `package-linux` 执行 `cargo leptos build --release`；
+	3. 上传 Linux artifact（包含 `server`、`site/`、可选 `migrations/`）；
+	4. `deploy-production` 下载 artifact，打包为 `eardo-<sha>.tar.gz`；
+	5. 上传到服务器 `/tmp`；
+	6. 解压到 `/opt/eardo/releases/<sha>`；
+	7. 更新 `/opt/eardo/current` 软链；
+	8. `systemctl restart eardo` 完成发布。
+
+- **Actions Secrets**：
+	- `DEPLOY_HOST`
+	- `DEPLOY_PORT`
+	- `DEPLOY_USER`
+	- `DEPLOY_SSH_KEY`
+
+- **sudo 权限要求**：部署用户需免密码执行以下命令，否则 Action 在重启服务时会失败：
+	```sudoers
+	ming ALL=(ALL) NOPASSWD: /bin/systemctl restart eardo, /bin/systemctl status eardo, /bin/systemctl daemon-reload, /bin/systemctl is-active eardo
+	```
+
+- **环境文件示例**：
+	```env
+	PG_DATABASE_URL=postgresql://user:password@localhost:5432/eardo
+	ALIYUN_API_KEY=your_aliyun_key
+	OPENAI_API_BASE=https://your-openai-compatible-endpoint
+	OPENAI_API_KEY=your_openai_key
+	LEPTOS_SITE_ADDR=127.0.0.1:3001
+	RUST_LOG=info
+	```
+
+- **回滚方式**：
+	```bash
+	ln -sfn /opt/eardo/releases/<old-sha> /opt/eardo/current
+	sudo systemctl restart eardo
+	```
 
 ## 安全与合规
 - **密码安全**：前端用 SHA256 对密码哈希后传输，后端再用 bcrypt 二次哈希存储，双层保护。

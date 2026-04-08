@@ -87,7 +87,7 @@ server/    → 服务端入口（Axum binary），组装 AppState、注册路由
 | 服务端入口 & AppState | `server/src/main.rs` |
 | WASM hydrate 入口 | `frontend/src/lib.rs` |
 | Tailwind 主题配置 | `style/tailwind.css` |
-| CI 构建 | `.github/workflows/build.yml` |
+| CI/CD 构建与发布 | `.github/workflows/build.yml` |
 
 ## 开发注意事项
 
@@ -96,3 +96,5 @@ server/    → 服务端入口（Axum binary），组装 AppState、注册路由
 - 新增 Provider 需要在 `server/src/main.rs` 的 `server_fn_handler` 和 `ssr_handler` 两处同时注入 `provide_context()`
 - 样式使用 Tailwind CSS v4（`@import 'tailwindcss'` 语法），自定义主题色定义在 `style/tailwind.css` 的 `@theme` 块中
 - Rust edition 2024，使用 nightly 工具链
+- 生产部署使用 Ubuntu `systemd`：`/opt/eardo/current/server` 作为 `ExecStart`，环境变量从 `/etc/eardo/eardo.env` 读取
+- GitHub Actions 仅在 `main` 分支 push 时自动部署，`deploy-production` 直接复用 `package-linux` 产物，不单独重复构建
