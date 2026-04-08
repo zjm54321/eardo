@@ -72,7 +72,7 @@ pub fn App() -> impl IntoView {
             // 页脚可以保留
             <footer class="mt-auto py-6 px-4 bg-white/70 backdrop-blur-sm border-t border-gray-100 relative z-50">
                 <div class="container mx-auto text-center text-gray-500 text-sm">
-                    <p>"© 2025 白昼聆夏 - 耳朵项目 | 声音转换技术展示平台"</p>
+                    <p>"© 2026 白昼聆夏 - 耳朵项目 | 声音转换技术展示平台"</p>
                 </div>
             </footer>
         </Router>
