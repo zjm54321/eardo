@@ -36,7 +36,7 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_linux == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -82,7 +82,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_windows == 'true' }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -138,7 +138,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_macos == 'true' }}
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -176,3 +176,70 @@ jobs:
           name: ${{ env.LEPTOS_OUTPUT_NAME }}-macos-package
           path: dist/
           if-no-files-found: error
+
+  deploy-production:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: package-linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.LEPTOS_OUTPUT_NAME }}-linux-package
+          path: dist
+
+      - name: Create release archive
+        run: |
+          tar -czf eardo-${GITHUB_SHA}.tar.gz -C dist .
+
+      - name: Upload release archive to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          source: eardo-${{ github.sha }}.tar.gz
+          target: /tmp
+          overwrite: true
+
+      - name: Deploy and restart service
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          RELEASE_ID: ${{ github.sha }}
+          RELEASE_ARCHIVE: eardo-${{ github.sha }}.tar.gz
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script_stop: true
+          envs: RELEASE_ID,RELEASE_ARCHIVE
+          script: |
+            set -euo pipefail
+
+            APP_ROOT="/opt/eardo"
+            RELEASES_DIR="$APP_ROOT/releases"
+            RELEASE_DIR="$RELEASES_DIR/$RELEASE_ID"
+            CURRENT_LINK="$APP_ROOT/current"
+            ARCHIVE_PATH="/tmp/$RELEASE_ARCHIVE"
+
+            mkdir -p "$RELEASES_DIR"
+            rm -rf "$RELEASE_DIR"
+            mkdir -p "$RELEASE_DIR"
+
+            tar -xzf "$ARCHIVE_PATH" -C "$RELEASE_DIR"
+
+            test -f "$RELEASE_DIR/server"
+            test -d "$RELEASE_DIR/site"
+
+            chmod +x "$RELEASE_DIR/server"
+            ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
+
+            sudo -n systemctl daemon-reload
+            sudo -n systemctl restart eardo
+            sudo -n systemctl is-active --quiet eardo
+            sudo -n systemctl status eardo --no-pager
+
+            rm -f "$ARCHIVE_PATH"
