@@ -2,6 +2,26 @@ use crate::api;
 use leptos::prelude::*;
 use uuid::Uuid;
 
+fn is_auth_required_error(message: &str) -> bool {
+    [
+        "未找到 session token",
+        "无效的 session token",
+        "Session 已过期或无效",
+        "未登录",
+        "请先登录",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
+}
+
+fn friendly_share_error(message: &str) -> String {
+    if is_auth_required_error(message) {
+        "分享前请先登录或注册账号。".to_string()
+    } else {
+        message.to_string()
+    }
+}
+
 /// 分享声音配置的弹窗组件
 ///
 /// 用户填写标题和描述后，组件会：
@@ -275,6 +295,9 @@ pub fn ShareVoiceConfigModal(
 
                                 // ── 错误状态 ──
                                 Some(Err(err_msg)) => {
+                                    let is_auth_error = is_auth_required_error(&err_msg);
+                                    let display_error = friendly_share_error(&err_msg);
+
                                     view! {
                                         <div class="p-8 text-center space-y-6">
                                             <div class="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center">
@@ -284,17 +307,33 @@ pub fn ShareVoiceConfigModal(
                                                 <h3 class="text-xl font-bold text-gray-800 mb-2">
                                                     "分享失败"
                                                 </h3>
-                                                <p class="text-sm text-red-500">{err_msg}</p>
+                                                <p class="text-sm text-red-500">{display_error}</p>
                                             </div>
-                                            <div class="flex gap-3">
+                                            <div class="flex gap-3 flex-wrap">
                                                 <button
-                                                    class="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl transition-colors font-medium"
+                                                    class="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl transition-colors font-medium min-w-[120px]"
                                                     on:click=move |_| close()
                                                 >
                                                     "关闭"
                                                 </button>
+                                                <Show when=move || is_auth_error>
+                                                    <>
+                                                        <a
+                                                            href="/login"
+                                                            class="flex-1 px-6 py-3 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl transition-colors font-medium min-w-[120px] text-center"
+                                                        >
+                                                            "去登录"
+                                                        </a>
+                                                        <a
+                                                            href="/register"
+                                                            class="flex-1 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl transition-colors font-medium min-w-[120px] text-center"
+                                                        >
+                                                            "去注册"
+                                                        </a>
+                                                    </>
+                                                </Show>
                                                 <button
-                                                    class="flex-1 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl transition-colors font-medium"
+                                                    class="flex-1 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl transition-colors font-medium min-w-[120px]"
                                                     on:click=move |_| set_share_result.set(None)
                                                 >
                                                     "重试"
@@ -512,8 +551,6 @@ pub fn ShareVoiceConfigModal(
     }
 }
 
-
-
 // ═══════════════════════════════════════════════════════════════
 // 分享生成的声音（VoicePost）
 // ═══════════════════════════════════════════════════════════════
@@ -661,6 +698,9 @@ pub fn ShareVoicePostModal(
 
                                 // ── 失败 ──
                                 Some(Err(err_msg)) => {
+                                    let is_auth_error = is_auth_required_error(&err_msg);
+                                    let display_error = friendly_share_error(&err_msg);
+
                                     view! {
                                         <div class="p-8 text-center space-y-6">
                                             <div class="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center">
@@ -670,17 +710,33 @@ pub fn ShareVoicePostModal(
                                                 <h3 class="text-xl font-bold text-gray-800 mb-2">
                                                     "分享失败"
                                                 </h3>
-                                                <p class="text-sm text-red-500">{err_msg}</p>
+                                                <p class="text-sm text-red-500">{display_error}</p>
                                             </div>
-                                            <div class="flex gap-3">
+                                            <div class="flex gap-3 flex-wrap">
                                                 <button
-                                                    class="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl transition-colors font-medium"
+                                                    class="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl transition-colors font-medium min-w-[120px]"
                                                     on:click=move |_| close()
                                                 >
                                                     "关闭"
                                                 </button>
+                                                <Show when=move || is_auth_error>
+                                                    <>
+                                                        <a
+                                                            href="/login"
+                                                            class="flex-1 px-6 py-3 bg-green-100 hover:bg-green-200 text-green-700 rounded-xl transition-colors font-medium min-w-[120px] text-center"
+                                                        >
+                                                            "去登录"
+                                                        </a>
+                                                        <a
+                                                            href="/register"
+                                                            class="flex-1 px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-colors font-medium min-w-[120px] text-center"
+                                                        >
+                                                            "去注册"
+                                                        </a>
+                                                    </>
+                                                </Show>
                                                 <button
-                                                    class="flex-1 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl transition-colors font-medium"
+                                                    class="flex-1 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl transition-colors font-medium min-w-[120px]"
                                                     on:click=move |_| set_share_result.set(None)
                                                 >
                                                     "重试"
