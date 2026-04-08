@@ -630,8 +630,6 @@ fn StepParamConfig(
     }
 }
 
-
-
 // ═══════════════════════════════════════════════════════════════
 // Step 3 · 输入文本 + 表达助手浮窗
 // ═══════════════════════════════════════════════════════════════
@@ -984,7 +982,9 @@ fn StepGenerate(
     };
 
     let on_time_update = move |_| {
-        if is_seeking.get() { return; }
+        if is_seeking.get() {
+            return;
+        }
         if let Some(audio) = audio_ref.get() {
             #[cfg(target_arch = "wasm32")]
             {
@@ -1360,6 +1360,7 @@ fn StepGenerate(
                                                     on:pause=move |_| is_playing.set(false)
                                                     on:timeupdate=on_time_update
                                                     on:loadedmetadata=on_loaded_metadata
+                                                    on:durationchange=on_loaded_metadata
                                                     on:ended=move |_| is_playing.set(false)
                                                     crossorigin="anonymous"
                                                 ></audio>

@@ -725,8 +725,6 @@ pub fn VoiceSelectorCard(
     }
 }
 
-
-
 #[component]
 pub fn ParameterControlCard(
     /// 选中的参数 (双向绑定)
@@ -913,7 +911,9 @@ pub fn AudioResultCard(
 
     // 时间更新
     let on_time_update = move |_| {
-        if is_seeking.get() { return; }
+        if is_seeking.get() {
+            return;
+        }
         if let Some(audio) = audio_ref.get() {
             #[cfg(target_arch = "wasm32")]
             {
@@ -1257,6 +1257,7 @@ pub fn AudioResultCard(
                                         on:pause=move |_| is_playing.set(false)
                                         on:timeupdate=on_time_update
                                         on:loadedmetadata=on_loaded_metadata
+                                        on:durationchange=on_loaded_metadata
                                         on:ended=move |_| is_playing.set(false)
                                         crossorigin="anonymous"
                                     ></audio>

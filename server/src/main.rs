@@ -73,7 +73,7 @@ async fn get_audio_handler(
         if let Ok((data,)) = result {
             return (
                 [
-                    (header::CONTENT_TYPE, "audio/mp3"),
+                    (header::CONTENT_TYPE, "audio/mpeg"),
                     (header::CACHE_CONTROL, "public, max-age=3600"),
                 ],
                 data,
