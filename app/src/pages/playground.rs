@@ -1,7 +1,7 @@
-use crate::api::post::{PostStatus, VoicePost, list_voice_post};
-use crate::pages::component::CustomAudioPlayer;
 #[cfg(feature = "ssr")]
 use crate::api::post::{Action, VoicePostID, action_voice_post, get_voice_post_comments};
+use crate::api::post::{PostStatus, VoicePost, list_voice_post};
+use crate::pages::component::CustomAudioPlayer;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
@@ -72,7 +72,6 @@ impl PostMetadata {
         }
     }
 }
-
 
 #[component]
 pub fn Playground() -> impl IntoView {
