@@ -9,6 +9,7 @@ pub mod playground;
 pub mod share;
 pub mod voicefilter;
 pub mod voicesetup;
+pub mod guide;
 pub mod welcome; // 新增
 
 #[component]
@@ -17,6 +18,7 @@ pub fn Header() -> impl IntoView {
     // 这是一个简单的做法，实际上可能需要一个全局 Context 来存储 User
     let user_resource = Resource::new(|| (), |_| crate::api::user::get_user_profile());
     let (show_menu, set_show_menu) = signal(false);
+    let (show_guide, set_show_guide) = signal(false);
 
     view! {
         // 顶部导航栏容器
@@ -86,6 +88,131 @@ pub fn Header() -> impl IntoView {
                             "帮助"
                         </span>
                     </A>
+
+                    // 5. 新手引导
+                    <div class="relative">
+                        <button
+                            class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-accent/10 transition-colors duration-300 group"
+                            on:click=move |_| set_show_guide.update(|v| *v = !*v)
+                        >
+                            <i class="fa-solid fa-lightbulb text-gray-400 group-hover:text-accent transition-colors"></i>
+                            <span class="text-gray-600 font-medium group-hover:text-accent transition-colors">
+                                "新手引导"
+                            </span>
+                        </button>
+
+                        <Show when=move || show_guide.get()>
+                            // 透明遮罩，点击关闭引导
+                            <div
+                                class="fixed inset-0 z-40"
+                                on:click=move |_| set_show_guide.set(false)
+                            ></div>
+                            // 引导列表
+                            <div class="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-xl py-3 z-50 border border-gray-100 animate-fade-in">
+                                <div class="px-4 py-2 border-b border-gray-100">
+                                    <h3 class="text-sm font-bold text-gray-800 flex items-center">
+                                        <i class="fa-solid fa-graduation-cap text-accent mr-2"></i>
+                                        "快速上手指南"
+                                    </h3>
+                                </div>
+
+                                // 引导项 1: 声线选择
+                                <A
+                                    href="/setup"
+                                    attr:class="block px-4 py-3 hover:bg-accent/5 transition-colors border-b border-gray-50 group"
+                                    on:click=move |_| set_show_guide.set(false)
+                                >
+                                    <div class="flex items-start space-x-3">
+                                        <div class="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 group-hover:bg-accent/20 transition-colors">
+                                            <i class="fa-solid fa-microphone text-accent text-sm"></i>
+                                        </div>
+                                        <div class="flex-1">
+                                            <div class="font-medium text-gray-800 text-sm group-hover:text-accent transition-colors">
+                                                "1. 选择声线"
+                                            </div>
+                                            <div class="text-xs text-gray-500 mt-0.5">
+                                                "从声音库中挑选合适的声线"
+                                            </div>
+                                        </div>
+                                        <i class="fa-solid fa-chevron-right text-gray-300 text-xs mt-1 group-hover:text-accent transition-colors"></i>
+                                    </div>
+                                </A>
+
+                                // 引导项 2: 文本输入
+                                <A
+                                    href="/setup"
+                                    attr:class="block px-4 py-3 hover:bg-accent/5 transition-colors border-b border-gray-50 group"
+                                    on:click=move |_| set_show_guide.set(false)
+                                >
+                                    <div class="flex items-start space-x-3">
+                                        <div class="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 group-hover:bg-accent/20 transition-colors">
+                                            <i class="fa-solid fa-keyboard text-accent text-sm"></i>
+                                        </div>
+                                        <div class="flex-1">
+                                            <div class="font-medium text-gray-800 text-sm group-hover:text-accent transition-colors">
+                                                "2. 输入文本"
+                                            </div>
+                                            <div class="text-xs text-gray-500 mt-0.5">
+                                                "输入想要转换的文字内容"
+                                            </div>
+                                        </div>
+                                        <i class="fa-solid fa-chevron-right text-gray-300 text-xs mt-1 group-hover:text-accent transition-colors"></i>
+                                    </div>
+                                </A>
+
+                                // 引导项 3: 参数调节
+                                <A
+                                    href="/setup"
+                                    attr:class="block px-4 py-3 hover:bg-accent/5 transition-colors border-b border-gray-50 group"
+                                    on:click=move |_| set_show_guide.set(false)
+                                >
+                                    <div class="flex items-start space-x-3">
+                                        <div class="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 group-hover:bg-accent/20 transition-colors">
+                                            <i class="fa-solid fa-sliders text-accent text-sm"></i>
+                                        </div>
+                                        <div class="flex-1">
+                                            <div class="font-medium text-gray-800 text-sm group-hover:text-accent transition-colors">
+                                                "3. 调节参数"
+                                            </div>
+                                            <div class="text-xs text-gray-500 mt-0.5">
+                                                "调整语速、音调等参数"
+                                            </div>
+                                        </div>
+                                        <i class="fa-solid fa-chevron-right text-gray-300 text-xs mt-1 group-hover:text-accent transition-colors"></i>
+                                    </div>
+                                </A>
+
+                                // 引导项 4: 生成与输出
+                                <A
+                                    href="/setup"
+                                    attr:class="block px-4 py-3 hover:bg-accent/5 transition-colors group"
+                                    on:click=move |_| set_show_guide.set(false)
+                                >
+                                    <div class="flex items-start space-x-3">
+                                        <div class="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 group-hover:bg-accent/20 transition-colors">
+                                            <i class="fa-solid fa-wand-magic-sparkles text-accent text-sm"></i>
+                                        </div>
+                                        <div class="flex-1">
+                                            <div class="font-medium text-gray-800 text-sm group-hover:text-accent transition-colors">
+                                                "4. 生成结果"
+                                            </div>
+                                            <div class="text-xs text-gray-500 mt-0.5">
+                                                "点击生成并播放/下载音频"
+                                            </div>
+                                        </div>
+                                        <i class="fa-solid fa-chevron-right text-gray-300 text-xs mt-1 group-hover:text-accent transition-colors"></i>
+                                    </div>
+                                </A>
+
+                                // 底部提示
+                                <div class="px-4 py-2 mt-2 border-t border-gray-100">
+                                    <p class="text-xs text-gray-400 text-center">
+                                        "点击任意步骤开始体验"
+                                    </p>
+                                </div>
+                            </div>
+                        </Show>
+                    </div>
                 </nav>
 
                 // --- 右侧：头像框 ---

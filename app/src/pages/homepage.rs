@@ -5,6 +5,7 @@ use crate::pages::share::{ShareVoiceConfigModal, ShareVoicePostModal};
 use leptos::logging::debug_error;
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
+use crate::pages::guide::GuideButton;
 
 #[component]
 pub fn HomePage() -> impl IntoView {
@@ -221,6 +222,7 @@ pub fn HomePage() -> impl IntoView {
                 text_signal=text_signal
                 voices_resource=voices_resource
             />
+            <GuideButton />
         </div>
     }
 }
@@ -278,7 +280,7 @@ pub fn TextInputCard(
 
     view! {
         // 卡片容器
-        <section
+        <section id="text-input"
             class="bg-white shadow-soft transition-all duration-300 ease-in-out rounded-xl"
             // 普通模式样式
             class:p-6=move || !is_fullscreen.get()
@@ -608,7 +610,7 @@ pub fn VoiceSelectorCard(
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
 ) -> impl IntoView {
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
+        <section id="voice-selector" class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
             <h3 class="text-lg font-semibold mb-4 flex items-center">
                 <i class="fa-solid fa-circle-user text-primary mr-2"></i>
                 "声线选择"
@@ -761,7 +763,7 @@ pub fn ParameterControlCard(
     });
 
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
+        <section id="param-control" class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
             // 标题 + 切换块 + 分享按钮
             <div class="flex items-center gap-3 mb-6 flex-wrap">
                 <h3 class="text-lg font-semibold flex items-center shrink-0">
@@ -1091,7 +1093,7 @@ pub fn AudioResultCard(
     });
 
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover text-dark border border-gray-100">
+        <section id="audio-result" class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover text-dark border border-gray-100">
             <h3 class="text-lg font-semibold mb-4 flex items-center text-dark">
                 <i class="fa-solid fa-volume-high text-primary mr-2"></i>
                 "输出结果"
