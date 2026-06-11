@@ -6,10 +6,12 @@ pub mod component;
 pub mod help; // 帮助中心
 pub mod homepage;
 pub mod playground;
+pub mod scene_creation;
 pub mod share;
 pub mod voicefilter;
 pub mod voicesetup;
 pub mod welcome; // 新增
+pub mod workbench;
 
 #[component]
 pub fn Header() -> impl IntoView {
@@ -45,7 +47,7 @@ pub fn Header() -> impl IntoView {
                 <nav class="absolute left-1/2 transform -translate-x-1/2 hidden md:flex items-center space-x-1">
                     // 1. 首页
                     <A
-                        href="/setup"
+                        href="/home"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
                     >
                         <i class="fa-solid fa-house text-gray-400 group-hover:text-primary transition-colors"></i>
@@ -54,7 +56,18 @@ pub fn Header() -> impl IntoView {
                         </span>
                     </A>
 
-                    // 2. 声音广场
+                    // 2. 声音生成器
+                    <A
+                        href="/generate"
+                        attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                    >
+                        <i class="fa-solid fa-wave-square text-gray-400 group-hover:text-primary transition-colors"></i>
+                        <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
+                            "声音生成"
+                        </span>
+                    </A>
+
+                    // 3. 声音广场
                     <A
                         href="/voice"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
@@ -65,7 +78,7 @@ pub fn Header() -> impl IntoView {
                         </span>
                     </A>
 
-                    // 3. 声音滤镜
+                    // 4. 声音滤镜
                     <A
                         href="/filters"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
@@ -76,7 +89,7 @@ pub fn Header() -> impl IntoView {
                         </span>
                     </A>
 
-                    // 4. 帮助中心
+                    // 5. 帮助中心
                     <A
                         href="/help"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
