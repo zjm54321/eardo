@@ -20,20 +20,26 @@ pub fn HomePage() -> impl IntoView {
         })
     };
 
-    let text_signal = RwSignal::new(String::new());
+    let text_signal = RwSignal::new(get_str_param_opt("text").unwrap_or_default());
 
     // 初始化声线 ID 和参数（默认值）
     let voice_signal = RwSignal::new(String::new());
 
+    let parse_param = |key: &str, default: f32| {
+        get_str_param_opt(key)
+            .and_then(|value| value.parse::<f32>().ok())
+            .unwrap_or(default)
+    };
+
     let param_signal = RwSignal::new(Parametic {
-        pitch: 1.0,
-        speed: 1.0,
-        volume: 1.0,
+        pitch: parse_param("pitch", 1.0),
+        speed: parse_param("speed", 1.0),
+        volume: parse_param("volume", 1.0),
     });
 
     // 指令参数状态
     let is_instruction_mode = RwSignal::new(true);
-    let instruction_text = RwSignal::new(String::new());
+    let instruction_text = RwSignal::new(get_str_param_opt("instruction").unwrap_or_default());
 
     // 分享弹窗状态（声音配置）
     let (show_share, set_show_share) = signal(false);
@@ -196,7 +202,12 @@ pub fn HomePage() -> impl IntoView {
                             set_show_share=set_show_share
                         />
                         // 3. 输出结果 (核心功能)
-                        <AudioResultCard generate_action=generate_action set_show_voice_share=set_show_voice_share />
+                        <AudioResultCard
+                            generate_action=generate_action
+                            set_show_voice_share=set_show_voice_share
+                            text_signal=text_signal
+                            voice_signal=voice_signal
+                        />
                     </div>
                 </div>
             </div>
@@ -279,7 +290,8 @@ pub fn TextInputCard(
     view! {
         // 卡片容器
         <section
-            class="bg-white shadow-soft transition-all duration-300 ease-in-out rounded-xl"
+            id="text-input-section"
+            class="bg-white shadow-soft transition-all duration-300 ease-in-out rounded-xl scroll-mt-28"
             // 普通模式样式
             class:p-6=move || !is_fullscreen.get()
             class:hover:shadow-hover=move || !is_fullscreen.get()
@@ -608,13 +620,16 @@ pub fn VoiceSelectorCard(
     voices_resource: Resource<Result<Vec<api::voice::VoiceModel>, ServerFnError>>,
 ) -> impl IntoView {
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden">
+        <section
+            id="voice-selector"
+            class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover h-full flex flex-col lg:max-h-[1100px] overflow-hidden scroll-mt-28"
+        >
             <h3 class="text-lg font-semibold mb-4 flex items-center">
                 <i class="fa-solid fa-circle-user text-primary mr-2"></i>
                 "声线选择"
             </h3>
 
-            <div id="voice-selector" class="flex-1 min-h-0">
+            <div class="flex-1 min-h-0">
                 <Suspense fallback=move || {
                     view! {
                         <div class="flex justify-center items-center py-8 text-gray-400 animate-pulse">
@@ -761,7 +776,10 @@ pub fn ParameterControlCard(
     });
 
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover">
+        <section
+            id="parameter-control"
+            class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover scroll-mt-28"
+        >
             // 标题 + 切换块 + 分享按钮
             <div class="flex items-center gap-3 mb-6 flex-wrap">
                 <h3 class="text-lg font-semibold flex items-center shrink-0">
@@ -874,6 +892,8 @@ pub fn AudioResultCard(
     generate_action: Action<(), Result<uuid::Uuid, ServerFnError>>,
     /// 打开分享声音作品弹窗
     set_show_voice_share: WriteSignal<bool>,
+    text_signal: RwSignal<String>,
+    voice_signal: RwSignal<String>,
 ) -> impl IntoView {
     // 获取 Action 的状态信号
     let is_pending = generate_action.pending();
@@ -1091,7 +1111,10 @@ pub fn AudioResultCard(
     });
 
     view! {
-        <section class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover text-dark border border-gray-100">
+        <section
+            id="audio-result"
+            class="bg-white rounded-xl p-6 shadow-soft transition-all duration-300 hover:shadow-hover text-dark border border-gray-100 scroll-mt-28"
+        >
             <h3 class="text-lg font-semibold mb-4 flex items-center text-dark">
                 <i class="fa-solid fa-volume-high text-primary mr-2"></i>
                 "输出结果"
@@ -1119,9 +1142,11 @@ pub fn AudioResultCard(
                                 id="generate-btn"
                                 class="bg-primary hover:bg-primary-focus text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 flex items-center justify-center w-full shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                                 on:click=move |_| {
-                                    generate_action.dispatch(());
+                                    if !voice_signal.get().is_empty() && !text_signal.get().trim().is_empty() {
+                                        generate_action.dispatch(());
+                                    }
                                 }
-                                disabled=move || is_pending.get()
+                                disabled=move || is_pending.get() || voice_signal.get().is_empty() || text_signal.get().trim().is_empty()
                             >
                                 {move || {
                                     if is_pending.get() {
@@ -1129,6 +1154,22 @@ pub fn AudioResultCard(
                                             <>
                                                 <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>
                                                 "正在生成..."
+                                            </>
+                                        }
+                                            .into_any()
+                                    } else if voice_signal.get().is_empty() {
+                                        view! {
+                                            <>
+                                                <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>
+                                                "正在加载声线..."
+                                            </>
+                                        }
+                                            .into_any()
+                                    } else if text_signal.get().trim().is_empty() {
+                                        view! {
+                                            <>
+                                                <i class="fa-solid fa-pen mr-2"></i>
+                                                "请先输入文本"
                                             </>
                                         }
                                             .into_any()

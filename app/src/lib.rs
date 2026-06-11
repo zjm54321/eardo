@@ -54,8 +54,12 @@ pub fn App() -> impl IntoView {
                     // 根路径改为 Welcome Page
                     <Route path=StaticSegment("") view=pages::welcome::WelcomePage />
 
-                    // 原首页功能移动到 /home
-                    <Route path=StaticSegment("home") view=pages::homepage::HomePage />
+                    // 工作台首页
+                    <Route path=StaticSegment("home") view=pages::workbench::WorkbenchHomePage />
+                    <Route path=StaticSegment("scene-create") view=pages::scene_creation::SceneCreationPage />
+                    <Route path=StaticSegment("voice-style") view=pages::scene_creation::VoiceStylePage />
+                    // 保留原有生成型首页到新路由
+                    <Route path=StaticSegment("generate") view=pages::homepage::HomePage />
                     <Route path=StaticSegment("setup") view=pages::voicesetup::VoiceSetupPage />
 
                     <Route path=StaticSegment("voice") view=pages::playground::Playground />
