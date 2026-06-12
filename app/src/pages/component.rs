@@ -7,20 +7,31 @@ use leptos::prelude::*;
 
 #[server]
 pub async fn ai_rewrite_text(input: String) -> Result<String, ServerFnError> {
-    let api_url = std::env::var("OPENAI_API_BASE")
-        .unwrap_or_else(|_| "https://apiold.placeholder.com/v1/chat/completions".to_string());
-    let api_token =
-        std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "YOUR_API_TOKEN".to_string());
+    let api_url = std::env::var("OPENROUTER_API_BASE")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1/chat/completions".to_string());
+    let api_token = std::env::var("OPENROUTER_API_KEY").map_err(|_| {
+        ServerFnError::new("服务器未配置 OpenRouter API Key，请联系管理员。".to_string())
+    })?;
+
+    let model = std::env::var("OPENROUTER_MODEL")
+        .unwrap_or_else(|_| "openai/gpt-oss-120b:free".to_string());
 
     let payload = serde_json::json!({
-        "model": "DeepSeek-V3.1",
+        "model": model,
         "messages": [{ "role": "user", "content": input }]
     });
+
+    let site_url =
+        std::env::var("OPENROUTER_SITE_URL").unwrap_or_else(|_| "https://eardoai.com".to_string());
+    let app_name = std::env::var("OPENROUTER_APP_NAME").unwrap_or_else(|_| "EarDo".to_string());
 
     let client = reqwest::Client::new();
     let response = client
         .post(api_url)
         .bearer_auth(api_token)
+        .header("HTTP-Referer", site_url)
+        .header("X-OpenRouter-Title", app_name.clone())
+        .header("X-Title", app_name)
         .json(&payload)
         .send()
         .await
@@ -48,6 +59,10 @@ pub async fn ai_rewrite_text(input: String) -> Result<String, ServerFnError> {
         .and_then(|c| c.as_str())
         .unwrap_or("")
         .to_string();
+
+    if content.trim().is_empty() {
+        return Err(ServerFnError::new("AI 响应为空，请稍后重试。".to_string()));
+    }
 
     Ok(content)
 }
