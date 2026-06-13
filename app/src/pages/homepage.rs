@@ -73,14 +73,24 @@ pub fn HomePage() -> impl IntoView {
             // 设置 voice_model_id
             voice_signal.set(meta.voice_model_id.to_string());
 
-            // 设置参数或指令模式
+            let has_instruction = meta
+                .instruction
+                .as_ref()
+                .map(|instruction| !instruction.trim().is_empty())
+                .unwrap_or(false);
+
+            // meta 可能同时包含参数和指令，两个都要应用；不能用 else-if 丢掉指令。
             if let Some(parametric) = meta.parametric {
-                is_instruction_mode.set(false);
                 param_signal.set(parametric);
-            } else if let Some(instruction) = meta.instruction {
-                is_instruction_mode.set(true);
-                instruction_text.set(instruction);
             }
+
+            if let Some(instruction) = meta.instruction {
+                instruction_text.set(instruction);
+            } else {
+                instruction_text.set(String::new());
+            }
+
+            is_instruction_mode.set(has_instruction);
         }
     });
 
