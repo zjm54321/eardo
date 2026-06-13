@@ -61,13 +61,24 @@ pub fn VoiceSetupPage() -> impl IntoView {
         if let Some(Some(meta)) = meta_resource.get() {
             voice_signal.set(meta.voice_model_id.to_string());
             initial_voice_id.set(meta.voice_model_id.to_string());
+
+            let has_instruction = meta
+                .instruction
+                .as_ref()
+                .map(|instruction| !instruction.trim().is_empty())
+                .unwrap_or(false);
+
             if let Some(parametric) = meta.parametric {
-                is_instruction_mode.set(false);
                 param_signal.set(parametric);
-            } else if let Some(instruction) = meta.instruction {
-                is_instruction_mode.set(true);
-                instruction_text.set(instruction);
             }
+
+            if let Some(instruction) = meta.instruction {
+                instruction_text.set(instruction);
+            } else {
+                instruction_text.set(String::new());
+            }
+
+            is_instruction_mode.set(has_instruction);
         }
     });
 

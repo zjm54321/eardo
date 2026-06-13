@@ -475,21 +475,44 @@ pub fn VoiceStylePage() -> impl IntoView {
             let voices = api::voice::list_voice_models().await?;
             let voice_model = voices
                 .iter()
-                .find(|voice| voice.ability.parametric_control || voice.ability.instruction_control)
-                .or_else(|| voices.first())
-                .ok_or_else(|| ServerFnError::new("暂无可用声线，无法创建声音滤镜"))?;
+                .find(|voice| voice.ability.instruction_control)
+                .or_else(|| voices.iter().find(|voice| voice.ability.parametric_control))
+                .ok_or_else(|| {
+                    ServerFnError::new("暂无支持指令或参数控制的声线，无法创建声音滤镜")
+                })?;
+
+            let fallback_parametric = style_params(&style);
+            let fallback_instruction = style_instruction(&style, &scene, &goal);
+
+            let parametric = voice_model
+                .ability
+                .parametric_control
+                .then(|| fallback_parametric.clone());
+            let instruction = voice_model
+                .ability
+                .instruction_control
+                .then(|| fallback_instruction.clone());
 
             let voice_meta = api::voice::VoiceMeta {
                 voice_model_id: voice_model.id,
-                parametric: Some(style_params(&style)),
-                instruction: Some(style_instruction(&style, &scene, &goal)),
+                parametric,
+                instruction: instruction.clone(),
             };
 
             let meta_id = api::voice::generate_meta(voice_meta).await?;
+            let instruction_query = instruction
+                .as_deref()
+                .map(|instruction| format!("&instruction={}", encode_query_component(instruction)))
+                .unwrap_or_default();
+
             Ok::<String, ServerFnError>(format!(
-                "/generate?meta_id={}&text={}#voice-selector",
+                "/generate?meta_id={}&text={}&pitch={:.3}&speed={:.3}&volume={:.3}{}#voice-selector",
                 meta_id,
-                encode_query_component(&text)
+                encode_query_component(&text),
+                fallback_parametric.pitch,
+                fallback_parametric.speed,
+                fallback_parametric.volume,
+                instruction_query
             ))
         }
     });
