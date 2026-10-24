@@ -465,30 +465,46 @@ impl AuthService for ServiceProvider<Postgres> {
 #[async_trait::async_trait]
 impl UserService for ServiceProvider<Postgres> {
     async fn get_user_profile(&self) -> anyhow::Result<User> {
-        let user_id = get_user_id_from_session(&self.pool).await?;
+        self.get_current_user_profile()
+            .await?
+            .ok_or_else(|| anyhow!("未登录或 Session 已过期"))
+    }
+
+    async fn get_current_user_profile(&self) -> anyhow::Result<Option<User>> {
+        let Some(token) = get_session_token().and_then(|token| Uuid::parse_str(&token).ok()) else {
+            return Ok(None);
+        };
 
         #[derive(sqlx::FromRow)]
         struct UserProfileRow {
+            id: UserID,
             #[sqlx(flatten)]
             usermeta: UserMeta,
             updated_at: chrono::DateTime<Utc>,
         }
 
-        let mut row: UserProfileRow = sqlx::query_as(
-            r#"SELECT nick_name, bio, role, level, updated_at FROM "user" WHERE id = $1"#,
+        let row: Option<UserProfileRow> = sqlx::query_as(
+            r#"SELECT u.id, u.nick_name, u.bio, u.role, u.level, u.updated_at
+               FROM user_session s JOIN "user" u ON u.id = s.user_id
+               WHERE s.id = $1 AND s.expires_at > NOW()
+                 AND u.role NOT IN ('BannedUser', 'DeletedUser')"#,
         )
-        .bind(user_id)
-        .fetch_one(&self.pool)
+        .bind(token)
+        .fetch_optional(&self.pool)
         .await
         .context("获取用户信息失败")?;
 
-        row.usermeta.avatar_url =
-            format!("/api/avatar/{}?t={}", user_id, row.updated_at.timestamp());
-
-        Ok(User {
-            id: user_id,
-            usermeta: row.usermeta,
-        })
+        Ok(row.map(|mut row| {
+            row.usermeta.avatar_url = format!(
+                "/api/avatar/{}?t={}",
+                row.id,
+                row.updated_at.timestamp_millis()
+            );
+            User {
+                id: row.id,
+                usermeta: row.usermeta,
+            }
+        }))
     }
 
     async fn update_user_profile(&self, user: &User) -> anyhow::Result<()> {

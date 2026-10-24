@@ -25,11 +25,11 @@ pub async fn get_post_comments(post_id: String) -> Result<Vec<CommentInfo>, Serv
     let comments = get_voice_post_comments(id).await?;
     Ok(comments
         .into_iter()
-        .map(|(user_id, content)| CommentInfo {
+        .map(|comment| CommentInfo {
             id: "".to_string(), // TODO: 评论ID（后端暂未返回，前端按序号作为 key）
-            author: user_id.to_string(),
-            avatar: Some(format!("/api/avatar/{}", user_id)),
-            content,
+            author: comment.nick_name,
+            avatar: Some(format!("/api/avatar/{}", comment.user_id)),
+            content: comment.content,
             time: "".to_string(), // TODO: 评论时间
         })
         .collect())
@@ -349,7 +349,7 @@ fn WorkCard(work: VoicePost, liked: bool, is_featured: bool) -> impl IntoView {
                 <div class="flex items-start mb-4">
                     // 用户头像（左侧）
                     <div class="w-12 h-12 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center mr-3 flex-shrink-0">
-                        <img src=meta.avatar alt="Avatar" class="w-full h-full object-cover" />
+                        <img src=meta.avatar alt="Avatar" on:error=crate::pages::fallback_avatar class="w-full h-full object-cover" />
                     </div>
                     <div class="flex-1 min-w-0">
                         // 标题
@@ -408,7 +408,7 @@ fn WorkCard(work: VoicePost, liked: bool, is_featured: bool) -> impl IntoView {
                 if show_comments.get() {
                     view! {
                         <div
-                            class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+                            class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
                             on:click=move |_| set_show_comments.set(false)
                         >
                             <div
@@ -535,10 +535,11 @@ where
                                                                         src=comment
                                                                             .avatar
                                                                             .unwrap_or_else(|| {
-                                                                                "https://apiold.dicebear.com/7.x/avataaars/svg?seed=comment"
+                                                                                crate::pages::DEFAULT_AVATAR
                                                                                     .to_string()
                                                                             })
                                                                         class="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                                                                        on:error=crate::pages::fallback_avatar
                                                                     />
                                                                     <div class="flex-1 min-w-0">
                                                                         <div class="flex items-center space-x-2">

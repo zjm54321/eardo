@@ -2,7 +2,9 @@
 use crate::api::post::{
     Action, VoiceMetaPostID, action_voice_meta_post, get_voice_meta_post_comments,
 };
-use crate::api::post::{PostStatus, VoiceMetaPost, list_voice_meta_post, toggle_voice_meta_post_like};
+use crate::api::post::{
+    PostComment, PostStatus, VoiceMetaPost, list_voice_meta_post, toggle_voice_meta_post_like,
+};
 use crate::api::user::UserID;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -18,15 +20,9 @@ pub async fn add_meta_post_comment(post_id: String, content: String) -> Result<(
 }
 
 #[server]
-pub async fn get_meta_post_comments(
-    post_id: String,
-) -> Result<Vec<(String, String)>, ServerFnError> {
+pub async fn get_meta_post_comments(post_id: String) -> Result<Vec<PostComment>, ServerFnError> {
     let id = VoiceMetaPostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
-    let comments = get_voice_meta_post_comments(id).await?;
-    Ok(comments
-        .into_iter()
-        .map(|(user_id, content)| (user_id.to_string(), content))
-        .collect())
+    get_voice_meta_post_comments(id).await
 }
 
 // 用于显示的滤镜结构
@@ -229,7 +225,7 @@ where
                         let (is_liked, set_is_liked) = signal(filter.is_liked);
                         let (likes_count, set_likes_count) = signal(filter.likes_count);
                         let (show_comments, set_show_comments) = signal(false);
-                        let (comments, set_comments) = signal(Vec::<(String, String)>::new());
+                        let (comments, set_comments) = signal(Vec::<PostComment>::new());
                         let (new_comment, set_new_comment) = signal(String::new());
                         let (comments_count, set_comments_count) = signal(filter.comments_count);
                         let post_id = filter.id.clone();
@@ -256,6 +252,7 @@ where
                                                 <img
                                                     src=format!("/api/avatar/{}", filter_author_id)
                                                     alt=filter_author.clone()
+                                                    on:error=crate::pages::fallback_avatar
                                                     class="w-full h-full object-cover"
                                                 />
                                             </div>
@@ -378,16 +375,18 @@ where
                                                         <For
                                                             each=move || { comments.get().into_iter().enumerate().collect::<Vec<_>>() }
                                                             key=|(idx, _)| *idx
-                                                            children=move |(_, (user_id, content))| {
+                                                            children=move |(_, comment)| {
                                                                 view! {
                                                                     <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
                                                                         <img
-                                                                            src=format!("/api/avatar/{}", user_id)
+                                                                            src=format!("/api/avatar/{}", comment.user_id)
                                                                             alt="用户头像"
+                                                                            on:error=crate::pages::fallback_avatar
                                                                             class="w-8 h-8 rounded-full object-cover flex-shrink-0"
                                                                         />
                                                                         <div class="flex-1 min-w-0">
-                                                                            <p class="text-sm text-gray-800 break-words">{content}</p>
+                                                                            <p class="font-medium text-sm text-gray-800">{comment.nick_name}</p>
+                                                                            <p class="text-sm text-gray-800 break-words">{comment.content}</p>
                                                                         </div>
                                                                     </div>
                                                                 }

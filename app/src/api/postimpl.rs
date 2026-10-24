@@ -3,7 +3,7 @@ use {
     crate::api::{
         ServiceProvider,
         post::*,
-        user::{UserID, UserRole},
+        user::UserRole,
         userimpl::{get_authenticated_user, get_user_id_from_session},
     },
     anyhow::{Context, anyhow},
@@ -245,13 +245,13 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
         apply_action(&self.pool, "voice_meta_post", post_id, Action::LikeDislike).await
     }
 
-    async fn get_comments(
-        &self,
-        post_id: VoiceMetaPostID,
-    ) -> anyhow::Result<Vec<(UserID, String)>> {
-        let comments = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT c.user_id, c.content FROM voice_meta_post_comment c
+    async fn get_comments(&self, post_id: VoiceMetaPostID) -> anyhow::Result<Vec<PostComment>> {
+        let comments = sqlx::query_as::<_, PostComment>(
+            "SELECT c.user_id, c.content,
+                    COALESCE(NULLIF(BTRIM(u.nick_name), ''), '用户' || LEFT(c.user_id::text, 4)) AS nick_name
+             FROM voice_meta_post_comment c
              JOIN voice_meta_post p ON p.id = c.post_id
+             JOIN \"user\" u ON u.id = c.user_id
              WHERE c.post_id = $1 AND p.status IN ('Normal', 'Recommended')
              ORDER BY c.created_at ASC LIMIT 100",
         )
@@ -427,10 +427,13 @@ impl VoicePostService for ServiceProvider<Postgres> {
         apply_action(&self.pool, "voice_post", post_id, Action::LikeDislike).await
     }
 
-    async fn get_comments(&self, post_id: VoicePostID) -> anyhow::Result<Vec<(UserID, String)>> {
-        let comments = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT c.user_id, c.content FROM voice_post_comment c
+    async fn get_comments(&self, post_id: VoicePostID) -> anyhow::Result<Vec<PostComment>> {
+        let comments = sqlx::query_as::<_, PostComment>(
+            "SELECT c.user_id, c.content,
+                    COALESCE(NULLIF(BTRIM(u.nick_name), ''), '用户' || LEFT(c.user_id::text, 4)) AS nick_name
+             FROM voice_post_comment c
              JOIN voice_post p ON p.id = c.post_id
+             JOIN \"user\" u ON u.id = c.user_id
              WHERE c.post_id = $1 AND p.status IN ('Normal', 'Recommended')
              ORDER BY c.created_at ASC LIMIT 100",
         )

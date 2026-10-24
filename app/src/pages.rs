@@ -49,6 +49,9 @@ impl AuthState {
 
 /// 头像地址：版本号为 0 时保持原样，之后追加 `v=` 参数刷新缓存
 pub fn avatar_src(url: &str, version: u32) -> String {
+    if url.trim().is_empty() {
+        return DEFAULT_AVATAR.to_string();
+    }
     if version == 0 {
         url.to_string()
     } else if url.contains('?') {
@@ -58,14 +61,25 @@ pub fn avatar_src(url: &str, version: u32) -> String {
     }
 }
 
+pub const DEFAULT_AVATAR: &str = "/default-avatar.svg";
+
+/// Keep an unavailable avatar from leaving a broken image; never retry the fallback itself.
+pub fn fallback_avatar(ev: leptos::ev::ErrorEvent) {
+    let image = event_target::<web_sys::HtmlImageElement>(&ev);
+    if image.get_attribute("src").as_deref() != Some(DEFAULT_AVATAR) {
+        image.set_src(DEFAULT_AVATAR);
+    }
+}
+
 #[component]
 pub fn Header() -> impl IntoView {
     // 检查用户登录状态的资源：登录状态变化或路由切换时重新获取
     let auth = AuthState::use_state();
     let location = leptos_router::hooks::use_location();
+    let navigate = StoredValue::new(leptos_router::hooks::use_navigate());
     let user_resource = Resource::new(
         move || (auth.version.get(), location.pathname.get()),
-        |_| crate::api::user::get_user_profile(),
+        |_| crate::api::user::get_current_user_profile(),
     );
     let (show_menu, set_show_menu) = signal(false);
 
@@ -159,7 +173,7 @@ pub fn Header() -> impl IntoView {
                     }>
                         {move || {
                             match user_resource.get() {
-                                Some(Ok(user)) => {
+                                Some(Ok(Some(user))) => {
                                     view! {
                                         <div class="relative">
                                             <button
@@ -175,6 +189,7 @@ pub fn Header() -> impl IntoView {
                                                             <img
                                                                 src=avatar_src(&user.usermeta.avatar_url, auth.avatar_version.get_untracked())
                                                                 alt="avatar"
+                                                                on:error=fallback_avatar
                                                                 class="w-full h-full object-cover"
                                                             />
                                                         }
@@ -215,13 +230,11 @@ pub fn Header() -> impl IntoView {
                                                         class="w-full text-left block px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
                                                         on:click=move |_| {
                                                             set_show_menu.set(false);
+                                                            let navigate = navigate.get_value();
                                                             leptos::task::spawn_local(async move {
                                                                 let _ = crate::api::user::logout().await;
                                                                 auth.changed();
-                                                                #[cfg(target_arch = "wasm32")]
-                                                                if let Some(window) = web_sys::window() {
-                                                                    let _ = window.location().set_href("/");
-                                                                }
+                                                                navigate("/", Default::default());
                                                             });
                                                         }
                                                     >

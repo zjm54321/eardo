@@ -633,6 +633,7 @@ fn ProfileCard(user: crate::api::user::User) -> impl IntoView {
                             view! {
                                 <img
                                     src=crate::pages::avatar_src(&user.usermeta.avatar_url, auth.avatar_version.get())
+                                    on:error=crate::pages::fallback_avatar
                                     loading="lazy"
                                     decoding="async"
                                     class="w-full h-full object-cover"
@@ -1341,6 +1342,7 @@ pub fn SettingsPage() -> impl IntoView {
                                                                             view! {
                                                                                 <img
                                                                                     src=crate::pages::avatar_src(&avatar_url, auth.avatar_version.get())
+                                                                                    on:error=crate::pages::fallback_avatar
                                                                                     class="w-full h-full object-cover"
                                                                                     loading="lazy"
                                                                                     decoding="async"

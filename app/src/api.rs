@@ -126,6 +126,7 @@ pub mod user {
     #[async_trait::async_trait]
     pub trait UserService: Send + Sync {
         async fn get_user_profile(&self) -> anyhow::Result<User>;
+        async fn get_current_user_profile(&self) -> anyhow::Result<Option<User>>;
         async fn update_user_profile(&self, user: &User) -> anyhow::Result<()>;
         /// 用于更新用户头像，接收二进制数据
         async fn update_user_avatar(&self, avatar_data: Vec<u8>) -> anyhow::Result<()>;
@@ -178,6 +179,14 @@ pub mod user {
         use_context::<UserProvider>()
             .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserProvider)"))?
             .get_user_profile()
+            .await
+            .map_err(|e| super::public_error("获取用户信息失败", e))
+    }
+    #[server]
+    pub async fn get_current_user_profile() -> Result<Option<User>, ServerFnError> {
+        use_context::<UserProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserProvider)"))?
+            .get_current_user_profile()
             .await
             .map_err(|e| super::public_error("获取用户信息失败", e))
     }
@@ -395,6 +404,14 @@ pub mod post {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
+    pub struct PostComment {
+        pub user_id: UserID,
+        pub nick_name: String,
+        pub content: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
     pub struct VoiceMetaPost {
         pub id: VoiceMetaPostID,
         pub title: String,
@@ -469,10 +486,7 @@ pub mod post {
         ) -> anyhow::Result<Vec<VoiceMetaPost>>;
         async fn action(&self, post_id: VoiceMetaPostID, action: Action) -> anyhow::Result<()>;
         async fn toggle_like(&self, post_id: VoiceMetaPostID) -> anyhow::Result<LikeState>;
-        async fn get_comments(
-            &self,
-            post_id: VoiceMetaPostID,
-        ) -> anyhow::Result<Vec<(UserID, String)>>;
+        async fn get_comments(&self, post_id: VoiceMetaPostID) -> anyhow::Result<Vec<PostComment>>;
     }
 
     pub type VoiceMetaPostProvider = Arc<dyn VoiceMetaPostService>;
@@ -496,8 +510,7 @@ pub mod post {
             status: Option<PostStatus>,
             number: u8,
         ) -> anyhow::Result<Vec<VoicePostWithLike>>;
-        async fn get_comments(&self, post_id: VoicePostID)
-        -> anyhow::Result<Vec<(UserID, String)>>;
+        async fn get_comments(&self, post_id: VoicePostID) -> anyhow::Result<Vec<PostComment>>;
     }
 
     pub type VoicePostProvider = Arc<dyn VoicePostService>;
@@ -580,7 +593,7 @@ pub mod post {
     #[server(input = Json)]
     pub async fn get_voice_meta_post_comments(
         post_id: VoiceMetaPostID,
-    ) -> Result<Vec<(UserID, String)>, ServerFnError> {
+    ) -> Result<Vec<PostComment>, ServerFnError> {
         use_context::<VoiceMetaPostProvider>()
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .get_comments(post_id)
@@ -692,7 +705,7 @@ pub mod post {
     #[server(input = Json)]
     pub async fn get_voice_post_comments(
         post_id: VoicePostID,
-    ) -> Result<Vec<(UserID, String)>, ServerFnError> {
+    ) -> Result<Vec<PostComment>, ServerFnError> {
         use_context::<VoicePostProvider>()
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .get_comments(post_id)

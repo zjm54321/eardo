@@ -214,6 +214,9 @@ async fn get_avatar_handler(
                 .fetch_one(&state.pg_pool)
                 .await;
         if let Ok((data,)) = result {
+            if data.is_empty() {
+                return default_avatar_response(&user_id);
+            }
             return (
                 [
                     (header::CONTENT_TYPE, "image/webp"),
@@ -224,15 +227,18 @@ async fn get_avatar_handler(
                 .into_response();
         }
     }
-    // 返回默认头像 - 重定向到 DiceBear API
+    default_avatar_response(&user_id)
+}
+
+/// 默认头像：保持原来的 DiceBear 按用户生成的风格（每个用户不同）；
+/// 外部服务不可用时，前端 `fallback_avatar` 会换成本地 /default-avatar.svg。
+fn default_avatar_response(user_id: &str) -> axum::response::Response {
+    let seed: String = user_id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(64).collect();
     (
         StatusCode::FOUND,
         [(
             header::LOCATION,
-            format!(
-                "https://api.dicebear.com/7.x/avataaars/svg?seed={}",
-                user_id
-            ),
+            format!("https://api.dicebear.com/7.x/avataaars/svg?seed={seed}"),
         )],
     )
         .into_response()
