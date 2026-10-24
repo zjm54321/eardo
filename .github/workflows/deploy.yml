@@ -84,6 +84,8 @@ jobs:
           id='${{ steps.meta.outputs.release_id }}'
           mkdir -p dist/pkg
           cp target/release/server dist/pkg/server
+          # hash-files = true: hash.txt must sit next to the server binary
+          cp target/release/hash.txt dist/pkg/hash.txt
           cp -r target/site dist/pkg/site
           if [ -d sql/migrations ]; then cp -r sql/migrations dist/pkg/migrations; fi
           git rev-parse HEAD > dist/pkg/COMMIT

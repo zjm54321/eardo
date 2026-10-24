@@ -340,7 +340,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conf = get_configuration(None)
         .map_err(|err| io::Error::other(format!("failed to load Leptos configuration: {err}")))?;
     let addr = conf.leptos_options.site_addr;
-    let leptos_options = conf.leptos_options;
+    let mut leptos_options = conf.leptos_options;
+    // cargo-leptos (hash-files = true) writes hash.txt next to the server binary and names
+    // /pkg assets eardo.<hash>.js/.wasm/.css, so browsers and Cloudflare never mix an old JS
+    // glue file with a new wasm after a deploy. Enable it automatically when the file exists
+    // (leptos panics if hash_files is on but hash.txt is missing).
+    if env::var_os("LEPTOS_HASH_FILES").is_none()
+        && env::current_exe()
+            .map(|exe| exe.with_file_name(leptos_options.hash_file.as_ref()).is_file())
+            .unwrap_or(false)
+    {
+        leptos_options.hash_files = true;
+    }
     let routes = generate_route_list(App);
 
     let production = env::var("LEPTOS_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("prod"));

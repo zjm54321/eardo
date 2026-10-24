@@ -51,6 +51,10 @@ bin-package = "server"
 # the package in the workspace that contains the frontend wasm binary (library crate)
 lib-package = "frontend"
 
+# Content-hashed /pkg file names (eardo.<hash>.js/wasm/css) + target/<profile>/hash.txt next to
+# the server binary. Prevents stale JS/WASM mixes from browser/Cloudflare caches after deploys.
+hash-files = true
+
 # The site root folder is where cargo-leptos generate all output. WARNING: all content of this folder will be erased on a rebuild. Use it in your server setup.
 site-root = "target/site"
 
