@@ -13,11 +13,60 @@ pub mod voicesetup;
 pub mod welcome; // 新增
 pub mod workbench;
 
+/// 全局登录状态版本号：登录 / 注册 / 退出 / 修改资料后调用 `changed()`，
+/// Header 会据此重新获取用户信息。
+#[derive(Clone, Copy)]
+pub struct AuthState {
+    pub version: RwSignal<u32>,
+    /// 头像更新次数，用于给头像 URL 加版本参数绕过缓存（SSR 与客户端初始均为 0，避免水合不一致）
+    pub avatar_version: RwSignal<u32>,
+}
+
+impl AuthState {
+    pub fn provide() {
+        provide_context(Self {
+            version: RwSignal::new(0),
+            avatar_version: RwSignal::new(0),
+        });
+    }
+
+    pub fn use_state() -> Self {
+        use_context::<Self>().unwrap_or_else(|| Self {
+            version: RwSignal::new(0),
+            avatar_version: RwSignal::new(0),
+        })
+    }
+
+    pub fn changed(&self) {
+        self.version.update(|v| *v = v.wrapping_add(1));
+    }
+
+    pub fn avatar_changed(&self) {
+        self.avatar_version.update(|v| *v = v.wrapping_add(1));
+        self.changed();
+    }
+}
+
+/// 头像地址：版本号为 0 时保持原样，之后追加 `v=` 参数刷新缓存
+pub fn avatar_src(url: &str, version: u32) -> String {
+    if version == 0 {
+        url.to_string()
+    } else if url.contains('?') {
+        format!("{url}&v={version}")
+    } else {
+        format!("{url}?v={version}")
+    }
+}
+
 #[component]
 pub fn Header() -> impl IntoView {
-    // 检查用户登录状态的资源
-    // 这是一个简单的做法，实际上可能需要一个全局 Context 来存储 User
-    let user_resource = Resource::new(|| (), |_| crate::api::user::get_user_profile());
+    // 检查用户登录状态的资源：登录状态变化或路由切换时重新获取
+    let auth = AuthState::use_state();
+    let location = leptos_router::hooks::use_location();
+    let user_resource = Resource::new(
+        move || (auth.version.get(), location.pathname.get()),
+        |_| crate::api::user::get_user_profile(),
+    );
     let (show_menu, set_show_menu) = signal(false);
 
     view! {
@@ -103,7 +152,7 @@ pub fn Header() -> impl IntoView {
 
                 // --- 右侧：头像框 ---
                 <div class="relative group">
-                    <Suspense fallback=move || {
+                    <Transition fallback=move || {
                         view! {
                             <div class="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div>
                         }
@@ -124,7 +173,7 @@ pub fn Header() -> impl IntoView {
                                                     {
                                                         view! {
                                                             <img
-                                                                src=user.usermeta.avatar_url.clone()
+                                                                src=avatar_src(&user.usermeta.avatar_url, auth.avatar_version.get_untracked())
                                                                 alt="avatar"
                                                                 class="w-full h-full object-cover"
                                                             />
@@ -168,6 +217,7 @@ pub fn Header() -> impl IntoView {
                                                             set_show_menu.set(false);
                                                             leptos::task::spawn_local(async move {
                                                                 let _ = crate::api::user::logout().await;
+                                                                auth.changed();
                                                                 #[cfg(target_arch = "wasm32")]
                                                                 if let Some(window) = web_sys::window() {
                                                                     let _ = window.location().set_href("/");
@@ -196,7 +246,7 @@ pub fn Header() -> impl IntoView {
                                 }
                             }
                         }}
-                    </Suspense>
+                    </Transition>
                 </div>
             </div>
         </header>

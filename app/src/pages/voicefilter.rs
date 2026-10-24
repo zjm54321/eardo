@@ -2,7 +2,7 @@
 use crate::api::post::{
     Action, VoiceMetaPostID, action_voice_meta_post, get_voice_meta_post_comments,
 };
-use crate::api::post::{PostStatus, VoiceMetaPost, list_voice_meta_post};
+use crate::api::post::{PostStatus, VoiceMetaPost, list_voice_meta_post, toggle_voice_meta_post_like};
 use crate::api::user::UserID;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -11,12 +11,6 @@ use leptos_router::hooks::use_navigate;
 use std::str::FromStr;
 
 // Server functions for interactions
-#[server]
-pub async fn toggle_meta_post_like(post_id: String) -> Result<(), ServerFnError> {
-    let id = VoiceMetaPostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
-    action_voice_meta_post(id, Action::LikeDislike).await
-}
-
 #[server]
 pub async fn add_meta_post_comment(post_id: String, content: String) -> Result<(), ServerFnError> {
     let id = VoiceMetaPostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -86,7 +80,7 @@ pub fn VoiceFilterPage() -> impl IntoView {
 
     // 处理“使用滤镜”点击
     let apply_filter = move |filter: DisplayFilter| {
-        let url = format!("/home?meta_id={}", filter.base_model_id);
+        let url = format!("/generate?meta_id={}#voice-selector", filter.base_model_id);
         navigate(&url, Default::default());
     };
 
@@ -284,15 +278,24 @@ where
                                                 )
                                             }
                                             on:click=move |_| {
-                                                let post_id = post_id_like.get_value();
+                                                let Ok(post_id) = uuid::Uuid::parse_str(&post_id_like.get_value()) else {
+                                                    return;
+                                                };
+                                                // 乐观更新，失败时回滚；成功后以服务器返回为准
+                                                let was_liked = is_liked.get_untracked();
+                                                let old_count = likes_count.get_untracked();
+                                                set_is_liked.set(!was_liked);
+                                                set_likes_count.set(if was_liked { old_count - 1 } else { old_count + 1 });
                                                 spawn_local(async move {
-                                                    if let Ok(_) = toggle_meta_post_like(post_id).await {
-                                                        let new_liked = !is_liked.get();
-                                                        set_is_liked.set(new_liked);
-                                                        if new_liked {
-                                                            set_likes_count.set(likes_count.get() + 1);
-                                                        } else {
-                                                            set_likes_count.set(likes_count.get() - 1);
+                                                    match toggle_voice_meta_post_like(post_id).await {
+                                                        Ok(state) => {
+                                                            set_is_liked.set(state.liked);
+                                                            set_likes_count.set(state.likes_count);
+                                                        }
+                                                        Err(e) => {
+                                                            leptos::logging::error!("点赞失败: {}", e);
+                                                            set_is_liked.set(was_liked);
+                                                            set_likes_count.set(old_count);
                                                         }
                                                     }
                                                 });
@@ -373,9 +376,9 @@ where
 
                                                     <div class="flex-1 overflow-y-auto p-4 space-y-3">
                                                         <For
-                                                            each=move || comments.get()
-                                                            key=|(user_id, _)| user_id.clone()
-                                                            children=move |(user_id, content)| {
+                                                            each=move || { comments.get().into_iter().enumerate().collect::<Vec<_>>() }
+                                                            key=|(idx, _)| *idx
+                                                            children=move |(_, (user_id, content))| {
                                                                 view! {
                                                                     <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
                                                                         <img

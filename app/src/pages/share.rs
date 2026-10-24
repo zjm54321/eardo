@@ -99,14 +99,16 @@ pub fn ShareVoiceConfigModal(
             let voice_model_uuid =
                 Uuid::parse_str(&voice_id_str).map_err(|e| format!("无效的声线 ID: {}", e))?;
 
-            // 构建 VoiceMeta
+            // 构建 VoiceMeta：与生成时保持一致——参数（音高/语速/音量）始终保存，
+            // 指令非空时一并保存，避免分享出去的配置丢失音量等参数。
+            let _ = is_instruction;
             let voice_meta = api::voice::VoiceMeta {
                 voice_model_id: voice_model_uuid,
-                parametric: if !is_instruction { Some(params) } else { None },
-                instruction: if is_instruction {
-                    Some(instruction)
-                } else {
+                parametric: Some(params),
+                instruction: if instruction.trim().is_empty() {
                     None
+                } else {
+                    Some(instruction)
                 },
             };
 
@@ -184,11 +186,11 @@ pub fn ShareVoiceConfigModal(
         {
             if let Some(window) = web_sys::window() {
                 if let Ok(origin) = window.location().origin() {
-                    return format!("{}/home?meta_id={}", origin, meta_id);
+                    return format!("{}/generate?meta_id={}#voice-selector", origin, meta_id);
                 }
             }
         }
-        format!("/home?meta_id={}", meta_id)
+        format!("/generate?meta_id={}#voice-selector", meta_id)
     };
 
     let is_pending = share_action.pending();
@@ -479,7 +481,7 @@ pub fn ShareVoiceConfigModal(
                                                                     <span class="inline-flex items-center px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
                                                                         <i class="fa-solid fa-volume-high mr-1.5"></i>
                                                                         "音量 "
-                                                                        {format!("{:.2}%", p.volume * 100.0)}
+                                                                        {format!("{:.0}%", p.volume * 100.0)}
                                                                     </span>
                                                                 </div>
                                                             }.into_any()

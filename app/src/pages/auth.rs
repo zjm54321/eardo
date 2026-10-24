@@ -29,6 +29,7 @@ pub fn LoginPage() -> impl IntoView {
     let (password, set_password) = signal(String::new());
     let (error_msg, set_error_msg) = signal(Option::<String>::None);
     let (show_password, set_show_password) = signal(false);
+    let auth = crate::pages::AuthState::use_state();
 
     let login_action = Action::new(move |_| {
         let u = username.get();
@@ -73,6 +74,7 @@ pub fn LoginPage() -> impl IntoView {
 
                 match login(auth_info).await {
                     Ok(_) => {
+                        auth.changed();
                         value("/profile", Default::default());
                     }
                     Err(e) => set_error_msg.set(Some(e.to_string())),
@@ -608,10 +610,12 @@ fn ProfileCard(user: crate::api::user::User) -> impl IntoView {
     let user_bio = user.usermeta.bio.clone();
     let user_nickname = user.usermeta.nick_name.clone();
     let navigate = use_navigate();
+    let auth = crate::pages::AuthState::use_state();
     let logout_action = Action::new(move |_| {
         let value = navigate.clone();
         async move {
             let _ = crate::api::user::logout().await;
+            auth.changed();
             value("/login", Default::default());
         }
     });
@@ -628,14 +632,7 @@ fn ProfileCard(user: crate::api::user::User) -> impl IntoView {
                         {if !user.usermeta.avatar_url.is_empty() {
                             view! {
                                 <img
-                                    src=format!(
-                                        "{}?t={}",
-                                        user.usermeta.avatar_url,
-                                        {
-                                            #[cfg(target_arch = "wasm32")] { js_sys::Date::now() }
-                                            #[cfg(not(target_arch = "wasm32"))] { 0.0 }
-                                        },
-                                    )
+                                    src=crate::pages::avatar_src(&user.usermeta.avatar_url, auth.avatar_version.get())
                                     loading="lazy"
                                     decoding="async"
                                     class="w-full h-full object-cover"
@@ -959,32 +956,8 @@ pub fn ProfilePage() -> impl IntoView {
                                 }
                                     .into_any()
                             }
-                            Some(Err(e)) => {
-                                view! {
-                                    <div class="text-center py-10 text-red-500">
-                                        {format!("加载失败: {}", e)}
-                                    </div>
-                                }
-                                    .into_any()
-                            }
-                            None => {
-                                match user_resource.get() {
-                                    Some(Err(e)) => {
-                                        view! {
-                                            <div class="text-center py-10 text-red-500">
-                                                {format!("加载失败: {}", e)}
-                                            </div>
-                                        }
-                                            .into_any()
-                                    }
-                                    _ => {
-                                        view! {
-                                            <div class="text-center py-10">"请先登录"</div>
-                                        }
-                                            .into_any()
-                                    }
-                                }
-                            }
+                            // 未登录（或会话失效）时给出友好提示，而不是显示原始错误
+                            _ => view! { <LoginRequired /> }.into_any(),
                         }
                     }}
                 </Suspense>
@@ -996,6 +969,7 @@ pub fn ProfilePage() -> impl IntoView {
 #[component]
 pub fn SettingsPage() -> impl IntoView {
     let navigate = use_navigate();
+    let auth = crate::pages::AuthState::use_state();
     let user_resource = Resource::new(|| (), |_| get_user_profile());
     let auth_resource = Resource::new(|| (), |_| crate::api::user::get_authinfo());
 
@@ -1151,11 +1125,17 @@ pub fn SettingsPage() -> impl IntoView {
                     return;
                 }
 
+                let avatar_updated = avatar_webp.is_some();
                 if let Some(webp_bytes) = avatar_webp {
                     if let Err(e) = update_user_avatar(webp_bytes).await {
                         leptos::logging::error!("更新头像失败: {:?}", e);
                         return;
                     }
+                }
+                if avatar_updated {
+                    auth.avatar_changed();
+                } else {
+                    auth.changed();
                 }
 
                 // 刷新用户信息并返回主页
@@ -1324,6 +1304,7 @@ pub fn SettingsPage() -> impl IntoView {
                                                         let navigate = navigate.clone();
                                                         leptos::task::spawn_local(async move {
                                                             let _ = logout().await;
+                                                            auth.changed();
                                                             navigate("/", Default::default());
                                                         });
                                                     }
@@ -1359,14 +1340,7 @@ pub fn SettingsPage() -> impl IntoView {
                                                                         } else if !avatar_url.is_empty() {
                                                                             view! {
                                                                                 <img
-                                                                                    src=format!(
-                                                                                        "{}?t={}",
-                                                                                        avatar_url,
-                                                                                        {
-                                                                                            #[cfg(target_arch = "wasm32")] { js_sys::Date::now() }
-                                                                                            #[cfg(not(target_arch = "wasm32"))] { 0.0 }
-                                                                                        },
-                                                                                    )
+                                                                                    src=crate::pages::avatar_src(&avatar_url, auth.avatar_version.get())
                                                                                     class="w-full h-full object-cover"
                                                                                     loading="lazy"
                                                                                     decoding="async"
@@ -1649,32 +1623,8 @@ pub fn SettingsPage() -> impl IntoView {
                                 }
                                     .into_any()
                             }
-                            Some(Err(e)) => {
-                                view! {
-                                    <div class="text-center py-10 text-red-500">
-                                        {format!("加载失败: {}", e)}
-                                    </div>
-                                }
-                                    .into_any()
-                            }
-                            None => {
-                                match user_resource.get() {
-                                    Some(Err(e)) => {
-                                        view! {
-                                            <div class="text-center py-10 text-red-500">
-                                                {format!("加载失败: {}", e)}
-                                            </div>
-                                        }
-                                            .into_any()
-                                    }
-                                    _ => {
-                                        view! {
-                                            <div class="text-center py-10">"请先登录"</div>
-                                        }
-                                            .into_any()
-                                    }
-                                }
-                            }
+                            // 未登录（或会话失效）时给出友好提示，而不是显示原始错误
+                            _ => view! { <LoginRequired /> }.into_any(),
                         }
                     }}
                 </Suspense>
@@ -1778,6 +1728,34 @@ pub fn SettingsPage() -> impl IntoView {
                     </div>
                 </div>
             </Show>
+        </div>
+    }
+}
+
+/// 未登录时的提示卡片
+#[component]
+fn LoginRequired() -> impl IntoView {
+    view! {
+        <div class="max-w-md mx-auto mt-10 bg-white rounded-3xl p-10 shadow-soft border border-gray-100 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+                <i class="fa-solid fa-user-lock text-2xl text-primary"></i>
+            </div>
+            <h2 class="text-xl font-bold text-gray-800 mb-2">"请先登录"</h2>
+            <p class="text-gray-500 text-sm mb-6">"登录后即可查看个人主页和账号设置"</p>
+            <div class="flex justify-center gap-3">
+                <A
+                    href="/login"
+                    attr:class="px-6 py-2.5 rounded-full bg-primary text-white font-medium shadow-sm hover:shadow-md hover:bg-amber-500 transition-all"
+                >
+                    "去登录"
+                </A>
+                <A
+                    href="/register"
+                    attr:class="px-6 py-2.5 rounded-full bg-white border border-gray-200 text-gray-600 font-medium hover:text-primary hover:border-primary/30 transition-all"
+                >
+                    "注册账号"
+                </A>
+            </div>
         </div>
     }
 }

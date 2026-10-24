@@ -38,6 +38,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
+    crate::pages::AuthState::provide();
 
     view! {
         // sets the document title

@@ -281,7 +281,7 @@ pub fn SceneCreationPage() -> impl IntoView {
                     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-white px-5 py-3">
                         <div class="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-bold text-gray-800">
                             <span class="flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-xs text-white">"2"</span>
-                            "进入场景创作页（以“汇报 / 演讲”为例）"
+                            {format!("进入场景创作页（{}）", scene_label(&scene))}
                         </div>
                         <A href="/home" attr:class="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-500 hover:border-emerald-200 hover:text-emerald-600">
                             <i class="fa-solid fa-arrow-left mr-2"></i>"重选场景"

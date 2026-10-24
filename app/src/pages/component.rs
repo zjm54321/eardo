@@ -7,64 +7,78 @@ use leptos::prelude::*;
 
 #[server]
 pub async fn ai_rewrite_text(input: String) -> Result<String, ServerFnError> {
-    let api_url = std::env::var("OPENROUTER_API_BASE")
-        .unwrap_or_else(|_| "https://openrouter.ai/api/v1/chat/completions".to_string());
-    let api_token = std::env::var("OPENROUTER_API_KEY").map_err(|_| {
-        ServerFnError::new("服务器未配置 OpenRouter API Key，请联系管理员。".to_string())
-    })?;
+    use crate::api::voice_backend::{http_client, read_limited};
+    use std::time::Duration;
 
-    let model = std::env::var("OPENROUTER_MODEL")
-        .unwrap_or_else(|_| "openai/gpt-oss-120b:free".to_string());
-
-    let payload = serde_json::json!({
-        "model": model,
-        "messages": [{ "role": "user", "content": input }]
-    });
-
-    let site_url =
-        std::env::var("OPENROUTER_SITE_URL").unwrap_or_else(|_| "https://eardoai.com".to_string());
-    let app_name = std::env::var("OPENROUTER_APP_NAME").unwrap_or_else(|_| "EarDo".to_string());
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(api_url)
-        .bearer_auth(api_token)
-        .header("HTTP-Referer", site_url)
-        .header("X-OpenRouter-Title", app_name.clone())
-        .header("X-Title", app_name)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| ServerFnError::new(format!("AI 请求失败: {}", e)))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(ServerFnError::new(format!(
-            "AI 返回错误: {} - {}",
-            status, body
-        )));
+    async fn complete(
+        input: &str,
+        url: &str,
+        token: &str,
+        model: &str,
+        openrouter: bool,
+    ) -> anyhow::Result<String> {
+        let timeout = Duration::from_secs(
+            std::env::var("LLM_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(30)
+                .clamp(1, 120),
+        );
+        let mut request = http_client()?.post(url).bearer_auth(token).timeout(timeout);
+        if openrouter {
+            request = request
+                .header("HTTP-Referer", std::env::var("OPENROUTER_SITE_URL")
+                    .unwrap_or_else(|_| "https://eardoai.com".to_string()))
+                .header("X-OpenRouter-Title", std::env::var("OPENROUTER_APP_NAME")
+                    .unwrap_or_else(|_| "EarDo".to_string()));
+        }
+        let response = request.json(&serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": input }],
+            "max_tokens": 2048,
+        })).send().await.map_err(|_| anyhow::anyhow!("AI 请求失败或超时"))?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("AI 服务返回 HTTP {}", response.status().as_u16()));
+        }
+        let body = read_limited(response, 1024 * 1024).await?;
+        let value: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|_| anyhow::anyhow!("AI 响应格式错误"))?;
+        let content = value["choices"][0]["message"]["content"]
+            .as_str().filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("AI 响应为空"))?;
+        Ok(content.to_string())
     }
 
-    let value: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| ServerFnError::new(format!("AI 响应解析失败: {}", e)))?;
-
-    let content = value
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    if content.trim().is_empty() {
-        return Err(ServerFnError::new("AI 响应为空，请稍后重试。".to_string()));
+    let mut openrouter_error = None;
+    if let Ok(token) = std::env::var("OPENROUTER_API_KEY")
+        && !token.trim().is_empty()
+    {
+        let url = std::env::var("OPENROUTER_API_BASE")
+            .unwrap_or_else(|_| "https://openrouter.ai/api/v1/chat/completions".to_string());
+        // Currently listed, low-cost model; free providers were rate limited in live probes.
+        let model = std::env::var("OPENROUTER_MODEL")
+            .unwrap_or_else(|_| "openai/gpt-4o-mini".to_string());
+        match complete(&input, &url, &token, &model, true).await {
+            Ok(content) => return Ok(content),
+            Err(error) => openrouter_error = Some(error),
+        }
     }
 
-    Ok(content)
+    // Same-region DashScope chat is a verified fallback for unavailable/underfunded OpenRouter.
+    if let Ok(token) = std::env::var("ALIYUN_API_KEY")
+        .or_else(|_| std::env::var("DASHSCOPE_API_KEY"))
+        && !token.trim().is_empty()
+    {
+        let model = std::env::var("DASHSCOPE_CHAT_MODEL")
+            .unwrap_or_else(|_| "qwen-flash".to_string());
+        return complete(&input, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            &token, &model, false).await
+            .map_err(|error| ServerFnError::new(format!("DashScope {error}")));
+    }
+    Err(ServerFnError::new(match openrouter_error {
+        Some(error) => format!("OpenRouter {error}；未配置 DashScope 备用服务。"),
+        None => "服务器未配置 AI API Key，请联系管理员。".to_string(),
+    }))
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -453,5 +467,220 @@ pub fn InstructionParams(instruction_text: RwSignal<String>) -> impl IntoView {
                 "使用自然语言描述你想要的声音效果，点击魔法棒可 AI 优化指令。"
             </p>
         </div>
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 圆形频谱可视化（负责 AudioContext / requestAnimationFrame 生命周期）
+// ═══════════════════════════════════════════════════════════════
+
+#[cfg(target_arch = "wasm32")]
+struct VisualizerState {
+    ctx: web_sys::AudioContext,
+    alive: std::rc::Rc<std::cell::Cell<bool>>,
+    raf_id: std::rc::Rc<std::cell::Cell<i32>>,
+    frame: std::rc::Rc<std::cell::RefCell<Option<wasm_bindgen::closure::Closure<dyn FnMut()>>>>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl VisualizerState {
+    fn stop(self) {
+        self.alive.set(false);
+        if let Some(window) = web_sys::window() {
+            let _ = window.cancel_animation_frame(self.raf_id.get());
+        }
+        // 断开闭包自引用，释放 analyser / canvas 等资源
+        self.frame.borrow_mut().take();
+        let _ = self.ctx.close();
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct VisualizerState;
+
+#[cfg(not(target_arch = "wasm32"))]
+impl VisualizerState {
+    fn stop(self) {}
+}
+
+// Browser state holds !Send web-sys handles → LocalStorage. On the server the
+// state is a unit struct; LocalStorage there panics when the reactive owner is
+// dropped on another tokio worker thread, so use thread-safe storage instead.
+#[cfg(target_arch = "wasm32")]
+type VisualizerStorage = LocalStorage;
+#[cfg(not(target_arch = "wasm32"))]
+type VisualizerStorage = SyncStorage;
+
+/// 绑定到组件生命周期的圆形频谱可视化器。
+///
+/// - `start` 会先释放旧的 AudioContext / 动画帧，再为新的 audio 元素建立分析器；
+/// - 组件卸载时自动取消 requestAnimationFrame 并关闭 AudioContext。
+#[derive(Clone, Copy)]
+pub struct SpectrumVisualizer {
+    state: StoredValue<Option<VisualizerState>, VisualizerStorage>,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    ring_color: &'static str,
+}
+
+impl SpectrumVisualizer {
+    /// `ring_color`：圆环底色（各页面保持原有配色）
+    pub fn new(ring_color: &'static str) -> Self {
+        let this = Self {
+            state: StoredValue::new_with_storage(None),
+            ring_color,
+        };
+        // Only the browser owns audio resources. On the server the owner may be
+        // dropped on another tokio thread, and touching LocalStorage there panics.
+        #[cfg(target_arch = "wasm32")]
+        on_cleanup(move || this.stop());
+        this
+    }
+
+    /// 停止动画并关闭 AudioContext
+    pub fn stop(&self) {
+        let old = self.state.try_update_value(|state| state.take()).flatten();
+        if let Some(old) = old {
+            old.stop();
+        }
+    }
+
+    /// 浏览器自动播放策略可能让 AudioContext 处于 suspended，播放时恢复。
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub fn resume(&self) {
+        #[cfg(target_arch = "wasm32")]
+        let _ = self.state.try_with_value(|state| {
+            if let Some(state) = state {
+                let _ = state.ctx.resume();
+            }
+        });
+    }
+
+    pub fn start(
+        &self,
+        #[allow(unused_variables)] audio_ref: NodeRef<leptos::html::Audio>,
+        #[allow(unused_variables)] canvas_ref: NodeRef<leptos::html::Canvas>,
+    ) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use std::{cell::{Cell, RefCell}, rc::Rc};
+            use wasm_bindgen::{JsCast, closure::Closure};
+            use web_sys::{AudioContext, CanvasRenderingContext2d};
+
+            // 组件可能已在定时器触发前卸载
+            if self.state.try_with_value(|_| ()).is_none() {
+                return;
+            }
+            let (Some(audio), Some(canvas)) = (
+                audio_ref.try_get_untracked().flatten(),
+                canvas_ref.try_get_untracked().flatten(),
+            ) else {
+                return;
+            };
+            let audio: web_sys::HtmlAudioElement = audio.unchecked_into();
+            let canvas: web_sys::HtmlCanvasElement = canvas.unchecked_into();
+            let Some(window) = web_sys::window() else { return };
+
+            let width = canvas.parent_element().map(|p| p.client_width().max(0) as u32).unwrap_or(600);
+            let height = 300u32; // 固定高度
+            canvas.set_width(width);
+            canvas.set_height(height);
+
+            audio.set_cross_origin(Some("anonymous"));
+
+            let Ok(ctx) = AudioContext::new() else { return };
+            let Ok(analyser) = ctx.create_analyser() else {
+                let _ = ctx.close();
+                return;
+            };
+            analyser.set_fft_size(256); // 256 -> 128 个数据点
+
+            // 同一个 audio 元素只能连接一次；失败时保留旧的上下文，避免把正在播放的声音静音
+            let Ok(source) = ctx.create_media_element_source(&audio) else {
+                let _ = ctx.close();
+                return;
+            };
+            if source.connect_with_audio_node(&analyser).is_err()
+                || analyser.connect_with_audio_node(&ctx.destination()).is_err()
+            {
+                let _ = ctx.close();
+                return;
+            }
+            let Some(ctx_2d) = canvas
+                .get_context("2d")
+                .ok()
+                .flatten()
+                .map(|c| c.unchecked_into::<CanvasRenderingContext2d>())
+            else {
+                let _ = ctx.close();
+                return;
+            };
+
+            // 新上下文就绪后再释放旧的
+            self.stop();
+
+            let buffer_length = analyser.frequency_bin_count();
+            let mut data_array = vec![0u8; buffer_length as usize];
+            let canvas_width = width as f64;
+            let canvas_height = height as f64;
+            let center_x = canvas_width / 2.0;
+            let center_y = canvas_height / 2.0;
+            let radius = 60.0;
+            let ring_color = self.ring_color;
+
+            let alive = Rc::new(Cell::new(true));
+            let raf_id = Rc::new(Cell::new(0));
+            let frame: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
+
+            let alive_in = alive.clone();
+            let raf_in = raf_id.clone();
+            let frame_in = frame.clone();
+            let window_in = window.clone();
+            *frame.borrow_mut() = Some(Closure::new(move || {
+                if !alive_in.get() {
+                    return;
+                }
+                analyser.get_byte_frequency_data(&mut data_array);
+                ctx_2d.clear_rect(0.0, 0.0, canvas_width, canvas_height);
+
+                ctx_2d.begin_path();
+                let _ = ctx_2d.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
+                ctx_2d.set_stroke_style_str(ring_color);
+                ctx_2d.set_line_width(2.0);
+                ctx_2d.stroke();
+
+                ctx_2d.set_fill_style_str("#FBBF24");
+                for i in 0..buffer_length {
+                    let value = data_array[i as usize] as f64;
+                    let bar_height = (value / 255.0) * 80.0;
+                    let rad = (i as f64 / buffer_length as f64) * 2.0 * std::f64::consts::PI;
+                    ctx_2d.save();
+                    let _ = ctx_2d.translate(center_x, center_y);
+                    let _ = ctx_2d.rotate(rad);
+                    if bar_height > 0.0 {
+                        ctx_2d.fill_rect(-1.5, radius, 3.0, bar_height);
+                    }
+                    ctx_2d.restore();
+                }
+
+                if let Some(cb) = frame_in.borrow().as_ref() {
+                    if let Ok(id) = window_in.request_animation_frame(cb.as_ref().unchecked_ref()) {
+                        raf_in.set(id);
+                    }
+                }
+            }));
+
+            if let Some(cb) = frame.borrow().as_ref() {
+                if let Ok(id) = window.request_animation_frame(cb.as_ref().unchecked_ref()) {
+                    raf_id.set(id);
+                }
+            }
+
+            let mut pending = Some(VisualizerState { ctx, alive, raf_id, frame });
+            let _ = self.state.try_update_value(|slot| *slot = pending.take());
+            // 存储失败（已卸载）时立即释放
+            if let Some(orphan) = pending {
+                orphan.stop();
+            }
+        }
     }
 }

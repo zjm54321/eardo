@@ -1,6 +1,6 @@
 use crate::api;
 use crate::api::voice::Parametic;
-use crate::pages::component::{InstructionParams, TraditionalParams, ai_rewrite_text};
+use crate::pages::component::{InstructionParams, SpectrumVisualizer, TraditionalParams, ai_rewrite_text};
 use crate::pages::share::{ShareVoiceConfigModal, ShareVoicePostModal};
 use leptos::logging::debug_error;
 use leptos::prelude::*;
@@ -25,16 +25,19 @@ pub fn HomePage() -> impl IntoView {
     // 初始化声线 ID 和参数（默认值）
     let voice_signal = RwSignal::new(String::new());
 
-    let parse_param = |key: &str, default: f32| {
+    // 解析并限制在滑块范围内（非法值回退默认值）
+    let parse_param = |key: &str, default: f32, min: f32, max: f32| {
         get_str_param_opt(key)
             .and_then(|value| value.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(min, max))
             .unwrap_or(default)
     };
 
     let param_signal = RwSignal::new(Parametic {
-        pitch: parse_param("pitch", 1.0),
-        speed: parse_param("speed", 1.0),
-        volume: parse_param("volume", 1.0),
+        pitch: parse_param("pitch", 1.0, 0.5, 2.0),
+        speed: parse_param("speed", 1.0, 0.5, 2.0),
+        volume: parse_param("volume", 1.0, 0.0, 2.0),
     });
 
     // 指令参数状态
@@ -323,12 +326,27 @@ pub fn TextInputCard(
                     "文本输入"
                 </div>
 
-                // 全屏模式下的右上角关闭按钮 (作为备用退出方式)
-                <Show when=move || is_fullscreen.get()>
+                // 右上角：全屏 / 退出全屏
+                <Show
+                    when=move || is_fullscreen.get()
+                    fallback=move || {
+                        view! {
+                            <button
+                                class="text-gray-400 hover:text-dark transition-colors p-2 -my-2 hover:bg-gray-100 rounded-full"
+                                on:click=move |_| is_fullscreen.set(true)
+                                title="全屏编辑"
+                                aria-label="全屏编辑"
+                            >
+                                <i class="fa-solid fa-expand"></i>
+                            </button>
+                        }
+                    }
+                >
                     <button
                         class="text-gray-400 hover:text-dark transition-colors p-2 hover:bg-gray-100 rounded-full"
                         on:click=move |_| is_fullscreen.set(false)
                         title="退出全屏"
+                        aria-label="退出全屏"
                     >
                         <i class="fa-solid fa-xmark text-xl"></i>
                     </button>
@@ -912,6 +930,7 @@ pub fn AudioResultCard(
     // 绑定 audio 元素和 canvas 元素
     let audio_ref = NodeRef::<leptos::html::Audio>::new();
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
+    let visualizer = SpectrumVisualizer::new("rgba(75, 85, 99, 0.2)");
 
     // 视觉效果状态
     let is_playing = RwSignal::new(false);
@@ -931,6 +950,7 @@ pub fn AudioResultCard(
                 if is_playing.get() {
                     let _ = audio_el.pause();
                 } else {
+                    visualizer.resume();
                     let _ = audio_el.play();
                 }
             }
@@ -1002,121 +1022,15 @@ pub fn AudioResultCard(
         format!("{}:{:02}", mins, secs)
     };
 
-    // 可视化逻辑
-    let setup_visualizer = move || {
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::closure::Closure;
-            use web_sys::{AudioContext, CanvasRenderingContext2d};
-
-            let audio_el = audio_ref.get();
-            let canvas_el = canvas_ref.get();
-
-            if let (Some(audio), Some(canvas)) = (audio_el, canvas_el) {
-                // Leptos 的 NodeRef deref 得到的是 HtmlElement<Audio>
-                // 我们需要将其转换为 web_sys::HtmlAudioElement
-                // 由于 Leptos 的元素类型通常可以直接转换，我们尝试直接使用或者通过 JsCast
-                use wasm_bindgen::JsCast;
-                let audio: web_sys::HtmlAudioElement = audio.unchecked_into();
-                let canvas: web_sys::HtmlCanvasElement = canvas.unchecked_into();
-
-                // 1. 设置 Canvas 尺寸
-                let parent = canvas.parent_element().unwrap();
-                let width = parent.client_width() as u32;
-                let height = 300; // 固定高度
-                canvas.set_width(width);
-                canvas.set_height(height);
-
-                // 2. 初始化 Audio Context
-                audio.set_cross_origin(Some("anonymous"));
-
-                let ctx =
-                    AudioContext::new().unwrap_or_else(|_| panic!("Failed to create AudioContext"));
-                let analyser = ctx.create_analyser().unwrap();
-                analyser.set_fft_size(256); // 256 -> 128 个数据点
-
-                // 创建源并连接
-                let source = match ctx.create_media_element_source(&audio) {
-                    Ok(src) => src,
-                    Err(_) => return, // 可能已经连接过
-                };
-
-                source.connect_with_audio_node(&analyser).unwrap();
-                analyser
-                    .connect_with_audio_node(&ctx.destination())
-                    .unwrap();
-
-                let buffer_length = analyser.frequency_bin_count();
-                let mut data_array = vec![0u8; buffer_length as usize];
-
-                let ctx_2d: CanvasRenderingContext2d =
-                    canvas.get_context("2d").unwrap().unwrap().unchecked_into();
-
-                // 渲染一帧
-                let f = std::rc::Rc::new(std::cell::RefCell::new(None));
-                let g = f.clone();
-
-                let canvas_width = width as f64;
-                let canvas_height = height as f64;
-                let center_x = canvas_width / 2.0;
-                let center_y = canvas_height / 2.0;
-                // 稍微减小圆环半径，给波形留出更多空间
-                let radius = 60.0;
-
-                *g.borrow_mut() = Some(Closure::new(move || {
-                    analyser.get_byte_frequency_data(&mut data_array);
-
-                    ctx_2d.clear_rect(0.0, 0.0, canvas_width, canvas_height);
-
-                    // 绘制圆形背景边框 (灰色 -> 浅暖色)
-                    ctx_2d.begin_path();
-                    ctx_2d
-                        .arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI)
-                        .unwrap();
-                    ctx_2d.set_stroke_style_str("rgba(75, 85, 99, 0.2)"); // 浅灰色，适配白色背景
-                    ctx_2d.set_line_width(2.0);
-                    ctx_2d.stroke();
-
-                    // 绘制可视化
-                    let bars = buffer_length;
-                    // 使用暖黄色 (#FBBF24) 作为柱状图颜色
-                    let bar_color = "#FBBF24";
-                    ctx_2d.set_fill_style_str(bar_color);
-
-                    for i in 0..bars {
-                        let value = data_array[i as usize] as f64;
-                        let bar_height = (value / 255.0) * 80.0; // 调整波形最大高度
-
-                        let rad = (i as f64 / bars as f64) * 2.0 * std::f64::consts::PI;
-
-                        ctx_2d.save();
-                        ctx_2d.translate(center_x, center_y).unwrap();
-                        ctx_2d.rotate(rad).unwrap();
-
-                        let bar_width = 3.0;
-                        if bar_height > 0.0 {
-                            ctx_2d.fill_rect(-bar_width / 2.0, radius, bar_width, bar_height);
-                        }
-
-                        ctx_2d.restore();
-                    }
-
-                    request_animation_frame(f.borrow().as_ref().unwrap());
-                }));
-
-                request_animation_frame(g.borrow().as_ref().unwrap());
-            }
-        }
-    };
-
+    // 可视化：组件卸载或重新生成时会取消动画帧并关闭 AudioContext
     Effect::new(move |_| {
         if let Some(Ok(_)) = value.get() {
             set_timeout(
-                move || {
-                    setup_visualizer();
-                },
+                move || visualizer.start(audio_ref, canvas_ref),
                 std::time::Duration::from_millis(100),
             );
+        } else {
+            visualizer.stop();
         }
     });
 
@@ -1345,18 +1259,3 @@ pub fn AudioResultCard(
         </section>
     }
 }
-
-// 辅助函数：requestAnimationFrame
-#[cfg(target_arch = "wasm32")]
-#[allow(dead_code)]
-fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
-    use wasm_bindgen::JsCast;
-    web_sys::window()
-        .unwrap()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(dead_code)]
-fn request_animation_frame(_f: &impl std::any::Any) {} // SSR 空实现

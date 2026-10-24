@@ -1,6 +1,6 @@
 use crate::api;
 use crate::api::voice::Parametic;
-use crate::pages::component::{InstructionParams, TraditionalParams, ai_rewrite_text};
+use crate::pages::component::{InstructionParams, SpectrumVisualizer, TraditionalParams, ai_rewrite_text};
 use crate::pages::share::{ShareVoiceConfigModal, ShareVoicePostModal};
 use leptos::logging::debug_error;
 use leptos::prelude::*;
@@ -23,10 +23,18 @@ pub fn VoiceSetupPage() -> impl IntoView {
     let voices_resource = Resource::new(|| (), |_| api::voice::list_voice_models());
 
     // ── 参数 ──
+    // 从 URL 读取 pitch / speed / volume（限制在滑块范围内）
+    let parse_param = |key: &str, default: f32, min: f32, max: f32| {
+        get_str_param_opt(key)
+            .and_then(|value| value.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(min, max))
+            .unwrap_or(default)
+    };
     let param_signal = RwSignal::new(Parametic {
-        pitch: 1.0,
-        speed: 1.0,
-        volume: 1.0,
+        pitch: parse_param("pitch", 1.0, 0.5, 2.0),
+        speed: parse_param("speed", 1.0, 0.5, 2.0),
+        volume: parse_param("volume", 1.0, 0.0, 2.0),
     });
     let is_instruction_mode = RwSignal::new(false);
     let instruction_text = RwSignal::new(String::new());
@@ -38,7 +46,7 @@ pub fn VoiceSetupPage() -> impl IntoView {
     let (show_voice_share, set_show_voice_share) = signal(false);
 
     // ── 文本 ──
-    let text_signal = RwSignal::new(String::new());
+    let text_signal = RwSignal::new(get_str_param_opt("text").unwrap_or_default());
 
     // ── meta_id 预加载 ──
     let url_meta_id = get_str_param_opt("meta_id");
@@ -168,7 +176,7 @@ pub fn VoiceSetupPage() -> impl IntoView {
                 // 右上角切换到专业模式按钮
                 <div class="flex justify-end mb-4">
                     <a
-                        href="/home"
+                        href="/generate"
                         class="inline-flex items-center px-4 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-medium transition-all group"
                     >
                         <i class="fa-solid fa-table-columns mr-2 group-hover:scale-110 transition-transform"></i>
@@ -973,6 +981,7 @@ fn StepGenerate(
 
     let audio_ref = NodeRef::<leptos::html::Audio>::new();
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
+    let visualizer = SpectrumVisualizer::new("rgba(75, 85, 99, 0.15)");
 
     // 播放/暂停
     let toggle_play = move |_| {
@@ -984,6 +993,7 @@ fn StepGenerate(
                 if is_playing.get() {
                     let _ = audio_el.pause();
                 } else {
+                    visualizer.resume();
                     let _ = audio_el.play();
                 }
             }
@@ -1071,102 +1081,15 @@ fn StepGenerate(
         None
     };
 
-    let setup_visualizer = move || {
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::closure::Closure;
-            use web_sys::{AudioContext, CanvasRenderingContext2d};
-
-            let audio_el = audio_ref.get();
-            let canvas_el = canvas_ref.get();
-
-            if let (Some(audio), Some(canvas)) = (audio_el, canvas_el) {
-                use wasm_bindgen::JsCast;
-                let audio: web_sys::HtmlAudioElement = audio.unchecked_into();
-                let canvas: web_sys::HtmlCanvasElement = canvas.unchecked_into();
-
-                let parent = canvas.parent_element().unwrap();
-                let width = parent.client_width() as u32;
-                let height = 300;
-                canvas.set_width(width);
-                canvas.set_height(height);
-
-                audio.set_cross_origin(Some("anonymous"));
-
-                let ctx =
-                    AudioContext::new().unwrap_or_else(|_| panic!("Failed to create AudioContext"));
-                let analyser = ctx.create_analyser().unwrap();
-                analyser.set_fft_size(256);
-
-                let source = match ctx.create_media_element_source(&audio) {
-                    Ok(src) => src,
-                    Err(_) => return,
-                };
-
-                source.connect_with_audio_node(&analyser).unwrap();
-                analyser
-                    .connect_with_audio_node(&ctx.destination())
-                    .unwrap();
-
-                let buffer_length = analyser.frequency_bin_count();
-                let mut data_array = vec![0u8; buffer_length as usize];
-
-                let ctx_2d: CanvasRenderingContext2d =
-                    canvas.get_context("2d").unwrap().unwrap().unchecked_into();
-
-                let f = std::rc::Rc::new(std::cell::RefCell::new(None));
-                let g = f.clone();
-
-                let canvas_width = width as f64;
-                let canvas_height = height as f64;
-                let center_x = canvas_width / 2.0;
-                let center_y = canvas_height / 2.0;
-                let radius = 60.0;
-
-                *g.borrow_mut() = Some(Closure::new(move || {
-                    analyser.get_byte_frequency_data(&mut data_array);
-                    ctx_2d.clear_rect(0.0, 0.0, canvas_width, canvas_height);
-
-                    ctx_2d.begin_path();
-                    ctx_2d
-                        .arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI)
-                        .unwrap();
-                    ctx_2d.set_stroke_style_str("rgba(75, 85, 99, 0.15)");
-                    ctx_2d.set_line_width(2.0);
-                    ctx_2d.stroke();
-
-                    let bars = buffer_length;
-                    ctx_2d.set_fill_style_str("#FBBF24");
-
-                    for i in 0..bars {
-                        let value = data_array[i as usize] as f64;
-                        let bar_height = (value / 255.0) * 80.0;
-                        let rad = (i as f64 / bars as f64) * 2.0 * std::f64::consts::PI;
-
-                        ctx_2d.save();
-                        ctx_2d.translate(center_x, center_y).unwrap();
-                        ctx_2d.rotate(rad).unwrap();
-
-                        if bar_height > 0.0 {
-                            ctx_2d.fill_rect(-1.5, radius, 3.0, bar_height);
-                        }
-                        ctx_2d.restore();
-                    }
-
-                    request_animation_frame(f.borrow().as_ref().unwrap());
-                }));
-
-                request_animation_frame(g.borrow().as_ref().unwrap());
-            }
-        }
-    };
-
+    // 可视化：组件卸载或重新生成时会取消动画帧并关闭 AudioContext
     Effect::new(move |_| {
         if let Some(Ok(_)) = value.get() {
             set_timeout(
-                move || setup_visualizer(),
+                move || visualizer.start(audio_ref, canvas_ref),
                 std::time::Duration::from_millis(100),
             );
+        } else {
+            visualizer.stop();
         }
     });
 
@@ -1242,7 +1165,7 @@ fn StepGenerate(
                                         <span class="inline-flex items-center px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
                                             <i class="fa-solid fa-volume-high mr-1.5"></i>
                                             "音量 "
-                                            {format!("{:.2}%", p.volume * 100.0)}
+                                            {format!("{:.0}%", p.volume * 100.0)}
                                         </span>
                                     </div>
                                 }.into_any()
@@ -1420,18 +1343,3 @@ fn StepGenerate(
         </div>
     }
 }
-
-// 辅助函数
-#[cfg(target_arch = "wasm32")]
-#[allow(dead_code)]
-fn request_animation_frame(f: &wasm_bindgen::closure::Closure<dyn FnMut()>) {
-    use wasm_bindgen::JsCast;
-    web_sys::window()
-        .unwrap()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(dead_code)]
-fn request_animation_frame(_f: &impl std::any::Any) {}

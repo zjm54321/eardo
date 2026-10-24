@@ -1,18 +1,14 @@
 #[cfg(feature = "ssr")]
 use crate::api::post::{Action, VoicePostID, action_voice_post, get_voice_post_comments};
-use crate::api::post::{PostStatus, VoicePost, list_voice_post};
+use crate::api::post::{
+    PostStatus, VoicePost, VoicePostWithLike, list_voice_post_with_likes, toggle_voice_post_like,
+};
 use crate::pages::component::CustomAudioPlayer;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssr")]
 use std::str::FromStr;
-
-#[server]
-pub async fn toggle_post_like(post_id: String) -> Result<(), ServerFnError> {
-    let id = VoicePostID::from_str(&post_id).map_err(|e| ServerFnError::new(e.to_string()))?;
-    action_voice_post(id, Action::LikeDislike).await
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommentInfo {
@@ -30,7 +26,7 @@ pub async fn get_post_comments(post_id: String) -> Result<Vec<CommentInfo>, Serv
     Ok(comments
         .into_iter()
         .map(|(user_id, content)| CommentInfo {
-            id: "".to_string(), // TODO: 评论ID
+            id: "".to_string(), // TODO: 评论ID（后端暂未返回，前端按序号作为 key）
             author: user_id.to_string(),
             avatar: Some(format!("/api/avatar/{}", user_id)),
             content,
@@ -80,13 +76,13 @@ pub fn Playground() -> impl IntoView {
     let (current_slide, set_current_slide) = signal(0);
 
     // 2. 列表作品状态
-    let (works_list, set_works_list) = signal(Vec::<VoicePost>::new());
-    let (featured_list, set_featured_list) = signal(Vec::<VoicePost>::new());
+    let (works_list, set_works_list) = signal(Vec::<VoicePostWithLike>::new());
+    let (featured_list, set_featured_list) = signal(Vec::<VoicePostWithLike>::new());
     let (search_query, set_search_query) = signal(String::new());
 
     // 加载精选作品 (Recommended状态)
     let featured_resource = LocalResource::new(move || async move {
-        match list_voice_post(Some(PostStatus::Recommended), 20).await {
+        match list_voice_post_with_likes(Some(PostStatus::Recommended), 20).await {
             Ok(posts) => Ok(posts),
             Err(e) => {
                 leptos::logging::error!("加载精选作品失败: {}", e);
@@ -97,7 +93,7 @@ pub fn Playground() -> impl IntoView {
 
     // 加载最新作品 (Normal状态)
     let posts_resource = LocalResource::new(move || async move {
-        match list_voice_post(Some(PostStatus::Normal), 20).await {
+        match list_voice_post_with_likes(Some(PostStatus::Normal), 20).await {
             Ok(posts) => Ok(posts),
             Err(e) => {
                 leptos::logging::error!("加载作品失败: {}", e);
@@ -182,7 +178,11 @@ pub fn Playground() -> impl IntoView {
                                                             class:block=move || current_slide.get() == idx
                                                             class:animate-fade-in=move || current_slide.get() == idx
                                                         >
-                                                            <WorkCard work=work is_featured=true />
+                                                            <WorkCard
+                                                                work=work.post
+                                                                liked=work.is_liked_by_current_user
+                                                                is_featured=true
+                                                            />
                                                         </div>
                                                     }
                                                 })
@@ -252,7 +252,8 @@ pub fn Playground() -> impl IntoView {
                                 } else {
                                     posts
                                         .into_iter()
-                                        .filter(|p| {
+                                        .filter(|row| {
+                                            let p = &row.post;
                                             let meta = PostMetadata::from_post(p);
                                             p.title.to_lowercase().contains(&query)
                                                 || meta.description.to_lowercase().contains(&query)
@@ -261,9 +262,15 @@ pub fn Playground() -> impl IntoView {
                                         .collect()
                                 }
                             }
-                            key=|w| w.id.to_string()
+                            key=|w| w.post.id.to_string()
                             children=move |work| {
-                                view! { <WorkCard work=work is_featured=false /> }
+                                view! {
+                                    <WorkCard
+                                        work=work.post
+                                        liked=work.is_liked_by_current_user
+                                        is_featured=false
+                                    />
+                                }
                             }
                         />
                     </div>
@@ -290,15 +297,13 @@ pub fn Playground() -> impl IntoView {
 
 // --- 子组件：作品卡片 ---
 #[component]
-fn WorkCard(work: VoicePost, is_featured: bool) -> impl IntoView {
+fn WorkCard(work: VoicePost, liked: bool, is_featured: bool) -> impl IntoView {
     let meta = PostMetadata::from_post(&work);
-    let post_id = work.id.to_string();
+    let post_id = work.id.clone();
     let post_id_for_comment = work.id.to_string();
 
-    // 从 work.meta 中获取 is_liked 状态
-    let initial_liked = false; // TODO: is_liked
-
-    let (liked, set_liked) = signal(initial_liked);
+    // 当前用户是否已点赞（来自 list_voice_post_with_likes）
+    let (liked, set_liked) = signal(liked);
     let (like_count, set_like_count) = signal(meta.likes);
     let (is_loading, set_is_loading) = signal(false);
 
@@ -320,9 +325,11 @@ fn WorkCard(work: VoicePost, is_featured: bool) -> impl IntoView {
         set_is_loading.set(true);
 
         spawn_local(async move {
-            match toggle_post_like(post_id).await {
-                Ok(_) => {
-                    leptos::logging::debug_log!("点赞操作成功");
+            match toggle_voice_post_like(post_id).await {
+                Ok(state) => {
+                    // 以服务器返回的状态为准
+                    set_liked.set(state.liked);
+                    set_like_count.set(state.likes_count);
                 }
                 Err(e) => {
                     leptos::logging::error!("点赞失败: {}", e);
@@ -519,9 +526,9 @@ where
                                             view! {
                                                 <div class="space-y-3">
                                                     <For
-                                                        each=move || comments.clone()
-                                                        key=|c| c.id.clone()
-                                                        children=move |comment| {
+                                                        each=move || { comments.clone().into_iter().enumerate().collect::<Vec<_>>() }
+                                                        key=|(idx, _)| *idx
+                                                        children=move |(_, comment)| {
                                                             view! {
                                                                 <div class="flex items-start space-x-2">
                                                                     <img

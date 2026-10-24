@@ -37,9 +37,9 @@ pub fn WelcomePage() -> impl IntoView {
 
                 // 3. Button
                 <div class="absolute top-[80%]">
-                    <A href="/setup" attr:class="group relative inline-flex items-center justify-center px-10 py-5 text-xl font-bold text-white transition-all duration-300 bg-gradient-to-r from-primary to-secondary rounded-full shadow-lg hover:shadow-2xl hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-primary/30 overflow-hidden">
+                    <A href="/home" attr:class="group relative inline-flex items-center justify-center px-10 py-5 text-xl font-bold text-white transition-all duration-300 bg-gradient-to-r from-primary to-secondary rounded-full shadow-lg hover:shadow-2xl hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-primary/30 overflow-hidden">
                         <span class="relative z-10 flex items-center">
-                            "开启我的旅程"
+                            "进入声音工作台"
                             <i class="fa-solid fa-arrow-right ml-3 group-hover:translate-x-1 transition-transform"></i>
                         </span>
                         <div class="absolute inset-0 -translate-x-full group-hover:translate-x-0 bg-white/20 transition-transform duration-500 skew-x-12"></div>
