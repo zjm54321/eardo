@@ -1,7 +1,10 @@
 #![cfg(feature = "ssr")]
 use {
-    crate::api::{ServiceProvider, voice::*, voice_backend::generate_audio},
-    anyhow::Context,
+    crate::api::{
+        ServiceProvider, user::UserRole, userimpl::get_authenticated_user, voice::*,
+        voice_backend::generate_audio,
+    },
+    anyhow::{Context, anyhow},
     sqlx::Postgres,
     uuid::Uuid,
 };
@@ -131,7 +134,7 @@ impl VoiceService for ServiceProvider<Postgres> {
         _voice_generate_meta: VoiceModelInfo,
         _voice_data: VoiceGenerateData,
     ) -> anyhow::Result<VoiceModelID> {
-        unimplemented!("语音模型生成接口尚未实现，等待后端完善相关逻辑")
+        Err(anyhow!("语音模型生成接口尚未实现"))
     }
 
     async fn update_voice_model(
@@ -139,24 +142,32 @@ impl VoiceService for ServiceProvider<Postgres> {
         voice_model_id: VoiceModelID,
         voice_model_info: VoiceModelInfo,
     ) -> anyhow::Result<()> {
-        sqlx::query(
+        let (user_id, role) = get_authenticated_user(&self.pool).await?;
+        let result = sqlx::query(
             r#"
             UPDATE voice_model 
             SET name = $1, description = $2
-            WHERE id = $3
+            WHERE id = $3 AND ($4 OR (category = 'User' AND user_id = $5))
             "#,
         )
         .bind(&voice_model_info.name)
         .bind(&voice_model_info.description)
         .bind(voice_model_id)
+        .bind(matches!(role, UserRole::Admin))
+        .bind(user_id)
         .execute(&self.pool)
         .await
         .context("更新语音模型信息失败")?;
+
+        if result.rows_affected() == 0 {
+            return Err(anyhow!("语音模型不存在或无权修改"));
+        }
 
         Ok(())
     }
 
     async fn generate_meta(&self, voice_meta: VoiceMeta) -> anyhow::Result<VoiceMetaID> {
+        get_authenticated_user(&self.pool).await?;
         let meta_id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO voice_meta (voice_model_id, pitch, speed, volume, instruction)
@@ -197,6 +208,10 @@ impl VoiceService for ServiceProvider<Postgres> {
         voice_meta_id: VoiceMetaID,
         text: &str,
     ) -> anyhow::Result<VoiceLibraryID> {
+        get_authenticated_user(&self.pool).await?;
+        if text.chars().count() > MAX_TTS_TEXT_CHARS {
+            return Err(anyhow!("文本不能超过 {MAX_TTS_TEXT_CHARS} 个字符"));
+        }
         // 1. 获取 voice_meta
         let voice_meta: VoiceMetaRow = sqlx::query_as(
             "SELECT voice_model_id, pitch, speed, volume, instruction FROM voice_meta WHERE id = $1"

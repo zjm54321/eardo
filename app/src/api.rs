@@ -8,6 +8,16 @@ where
 }
 
 #[cfg(feature = "ssr")]
+fn public_error(action: &str, error: anyhow::Error) -> leptos::prelude::ServerFnError {
+    if error.chain().any(|cause| cause.is::<sqlx::Error>()) {
+        eprintln!("{action}: {error:#}");
+        leptos::prelude::ServerFnError::new("服务暂时不可用，请稍后重试")
+    } else {
+        leptos::prelude::ServerFnError::new(format!("{action}: {error}"))
+    }
+}
+
+#[cfg(feature = "ssr")]
 impl<DB> Clone for ServiceProvider<DB>
 where
     DB: sqlx::Database,
@@ -129,7 +139,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
             .register(userauth)
             .await
-            .map_err(|e| ServerFnError::new(format!("注册失败: {}", e)))
+            .map_err(|e| super::public_error("注册失败", e))
     }
     #[server(input = Json)]
     pub async fn login(userauth: UserAuth) -> Result<UserID, ServerFnError> {
@@ -137,7 +147,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
             .login(userauth)
             .await
-            .map_err(|e| ServerFnError::new(format!("登录失败: {}", e)))
+            .map_err(|e| super::public_error("登录失败", e))
     }
     #[server]
     pub async fn logout() -> Result<(), ServerFnError> {
@@ -145,7 +155,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
             .logout()
             .await
-            .map_err(|e| ServerFnError::new(format!("登出失败: {}", e)))
+            .map_err(|e| super::public_error("登出失败", e))
     }
     #[server(input = Json)]
     pub async fn get_authinfo() -> Result<Vec<UserAuth>, ServerFnError> {
@@ -153,7 +163,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
             .get_authinfo()
             .await
-            .map_err(|e| ServerFnError::new(format!("获取认证信息失败: {}", e)))
+            .map_err(|e| super::public_error("获取认证信息失败", e))
     }
     #[server(input = Json)]
     pub async fn update_authinfo(update_info: UpdateAuthInfo) -> Result<(), ServerFnError> {
@@ -161,7 +171,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到认证服务组件(AuthProvider)"))?
             .update_authinfo(update_info)
             .await
-            .map_err(|e| ServerFnError::new(format!("更新认证信息失败: {}", e)))
+            .map_err(|e| super::public_error("更新认证信息失败", e))
     }
     #[server]
     pub async fn get_user_profile() -> Result<User, ServerFnError> {
@@ -169,7 +179,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserProvider)"))?
             .get_user_profile()
             .await
-            .map_err(|e| ServerFnError::new(format!("获取用户信息失败: {}", e)))
+            .map_err(|e| super::public_error("获取用户信息失败", e))
     }
     #[server]
     pub async fn update_user_profile(user: User) -> Result<(), ServerFnError> {
@@ -177,7 +187,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserProvider)"))?
             .update_user_profile(&user)
             .await
-            .map_err(|e| ServerFnError::new(format!("更新用户信息失败: {}", e)))
+            .map_err(|e| super::public_error("更新用户信息失败", e))
     }
 
     #[server]
@@ -186,7 +196,7 @@ pub mod user {
             .ok_or_else(|| ServerFnError::new("未找到用户服务组件(UserProvider)"))?
             .update_user_avatar(avatar_data)
             .await
-            .map_err(|e| ServerFnError::new(format!("更新用户头像失败: {}", e)))
+            .map_err(|e| super::public_error("更新用户头像失败", e))
     }
 }
 mod userimpl;
@@ -200,6 +210,8 @@ pub mod voice {
     pub type VoiceModelID = Uuid;
     pub type VoiceMetaID = Uuid;
     pub type VoiceLibraryID = Uuid;
+
+    pub const MAX_TTS_TEXT_CHARS: usize = 2000;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct VoiceModel {
@@ -299,7 +311,7 @@ pub mod voice {
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
             .list_voice_models()
             .await
-            .map_err(|e| ServerFnError::new(format!("获取语音模型列表失败: {}", e)))
+            .map_err(|e| super::public_error("获取语音模型列表失败", e))
     }
 
     #[server]
@@ -308,7 +320,7 @@ pub mod voice {
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
             .search_voice_model(&info)
             .await
-            .map_err(|e| ServerFnError::new(format!("搜索语音模型失败: {}", e)))
+            .map_err(|e| super::public_error("搜索语音模型失败", e))
     }
 
     #[server(input = Json)]
@@ -320,7 +332,7 @@ pub mod voice {
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
             .generate_voice_model(voice_generate_meta, voice_data)
             .await
-            .map_err(|e| ServerFnError::new(format!("生成语音模型失败: {}", e)))
+            .map_err(|e| super::public_error("生成语音模型失败", e))
     }
 
     #[server(input = Json)]
@@ -332,7 +344,7 @@ pub mod voice {
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
             .update_voice_model(voice_model_id, voice_model_info)
             .await
-            .map_err(|e| ServerFnError::new(format!("更新语音模型失败: {}", e)))
+            .map_err(|e| super::public_error("更新语音模型失败", e))
     }
 
     #[server(input = Json)]
@@ -341,7 +353,7 @@ pub mod voice {
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
             .generate_meta(voice_meta)
             .await
-            .map_err(|e| ServerFnError::new(format!("生成语音元数据失败: {}", e)))
+            .map_err(|e| super::public_error("生成语音元数据失败", e))
     }
 
     #[server(input = Json)]
@@ -350,7 +362,7 @@ pub mod voice {
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
             .get_meta(voice_meta_id)
             .await
-            .map_err(|e| ServerFnError::new(format!("获取语音元数据失败: {}", e)))
+            .map_err(|e| super::public_error("获取语音元数据失败", e))
     }
 
     #[server(input = Json)]
@@ -362,10 +374,10 @@ pub mod voice {
             .ok_or_else(|| ServerFnError::new("未找到语音服务组件(VoiceProvider)"))?
             .generate_voice(voice_meta_id, &text)
             .await
-            .map_err(|e| ServerFnError::new(format!("生成语音失败: {}", e)))
+            .map_err(|e| super::public_error("生成语音失败", e))
     }
 }
-mod voice_backend;
+pub(crate) mod voice_backend;
 mod voiceimpl;
 
 pub mod post {
@@ -410,6 +422,23 @@ pub mod post {
         pub likes_count: i32,
     }
 
+    /// Read-only listing DTO; keeps VoicePost creation payloads compatible.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
+    pub struct VoicePostWithLike {
+        #[serde(flatten)]
+        #[cfg_attr(feature = "ssr", sqlx(flatten))]
+        pub post: VoicePost,
+        pub is_liked_by_current_user: bool,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
+    pub struct LikeState {
+        pub liked: bool,
+        pub likes_count: i32,
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[cfg_attr(feature = "ssr", derive(sqlx::Type))]
     #[cfg_attr(feature = "ssr", sqlx(type_name = "post_status"))]
@@ -439,6 +468,7 @@ pub mod post {
             number: u8,
         ) -> anyhow::Result<Vec<VoiceMetaPost>>;
         async fn action(&self, post_id: VoiceMetaPostID, action: Action) -> anyhow::Result<()>;
+        async fn toggle_like(&self, post_id: VoiceMetaPostID) -> anyhow::Result<LikeState>;
         async fn get_comments(
             &self,
             post_id: VoiceMetaPostID,
@@ -460,6 +490,12 @@ pub mod post {
             number: u8,
         ) -> anyhow::Result<Vec<VoicePost>>;
         async fn action(&self, post_id: VoicePostID, action: Action) -> anyhow::Result<()>;
+        async fn toggle_like(&self, post_id: VoicePostID) -> anyhow::Result<LikeState>;
+        async fn list_with_likes(
+            &self,
+            status: Option<PostStatus>,
+            number: u8,
+        ) -> anyhow::Result<Vec<VoicePostWithLike>>;
         async fn get_comments(&self, post_id: VoicePostID)
         -> anyhow::Result<Vec<(UserID, String)>>;
     }
@@ -474,7 +510,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .create(post)
             .await
-            .map_err(|e| ServerFnError::new(format!("创建失败: {}", e)))
+            .map_err(|e| super::public_error("创建失败", e))
     }
 
     #[server(input = Json)]
@@ -485,7 +521,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .get(post_id)
             .await
-            .map_err(|e| ServerFnError::new(format!("获取失败: {}", e)))
+            .map_err(|e| super::public_error("获取失败", e))
     }
 
     #[server(input = Json)]
@@ -494,7 +530,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .update(post)
             .await
-            .map_err(|e| ServerFnError::new(format!("更新失败: {}", e)))
+            .map_err(|e| super::public_error("更新失败", e))
     }
 
     #[server(input = Json)]
@@ -503,7 +539,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .delete(post_id)
             .await
-            .map_err(|e| ServerFnError::new(format!("删除失败: {}", e)))
+            .map_err(|e| super::public_error("删除失败", e))
     }
 
     #[server(input = Json)]
@@ -514,7 +550,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .search(&query)
             .await
-            .map_err(|e| ServerFnError::new(format!("搜索失败: {}", e)))
+            .map_err(|e| super::public_error("搜索失败", e))
     }
 
     #[server(input = Json)]
@@ -526,7 +562,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .list(status, number)
             .await
-            .map_err(|e| ServerFnError::new(format!("获取列表失败: {}", e)))
+            .map_err(|e| super::public_error("获取列表失败", e))
     }
 
     #[server(input = Json)]
@@ -538,7 +574,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .action(post_id, action)
             .await
-            .map_err(|e| ServerFnError::new(format!("操作失败: {}", e)))
+            .map_err(|e| super::public_error("操作失败", e))
     }
 
     #[server(input = Json)]
@@ -549,7 +585,18 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
             .get_comments(post_id)
             .await
-            .map_err(|e| ServerFnError::new(format!("获取评论失败: {}", e)))
+            .map_err(|e| super::public_error("获取评论失败", e))
+    }
+
+    #[server(input = Json)]
+    pub async fn toggle_voice_meta_post_like(
+        post_id: VoiceMetaPostID,
+    ) -> Result<LikeState, ServerFnError> {
+        use_context::<VoiceMetaPostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoiceMetaPostProvider"))?
+            .toggle_like(post_id)
+            .await
+            .map_err(|e| super::public_error("点赞操作失败", e))
     }
 
     #[server(input = Json)]
@@ -558,7 +605,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .create(post)
             .await
-            .map_err(|e| ServerFnError::new(format!("创建失败: {}", e)))
+            .map_err(|e| super::public_error("创建失败", e))
     }
 
     #[server(input = Json)]
@@ -567,7 +614,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .get(post_id)
             .await
-            .map_err(|e| ServerFnError::new(format!("获取失败: {}", e)))
+            .map_err(|e| super::public_error("获取失败", e))
     }
 
     #[server(input = Json)]
@@ -576,7 +623,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .update(post)
             .await
-            .map_err(|e| ServerFnError::new(format!("更新失败: {}", e)))
+            .map_err(|e| super::public_error("更新失败", e))
     }
 
     #[server(input = Json)]
@@ -585,7 +632,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .delete(post_id)
             .await
-            .map_err(|e| ServerFnError::new(format!("删除失败: {}", e)))
+            .map_err(|e| super::public_error("删除失败", e))
     }
 
     #[server(input = Json)]
@@ -594,7 +641,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .search(&query)
             .await
-            .map_err(|e| ServerFnError::new(format!("搜索失败: {}", e)))
+            .map_err(|e| super::public_error("搜索失败", e))
     }
 
     #[server(input = Json)]
@@ -606,7 +653,28 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .list(status, number)
             .await
-            .map_err(|e| ServerFnError::new(format!("获取列表失败: {}", e)))
+            .map_err(|e| super::public_error("获取列表失败", e))
+    }
+
+    #[server(input = Json)]
+    pub async fn list_voice_post_with_likes(
+        status: Option<PostStatus>,
+        number: u8,
+    ) -> Result<Vec<VoicePostWithLike>, ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .list_with_likes(status, number)
+            .await
+            .map_err(|e| super::public_error("获取列表失败", e))
+    }
+
+    #[server(input = Json)]
+    pub async fn toggle_voice_post_like(post_id: VoicePostID) -> Result<LikeState, ServerFnError> {
+        use_context::<VoicePostProvider>()
+            .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
+            .toggle_like(post_id)
+            .await
+            .map_err(|e| super::public_error("点赞操作失败", e))
     }
 
     #[server(input = Json)]
@@ -618,7 +686,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .action(post_id, action)
             .await
-            .map_err(|e| ServerFnError::new(format!("操作失败: {}", e)))
+            .map_err(|e| super::public_error("操作失败", e))
     }
 
     #[server(input = Json)]
@@ -629,7 +697,7 @@ pub mod post {
             .ok_or_else(|| ServerFnError::new("未找到VoicePostProvider"))?
             .get_comments(post_id)
             .await
-            .map_err(|e| ServerFnError::new(format!("获取评论失败: {}", e)))
+            .map_err(|e| super::public_error("获取评论失败", e))
     }
 }
 mod postimpl;

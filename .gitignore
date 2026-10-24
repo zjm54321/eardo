@@ -18,3 +18,5 @@ playwright/.cache/
 # database files
 *.db
 *.sqlite
+# local database exports / production backups
+/db_exports/

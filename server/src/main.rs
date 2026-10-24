@@ -5,7 +5,8 @@ use axum::{
     Router,
     body::Body,
     extract::{FromRef, Path, Request, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, Method, StatusCode, Uri, header},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -14,7 +15,8 @@ use leptos::logging::log;
 use leptos::prelude::*;
 use leptos_axum::{generate_route_list, handle_server_fns_with_context};
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use std::{env, sync::Arc};
+use std::{env, io, str::FromStr, sync::Arc, time::Duration};
+use tower_http::limit::RequestBodyLimitLayer;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -25,6 +27,119 @@ struct AppState {
     voice_meta_post_provider: api::post::VoiceMetaPostProvider,
     voice_post_provider: api::post::VoicePostProvider,
     voice_provider: api::voice::VoiceProvider,
+}
+
+async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
+    let check = tokio::time::timeout(
+        Duration::from_secs(1),
+        sqlx::query_as::<_, (i32, bool)>(r#"SELECT 1, to_regclass('public."user"') IS NOT NULL"#)
+            .fetch_one(&state.pg_pool),
+    )
+    .await;
+    let (status, body) = if matches!(check, Ok(Ok((1, true)))) {
+        (StatusCode::OK, "ok")
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+    };
+    (status, [(header::CACHE_CONTROL, "no-store")], body)
+}
+
+// Compare complete origins, never string prefixes (which would allow lookalike hosts).
+fn origin_from_uri(value: &str) -> Option<String> {
+    let uri: Uri = value.parse().ok()?;
+    let scheme = uri.scheme_str()?;
+    let authority = uri.authority()?.as_str();
+    if !matches!(scheme, "http" | "https") || authority.contains('@') {
+        return None;
+    }
+    Some(format!("{scheme}://{authority}"))
+}
+
+async fn check_api_origin(
+    State(allowed_origins): State<Arc<Vec<String>>>,
+    req: Request,
+    next: Next,
+) -> Response {
+    if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+        return next.run(req).await;
+    }
+
+    // An explicit Origin takes precedence; Referer is only a fallback when absent.
+    let origin = match req.headers().get(header::ORIGIN) {
+        Some(value) => value.to_str().ok().map(str::to_owned),
+        None => req
+            .headers()
+            .get(header::REFERER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(origin_from_uri),
+    };
+    if !origin.is_some_and(|origin| allowed_origins.contains(&origin)) {
+        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+    }
+    next.run(req).await
+}
+
+fn positive_env<T>(name: &str, default: T) -> io::Result<T>
+where
+    T: FromStr + Default + PartialOrd,
+{
+    match env::var(name) {
+        Ok(value) => value
+            .parse::<T>()
+            .ok()
+            .filter(|value| *value > T::default())
+            .ok_or_else(|| io::Error::other(format!("{name} must be a positive integer"))),
+        Err(env::VarError::NotPresent) => Ok(default),
+        Err(_) => Err(io::Error::other(format!("{name} must be valid UTF-8"))),
+    }
+}
+
+fn allowed_origins() -> io::Result<Option<Arc<Vec<String>>>> {
+    let value = match env::var("ALLOWED_ORIGINS") {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(None),
+        Err(_) => return Err(io::Error::other("ALLOWED_ORIGINS must be valid UTF-8")),
+    };
+    let mut origins = Vec::new();
+    for value in value.split(',').map(str::trim) {
+        let origin = origin_from_uri(value)
+            .filter(|origin| value == origin || value.strip_suffix('/') == Some(origin.as_str()));
+        origins.push(origin.ok_or_else(|| {
+            io::Error::other("ALLOWED_ORIGINS must contain comma-separated HTTP(S) origins")
+        })?);
+    }
+    Ok(Some(Arc::new(origins)))
+}
+
+fn shutdown_signal(timeout: Duration) -> io::Result<impl std::future::Future<Output = ()>> {
+    #[cfg(unix)]
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|err| {
+        io::Error::other(format!("failed to register SIGTERM handler: {err}"))
+    })?;
+
+    Ok(async move {
+        let ctrl_c = async {
+            if let Err(err) = tokio::signal::ctrl_c().await {
+                eprintln!("failed to listen for Ctrl-C: {err}; shutting down");
+            }
+        };
+        #[cfg(unix)]
+        tokio::select! {
+            () = ctrl_c => {},
+            _ = terminate.recv() => {},
+        }
+        #[cfg(not(unix))]
+        ctrl_c.await;
+
+        log!("shutdown requested; draining requests");
+        // This remains active through both HTTP draining and pool closure.
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
+            eprintln!("shutdown drain deadline exceeded; exiting");
+            std::process::exit(1);
+        });
+    })
 }
 
 // 1. API 路由处理函数 (用于 CSR / Server Functions)
@@ -220,22 +335,43 @@ async fn ssr_handler(
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    let conf = get_configuration(None).unwrap();
+    let conf = get_configuration(None)
+        .map_err(|err| io::Error::other(format!("failed to load Leptos configuration: {err}")))?;
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
     let routes = generate_route_list(App);
 
-    let pg_url = env::var("PG_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/eardo".to_string());
-    log!("连接PG数据库: {}", pg_url);
+    let production = env::var("LEPTOS_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("prod"));
+    let pg_url = match env::var("PG_DATABASE_URL") {
+        Ok(value) if !value.trim().is_empty() => value,
+        Err(env::VarError::NotPresent) if !production => {
+            "postgres://postgres:postgres@localhost:5432/eardo".to_string()
+        }
+        _ => return Err(io::Error::other("PG_DATABASE_URL is required and must be valid UTF-8 (no database fallback in production)").into()),
+    };
+    if env::var("ALIYUN_API_KEY").map_or(true, |value| value.trim().is_empty()) {
+        eprintln!("warning: ALIYUN_API_KEY is missing; voice synthesis will be unavailable");
+    }
+    let max_connections = positive_env("PG_MAX_CONNECTIONS", 5_u32)?;
+    let max_body_bytes = positive_env("MAX_BODY_BYTES", 4 * 1024 * 1024_usize)?;
+    let shutdown_timeout = Duration::from_secs(positive_env("SHUTDOWN_TIMEOUT_SECS", 25_u64)?);
+    let allowed_origins = allowed_origins()?;
+    let shutdown = shutdown_signal(shutdown_timeout)?;
+    log!("正在连接PG数据库");
 
     let pg_pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(max_connections)
+        .acquire_timeout(Duration::from_secs(5))
         .connect(&pg_url)
         .await
-        .expect("Failed to create pg pool.");
+        // Connection errors can contain user-supplied connection options. Never log the URL.
+        .map_err(|_| {
+            io::Error::other(
+                "failed to connect to PostgreSQL; check PG_DATABASE_URL and database availability",
+            )
+        })?;
 
     // 1. 实例化 ServiceProvider (指定泛型为 PgPool)
     let new_service_impl = api::ServiceProvider {
@@ -264,7 +400,10 @@ async fn main() {
 
     // 构建 Router
     let mut app = Router::<AppState>::new()
-        .route("/api/{*fn_name}", post(server_fn_handler))
+        .route(
+            "/api/{*fn_name}",
+            post(server_fn_handler).layer(RequestBodyLimitLayer::new(max_body_bytes)),
+        )
         .route("/api/audio/{id}", get(get_audio_handler))
         .route("/api/avatar/{user_id}", get(get_avatar_handler))
         .route(
@@ -272,6 +411,14 @@ async fn main() {
             get(get_voice_avatar_handler),
         )
         .route("/api/post/audio/{post_id}", get(get_post_audio_handler));
+
+    if let Some(allowed_origins) = allowed_origins {
+        app = app.route_layer(middleware::from_fn_with_state(
+            allowed_origins,
+            check_api_origin,
+        ));
+    }
+    app = app.route("/healthz", get(healthz));
 
     // 为每个 Leptos 路由注册我们自定义的 ssr_handler
     // 替代之前的 .leptos_routes_with_context()
@@ -287,11 +434,16 @@ async fn main() {
         .with_state(app_state);
 
     log!("listening on http://{}", &addr);
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(
+    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|err| {
+        io::Error::other(format!("failed to bind HTTP listener on {addr}: {err}"))
+    })?;
+    let result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .await
-    .unwrap();
+    .with_graceful_shutdown(shutdown)
+    .await;
+    pg_pool.close().await;
+    result.map_err(|err| io::Error::other(format!("HTTP server failed: {err}")))?;
+    Ok(())
 }

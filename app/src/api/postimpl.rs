@@ -1,45 +1,73 @@
 #![cfg(feature = "ssr")]
 use {
-    crate::api::{ServiceProvider, post::*, user::UserID},
+    crate::api::{
+        ServiceProvider,
+        post::*,
+        user::{UserID, UserRole},
+        userimpl::{get_authenticated_user, get_user_id_from_session},
+    },
     anyhow::{Context, anyhow},
-    axum_extra::extract::cookie::Cookie,
-    http::HeaderMap,
-    leptos::prelude::use_context,
     sqlx::Postgres,
     uuid::Uuid,
 };
 
-/// 从 Cookie 中获取 session token
-fn get_session_token() -> Option<String> {
-    let headers = use_context::<HeaderMap>()?;
-    let cookie_header = headers.get("cookie")?.to_str().ok()?;
-
-    for cookie_str in cookie_header.split(';') {
-        let cookie_str = cookie_str.trim();
-        if let Ok(cookie) = Cookie::parse(cookie_str) {
-            if cookie.name() == "session_token" {
-                return Some(cookie.value().to_string());
+// `table` is always one of the two internal literal table names below, never input.
+async fn apply_action(
+    pool: &sqlx::Pool<Postgres>,
+    table: &str,
+    post_id: Uuid,
+    action: Action,
+) -> anyhow::Result<LikeState> {
+    let user_id = get_user_id_from_session(pool).await?;
+    let mut tx = pool.begin().await?;
+    // Serialize toggles (including the count triggers) and check visibility atomically.
+    sqlx::query(&format!(
+        "SELECT id FROM {table} WHERE id = $1 AND status IN ('Normal', 'Recommended') FOR UPDATE"
+    ))
+    .bind(post_id)
+    .fetch_one(&mut *tx)
+    .await
+    .context("帖子不存在或不可见")?;
+    match action {
+        Action::LikeDislike => {
+            let deleted = sqlx::query(&format!(
+                "DELETE FROM {table}_like WHERE post_id = $1 AND user_id = $2"
+            ))
+            .bind(post_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            if deleted.rows_affected() == 0 {
+                sqlx::query(&format!(
+                    "INSERT INTO {table}_like (post_id, user_id) VALUES ($1, $2)"
+                ))
+                .bind(post_id)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await?;
             }
         }
+        Action::Comment(content) => {
+            sqlx::query(&format!(
+                "INSERT INTO {table}_comment (post_id, user_id, content) VALUES ($1, $2, $3)"
+            ))
+            .bind(post_id)
+            .bind(user_id)
+            .bind(content)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
-    None
-}
-
-/// 从 session token 获取用户 ID
-async fn get_user_id_from_session(pool: &sqlx::Pool<Postgres>) -> anyhow::Result<UserID> {
-    let token = get_session_token().ok_or_else(|| anyhow!("未找到 session token"))?;
-    let token_uuid = Uuid::parse_str(&token).context("无效的 session token")?;
-
-    let (user_id,): (Uuid,) = sqlx::query_as(
-        "SELECT user_id FROM user_session 
-         WHERE id = $1 AND expires_at > NOW()",
-    )
-    .bind(token_uuid)
-    .fetch_one(pool)
-    .await
-    .context("Session 已过期或无效")?;
-
-    Ok(user_id)
+    let state = sqlx::query_as::<_, LikeState>(&format!(
+        "SELECT EXISTS(SELECT 1 FROM {table}_like WHERE post_id = $1 AND user_id = $2) AS liked,
+                likes_count FROM {table} WHERE id = $1"
+    ))
+    .bind(post_id)
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(state)
 }
 
 #[async_trait::async_trait]
@@ -55,12 +83,7 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
         .bind(&post.content)
         .bind(post.meta_id)
         .bind(user_id)
-        .bind(match post.status {
-            PostStatus::Normal => "Normal",
-            PostStatus::Deleted => "Deleted",
-            PostStatus::Banned => "Banned",
-            PostStatus::Recommended => "Recommended",
-        })
+        .bind(PostStatus::Normal)
         .fetch_one(&self.pool)
         .await
         .context("创建帖子失败")?;
@@ -77,7 +100,7 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
                         CASE WHEN l.user_id IS NOT NULL THEN true ELSE false END as is_liked_by_current_user
                  FROM voice_meta_post p
                  LEFT JOIN voice_meta_post_like l ON p.id = l.post_id AND l.user_id = $2
-                 WHERE p.id = $1",
+                  WHERE p.id = $1 AND p.status IN ('Normal', 'Recommended')",
             )
             .bind(post_id)
             .bind(user_id)
@@ -87,7 +110,7 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
         } else {
             sqlx::query_as::<_, VoiceMetaPost>(
                 "SELECT id, title, content, meta_id, author, status, comments_count, likes_count, false as is_liked_by_current_user
-                 FROM voice_meta_post WHERE id = $1",
+                 FROM voice_meta_post WHERE id = $1 AND status IN ('Normal', 'Recommended')",
             )
             .bind(post_id)
             .fetch_one(&self.pool)
@@ -99,11 +122,12 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
     }
 
     async fn update(&self, post: VoiceMetaPost) -> anyhow::Result<()> {
-        let user_id = get_user_id_from_session(&self.pool).await?;
+        let (user_id, role) = get_authenticated_user(&self.pool).await?;
 
         let result = sqlx::query(
-            "UPDATE voice_meta_post SET title = $1, content = $2, meta_id = $3, status = $4::post_status 
-             WHERE id = $5 AND author = $6"
+            "UPDATE voice_meta_post SET title = $1, content = $2, meta_id = $3,
+                 status = CASE WHEN $7 THEN $4::post_status ELSE status END
+             WHERE id = $5 AND ($7 OR (author = $6 AND status IN ('Normal', 'Recommended') AND status = $4::post_status))"
         )
         .bind(&post.title)
         .bind(&post.content)
@@ -116,6 +140,7 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
         })
         .bind(post.id)
         .bind(user_id)
+        .bind(matches!(role, UserRole::Admin))
         .execute(&self.pool)
         .await
         .context("更新帖子失败")?;
@@ -128,13 +153,15 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
     }
 
     async fn delete(&self, post_id: VoiceMetaPostID) -> anyhow::Result<()> {
-        let user_id = get_user_id_from_session(&self.pool).await?;
+        let (user_id, role) = get_authenticated_user(&self.pool).await?;
 
         let result = sqlx::query(
-            "UPDATE voice_meta_post SET status = 'Deleted'::post_status WHERE id = $1 AND author = $2"
+            "UPDATE voice_meta_post SET status = 'Deleted'::post_status WHERE id = $1
+             AND ($3 OR (author = $2 AND status IN ('Normal', 'Recommended')))",
         )
         .bind(post_id)
         .bind(user_id)
+        .bind(matches!(role, UserRole::Admin))
         .execute(&self.pool)
         .await
         .context("删除帖子失败")?;
@@ -156,9 +183,9 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
                         CASE WHEN l.user_id IS NOT NULL THEN true ELSE false END as is_liked_by_current_user
                  FROM voice_meta_post p
                  LEFT JOIN voice_meta_post_like l ON p.id = l.post_id AND l.user_id = $3
-                 WHERE p.status != 'Deleted'::post_status AND p.status != 'Banned'::post_status 
+                  WHERE p.status IN ('Normal', 'Recommended')
                  AND (p.title ILIKE $1 OR p.content ILIKE $2)
-                 ORDER BY p.created_at DESC",
+                  ORDER BY p.created_at DESC LIMIT 100",
             )
             .bind(&search_pattern)
             .bind(&search_pattern)
@@ -170,9 +197,9 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
             sqlx::query_as::<_, VoiceMetaPost>(
                 "SELECT id, title, content, meta_id, author, status, comments_count, likes_count, false as is_liked_by_current_user
                  FROM voice_meta_post 
-                 WHERE status != 'Deleted'::post_status AND status != 'Banned'::post_status 
+                  WHERE status IN ('Normal', 'Recommended')
                  AND (title ILIKE $1 OR content ILIKE $2)
-                 ORDER BY created_at DESC",
+                  ORDER BY created_at DESC LIMIT 100",
             )
             .bind(&search_pattern)
             .bind(&search_pattern)
@@ -189,118 +216,33 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
         status: Option<PostStatus>,
         number: u8,
     ) -> anyhow::Result<Vec<VoiceMetaPost>> {
-        let status_str = match status {
-            Some(PostStatus::Normal) => Some("Normal"),
-            Some(PostStatus::Deleted) => Some("Deleted"),
-            Some(PostStatus::Banned) => Some("Banned"),
-            Some(PostStatus::Recommended) => Some("Recommended"),
-            None => None,
-        };
-
         let current_user_id = get_user_id_from_session(&self.pool).await.ok();
-
-        let posts = if let Some(user_id) = current_user_id {
-            if let Some(s) = status_str {
-                sqlx::query_as::<_, VoiceMetaPost>(
-                    "SELECT p.id, p.title, p.content, p.meta_id, p.author, p.status, p.comments_count, p.likes_count,
-                            CASE WHEN l.user_id IS NOT NULL THEN true ELSE false END as is_liked_by_current_user
-                     FROM voice_meta_post p
-                     LEFT JOIN voice_meta_post_like l ON p.id = l.post_id AND l.user_id = $2
-                     WHERE p.status = $1::post_status
-                     ORDER BY p.created_at DESC LIMIT $3",
-                )
-                .bind(s)
-                .bind(user_id)
-                .bind(number as i64)
-                .fetch_all(&self.pool)
-                .await?
-            } else {
-                sqlx::query_as::<_, VoiceMetaPost>(
-                    "SELECT p.id, p.title, p.content, p.meta_id, p.author, p.status, p.comments_count, p.likes_count,
-                            CASE WHEN l.user_id IS NOT NULL THEN true ELSE false END as is_liked_by_current_user
-                     FROM voice_meta_post p
-                     LEFT JOIN voice_meta_post_like l ON p.id = l.post_id AND l.user_id = $2
-                     WHERE p.status != 'Deleted'::post_status AND p.status != 'Banned'::post_status
-                     ORDER BY p.created_at DESC LIMIT $1",
-                )
-                .bind(number as i64)
-                .bind(user_id)
-                .fetch_all(&self.pool)
-                .await?
-            }
-        } else {
-            if let Some(s) = status_str {
-                sqlx::query_as::<_, VoiceMetaPost>(
-                    "SELECT id, title, content, meta_id, author, status, comments_count, likes_count, false as is_liked_by_current_user
-                     FROM voice_meta_post 
-                     WHERE status = $1::post_status
-                     ORDER BY created_at DESC LIMIT $2",
-                )
-                .bind(s)
-                .bind(number as i64)
-                .fetch_all(&self.pool)
-                .await?
-            } else {
-                sqlx::query_as::<_, VoiceMetaPost>(
-                    "SELECT id, title, content, meta_id, author, status, comments_count, likes_count, false as is_liked_by_current_user
-                     FROM voice_meta_post 
-                     WHERE status != 'Deleted'::post_status AND status != 'Banned'::post_status
-                     ORDER BY created_at DESC LIMIT $1",
-                )
-                .bind(number as i64)
-                .fetch_all(&self.pool)
-                .await?
-            }
-        };
+        let posts = sqlx::query_as::<_, VoiceMetaPost>(
+            "SELECT p.id, p.title, p.content, p.meta_id, p.author, p.status,
+                    p.comments_count, p.likes_count,
+                    EXISTS(SELECT 1 FROM voice_meta_post_like l WHERE l.post_id = p.id AND l.user_id = $1)
+                        AS is_liked_by_current_user
+             FROM voice_meta_post p
+             WHERE p.status IN ('Normal', 'Recommended')
+               AND ($2::post_status IS NULL OR p.status = $2::post_status)
+             ORDER BY p.created_at DESC LIMIT $3"
+        )
+        .bind(current_user_id)
+        .bind(status)
+        .bind(i64::from(number.min(100)))
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(posts)
     }
 
     async fn action(&self, post_id: VoiceMetaPostID, action: Action) -> anyhow::Result<()> {
-        let user_id = get_user_id_from_session(&self.pool).await?;
-
-        match action {
-            Action::LikeDislike => {
-                // 检查是否已经点赞
-                let existing: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT post_id FROM voice_meta_post_like WHERE post_id = $1 AND user_id = $2",
-                )
-                .bind(post_id)
-                .bind(user_id)
-                .fetch_optional(&self.pool)
-                .await?;
-
-                if existing.is_some() {
-                    // 取消点赞
-                    sqlx::query(
-                        "DELETE FROM voice_meta_post_like WHERE post_id = $1 AND user_id = $2",
-                    )
-                    .bind(post_id)
-                    .bind(user_id)
-                    .execute(&self.pool)
-                    .await?;
-                } else {
-                    // 点赞
-                    sqlx::query(
-                        "INSERT INTO voice_meta_post_like (post_id, user_id) VALUES ($1, $2)",
-                    )
-                    .bind(post_id)
-                    .bind(user_id)
-                    .execute(&self.pool)
-                    .await?;
-                }
-            }
-            Action::Comment(content) => {
-                sqlx::query("INSERT INTO voice_meta_post_comment (post_id, user_id, content) VALUES ($1, $2, $3)")
-                    .bind(post_id)
-                    .bind(user_id)
-                    .bind(content)
-                    .execute(&self.pool)
-                    .await?;
-            }
-        }
-
+        apply_action(&self.pool, "voice_meta_post", post_id, action).await?;
         Ok(())
+    }
+
+    async fn toggle_like(&self, post_id: VoiceMetaPostID) -> anyhow::Result<LikeState> {
+        apply_action(&self.pool, "voice_meta_post", post_id, Action::LikeDislike).await
     }
 
     async fn get_comments(
@@ -308,7 +250,10 @@ impl VoiceMetaPostService for ServiceProvider<Postgres> {
         post_id: VoiceMetaPostID,
     ) -> anyhow::Result<Vec<(UserID, String)>> {
         let comments = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT user_id, content FROM voice_meta_post_comment WHERE post_id = $1 ORDER BY created_at ASC"
+            "SELECT c.user_id, c.content FROM voice_meta_post_comment c
+             JOIN voice_meta_post p ON p.id = c.post_id
+             WHERE c.post_id = $1 AND p.status IN ('Normal', 'Recommended')
+             ORDER BY c.created_at ASC LIMIT 100",
         )
         .bind(post_id)
         .fetch_all(&self.pool)
@@ -332,12 +277,7 @@ impl VoicePostService for ServiceProvider<Postgres> {
         .bind(&post.content)
         .bind(post.library_id)
         .bind(user_id)
-        .bind(match post.status {
-            PostStatus::Normal => "Normal",
-            PostStatus::Deleted => "Deleted",
-            PostStatus::Banned => "Banned",
-            PostStatus::Recommended => "Recommended",
-        })
+        .bind(PostStatus::Normal)
         .fetch_one(&self.pool)
         .await
         .context("创建帖子失败")?;
@@ -347,7 +287,8 @@ impl VoicePostService for ServiceProvider<Postgres> {
 
     async fn get(&self, post_id: VoicePostID) -> anyhow::Result<VoicePost> {
         let post = sqlx::query_as::<_, VoicePost>(
-            "SELECT id, title, content, library_id, author, status, comments_count, likes_count FROM voice_post WHERE id = $1",
+            "SELECT id, title, content, library_id, author, status, comments_count, likes_count FROM voice_post
+             WHERE id = $1 AND status IN ('Normal', 'Recommended')",
         )
         .bind(post_id)
         .fetch_one(&self.pool)
@@ -358,11 +299,12 @@ impl VoicePostService for ServiceProvider<Postgres> {
     }
 
     async fn update(&self, post: VoicePost) -> anyhow::Result<()> {
-        let user_id = get_user_id_from_session(&self.pool).await?;
+        let (user_id, role) = get_authenticated_user(&self.pool).await?;
 
         let result = sqlx::query(
-            "UPDATE voice_post SET title = $1, content = $2, library_id = $3, status = $4::post_status 
-             WHERE id = $5 AND author = $6"
+            "UPDATE voice_post SET title = $1, content = $2, library_id = $3,
+                 status = CASE WHEN $7 THEN $4::post_status ELSE status END
+             WHERE id = $5 AND ($7 OR (author = $6 AND status IN ('Normal', 'Recommended') AND status = $4::post_status))"
         )
         .bind(&post.title)
         .bind(&post.content)
@@ -375,6 +317,7 @@ impl VoicePostService for ServiceProvider<Postgres> {
         })
         .bind(post.id)
         .bind(user_id)
+        .bind(matches!(role, UserRole::Admin))
         .execute(&self.pool)
         .await
         .context("更新帖子失败")?;
@@ -387,13 +330,15 @@ impl VoicePostService for ServiceProvider<Postgres> {
     }
 
     async fn delete(&self, post_id: VoicePostID) -> anyhow::Result<()> {
-        let user_id = get_user_id_from_session(&self.pool).await?;
+        let (user_id, role) = get_authenticated_user(&self.pool).await?;
 
         let result = sqlx::query(
-            "UPDATE voice_post SET status = 'Deleted'::post_status WHERE id = $1 AND author = $2",
+            "UPDATE voice_post SET status = 'Deleted'::post_status WHERE id = $1
+             AND ($3 OR (author = $2 AND status IN ('Normal', 'Recommended')))",
         )
         .bind(post_id)
         .bind(user_id)
+        .bind(matches!(role, UserRole::Admin))
         .execute(&self.pool)
         .await
         .context("删除帖子失败")?;
@@ -411,9 +356,9 @@ impl VoicePostService for ServiceProvider<Postgres> {
 
             let posts = sqlx::query_as::<_, VoicePost>(
                 "SELECT id, title, content, library_id, author, status, comments_count, likes_count FROM voice_post 
-                 WHERE status != 'Deleted'::post_status AND status != 'Banned'::post_status 
+                  WHERE status IN ('Normal', 'Recommended')
                  AND author = $1
-                 ORDER BY created_at DESC",
+                  ORDER BY created_at DESC LIMIT 100",
             )
             .bind(author)
             .fetch_all(&self.pool)
@@ -427,9 +372,9 @@ impl VoicePostService for ServiceProvider<Postgres> {
 
         let posts = sqlx::query_as::<_, VoicePost>(
             "SELECT id, title, content, library_id, author, status, comments_count, likes_count FROM voice_post 
-             WHERE status != 'Deleted'::post_status AND status != 'Banned'::post_status 
+              WHERE status IN ('Normal', 'Recommended')
              AND (title ILIKE $1 OR content ILIKE $2)
-             ORDER BY created_at DESC",
+              ORDER BY created_at DESC LIMIT 100",
         )
         .bind(&search_pattern)
         .bind(&search_pattern)
@@ -441,84 +386,53 @@ impl VoicePostService for ServiceProvider<Postgres> {
     }
 
     async fn list(&self, status: Option<PostStatus>, number: u8) -> anyhow::Result<Vec<VoicePost>> {
-        let status_str = match status {
-            Some(PostStatus::Normal) => Some("Normal"),
-            Some(PostStatus::Deleted) => Some("Deleted"),
-            Some(PostStatus::Banned) => Some("Banned"),
-            Some(PostStatus::Recommended) => Some("Recommended"),
-            None => None,
-        };
-
-        let posts = if let Some(s) = status_str {
-            sqlx::query_as::<_, VoicePost>(
-                "SELECT id, title, content, library_id, author, status, comments_count, likes_count FROM voice_post 
-                 WHERE status = $1::post_status
-                 ORDER BY created_at DESC LIMIT $2",
-            )
-            .bind(s)
-            .bind(number as i64)
-            .fetch_all(&self.pool)
+        Ok(self
+            .list_with_likes(status, number)
             .await?
-        } else {
-            sqlx::query_as::<_, VoicePost>(
-                "SELECT id, title, content, library_id, author, status, comments_count, likes_count FROM voice_post 
-                 WHERE status != 'Deleted'::post_status AND status != 'Banned'::post_status
-                 ORDER BY created_at DESC LIMIT $1",
-            )
-            .bind(number as i64)
-            .fetch_all(&self.pool)
-            .await?
-        };
+            .into_iter()
+            .map(|row| row.post)
+            .collect())
+    }
 
+    async fn list_with_likes(
+        &self,
+        status: Option<PostStatus>,
+        number: u8,
+    ) -> anyhow::Result<Vec<VoicePostWithLike>> {
+        let user_id = get_user_id_from_session(&self.pool).await.ok();
+        let posts = sqlx::query_as::<_, VoicePostWithLike>(
+            "SELECT p.id, p.title, p.content, p.library_id, p.author, p.status,
+                    p.comments_count, p.likes_count,
+                    EXISTS(SELECT 1 FROM voice_post_like l WHERE l.post_id = p.id AND l.user_id = $1)
+                        AS is_liked_by_current_user
+             FROM voice_post p
+             WHERE p.status IN ('Normal', 'Recommended')
+               AND ($2::post_status IS NULL OR p.status = $2::post_status)
+             ORDER BY p.created_at DESC LIMIT $3"
+        )
+        .bind(user_id)
+        .bind(status)
+        .bind(i64::from(number.min(100)))
+        .fetch_all(&self.pool)
+        .await?;
         Ok(posts)
     }
 
     async fn action(&self, post_id: VoicePostID, action: Action) -> anyhow::Result<()> {
-        let user_id = get_user_id_from_session(&self.pool).await?;
-
-        match action {
-            Action::LikeDislike => {
-                // 检查是否已经点赞
-                let existing: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT post_id FROM voice_post_like WHERE post_id = $1 AND user_id = $2",
-                )
-                .bind(post_id)
-                .bind(user_id)
-                .fetch_optional(&self.pool)
-                .await?;
-
-                if existing.is_some() {
-                    // 取消点赞
-                    sqlx::query("DELETE FROM voice_post_like WHERE post_id = $1 AND user_id = $2")
-                        .bind(post_id)
-                        .bind(user_id)
-                        .execute(&self.pool)
-                        .await?;
-                } else {
-                    // 点赞
-                    sqlx::query("INSERT INTO voice_post_like (post_id, user_id) VALUES ($1, $2)")
-                        .bind(post_id)
-                        .bind(user_id)
-                        .execute(&self.pool)
-                        .await?;
-                }
-            }
-            Action::Comment(content) => {
-                sqlx::query("INSERT INTO voice_post_comment (post_id, user_id, content) VALUES ($1, $2, $3)")
-                    .bind(post_id)
-                    .bind(user_id)
-                    .bind(content)
-                    .execute(&self.pool)
-                    .await?;
-            }
-        }
-
+        apply_action(&self.pool, "voice_post", post_id, action).await?;
         Ok(())
+    }
+
+    async fn toggle_like(&self, post_id: VoicePostID) -> anyhow::Result<LikeState> {
+        apply_action(&self.pool, "voice_post", post_id, Action::LikeDislike).await
     }
 
     async fn get_comments(&self, post_id: VoicePostID) -> anyhow::Result<Vec<(UserID, String)>> {
         let comments = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT user_id, content FROM voice_post_comment WHERE post_id = $1 ORDER BY created_at ASC"
+            "SELECT c.user_id, c.content FROM voice_post_comment c
+             JOIN voice_post p ON p.id = c.post_id
+             WHERE c.post_id = $1 AND p.status IN ('Normal', 'Recommended')
+             ORDER BY c.created_at ASC LIMIT 100",
         )
         .bind(post_id)
         .fetch_all(&self.pool)

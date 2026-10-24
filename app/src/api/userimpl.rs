@@ -28,20 +28,49 @@ fn get_session_token() -> Option<String> {
 }
 
 /// 从 session token 获取用户 ID
-async fn get_user_id_from_session(pool: &sqlx::Pool<Postgres>) -> anyhow::Result<UserID> {
+pub(super) async fn get_authenticated_user(
+    pool: &sqlx::Pool<Postgres>,
+) -> anyhow::Result<(UserID, UserRole)> {
     let token = get_session_token().ok_or_else(|| anyhow!("未找到 session token"))?;
     let token_uuid = Uuid::parse_str(&token).context("无效的 session token")?;
 
-    let (user_id,): (Uuid,) = sqlx::query_as(
-        "SELECT user_id FROM user_session 
-         WHERE id = $1 AND expires_at > NOW()",
+    let user: (Uuid, UserRole) = sqlx::query_as(
+        r#"SELECT u.id, u.role FROM user_session s
+           JOIN "user" u ON u.id = s.user_id
+           WHERE s.id = $1 AND s.expires_at > NOW()
+             AND u.role NOT IN ('BannedUser', 'DeletedUser')"#,
     )
     .bind(token_uuid)
     .fetch_one(pool)
     .await
     .context("Session 已过期或无效")?;
 
-    Ok(user_id)
+    Ok(user)
+}
+
+pub(super) async fn get_user_id_from_session(
+    pool: &sqlx::Pool<Postgres>,
+) -> anyhow::Result<UserID> {
+    Ok(get_authenticated_user(pool).await?.0)
+}
+
+fn cookie_secure() -> bool {
+    std::env::var("COOKIE_SECURE").is_ok_and(|value| value.eq_ignore_ascii_case("true"))
+        || std::env::var("LEPTOS_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("PROD"))
+}
+
+async fn hash_password(password: String) -> anyhow::Result<String> {
+    tokio::task::spawn_blocking(move || hash(password, DEFAULT_COST))
+        .await
+        .context("密码加密任务失败")?
+        .context("密码加密失败")
+}
+
+async fn verify_password(password: String, credential: String) -> anyhow::Result<bool> {
+    tokio::task::spawn_blocking(move || verify(password, &credential))
+        .await
+        .context("密码验证任务失败")?
+        .context("密码验证失败")
 }
 
 #[async_trait::async_trait]
@@ -54,12 +83,11 @@ impl AuthService for ServiceProvider<Postgres> {
                     AuthID::Phone(phone) => ("password_phone", phone.to_string()),
                 };
                 // 对前端传来的哈希值再进行一次 bcrypt 加盐哈希
-                let password_hash =
-                    hash(&auth.password_hash, DEFAULT_COST).context("密码加密失败")?;
+                let password_hash = hash_password(auth.password_hash).await?;
                 (auth_type, provider_id, password_hash)
             }
-            UserAuth::OAuth(_) => unimplemented!("OAuth 注册尚未实现"),
-            UserAuth::Passkey() => unimplemented!("Passkey 注册尚未实现"),
+            UserAuth::OAuth(_) => return Err(anyhow!("OAuth 注册尚未实现")),
+            UserAuth::Passkey() => return Err(anyhow!("Passkey 注册尚未实现")),
         };
 
         // 检查是否已存在
@@ -123,13 +151,15 @@ impl AuthService for ServiceProvider<Postgres> {
                 };
                 (auth_type, provider_id, auth.password_hash)
             }
-            UserAuth::OAuth(_) => unimplemented!("OAuth 登录尚未实现"),
-            UserAuth::Passkey() => unimplemented!("Passkey 登录尚未实现"),
+            UserAuth::OAuth(_) => return Err(anyhow!("OAuth 登录尚未实现")),
+            UserAuth::Passkey() => return Err(anyhow!("Passkey 登录尚未实现")),
         };
 
         let user: Option<(Uuid, String)> = sqlx::query_as(
-            "SELECT user_id, credential FROM user_auth 
-             WHERE auth_type = $1::auth_type_enum AND provider_id = $2",
+            r#"SELECT a.user_id, a.credential FROM user_auth a
+               JOIN "user" u ON u.id = a.user_id
+               WHERE a.auth_type = $1::auth_type_enum AND a.provider_id = $2
+                 AND u.role NOT IN ('BannedUser', 'DeletedUser')"#,
         )
         .bind(auth_type)
         .bind(&provider_id)
@@ -138,7 +168,7 @@ impl AuthService for ServiceProvider<Postgres> {
 
         let (user_id, password_hash) = user.ok_or_else(|| anyhow!("账号或密码错误"))?;
 
-        if !verify(&credential, &password_hash).context("密码验证失败")? {
+        if !verify_password(credential, password_hash).await? {
             return Err(anyhow!("账号或密码错误"));
         }
 
@@ -153,14 +183,13 @@ impl AuthService for ServiceProvider<Postgres> {
         let ip_address = headers
             .as_ref()
             .and_then(|h| {
-                h.get("x-forwarded-for")
-                    .or_else(|| h.get("x-real-ip"))
-                    .or_else(|| h.get("cf-connecting-ip"))
+                h.get("cf-connecting-ip")
+                    .or_else(|| h.get("x-forwarded-for"))
             })
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.split(',').next()) // x-forwarded-for 可能是逗号分隔的列表，取第一个
-            .map(|s| s.trim().to_string())
-            .or_else(|| use_context::<std::net::SocketAddr>().map(|addr| addr.ip().to_string()));
+            .and_then(|s| s.trim().parse::<std::net::IpAddr>().ok())
+            .map(|ip| ip.to_string());
 
         let (session_id,): (Uuid,) = sqlx::query_as(
             "INSERT INTO user_session (user_id, auth_type, user_agent, ip_address, expires_at) 
@@ -183,6 +212,7 @@ impl AuthService for ServiceProvider<Postgres> {
                 .max_age(time::Duration::days(7))
                 .same_site(SameSite::Lax)
                 .http_only(true)
+                .secure(cookie_secure())
                 .build();
 
             if let Ok(header_value) = HeaderValue::from_str(&cookie.to_string()) {
@@ -210,6 +240,7 @@ impl AuthService for ServiceProvider<Postgres> {
                 .max_age(time::Duration::days(0))
                 .same_site(SameSite::Lax)
                 .http_only(true)
+                .secure(cookie_secure())
                 .build();
 
             if let Ok(header_value) = HeaderValue::from_str(&cookie.to_string()) {
@@ -264,12 +295,20 @@ impl AuthService for ServiceProvider<Postgres> {
 
         match update_info {
             UpdateAuthInfo::ChangePassword(old_password, new_password) => {
+                let session_id = get_session_token()
+                    .and_then(|token| Uuid::parse_str(&token).ok())
+                    .ok_or_else(|| anyhow!("无效的 session token"))?;
+                let mut tx = self.pool.begin().await?;
+                sqlx::query(r#"SELECT id FROM "user" WHERE id = $1 FOR UPDATE"#)
+                    .bind(user_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
                 // 1. Verify old password
                 let auths: Vec<(String, String)> = sqlx::query_as(
                     "SELECT auth_type::text, credential FROM user_auth WHERE user_id = $1 AND auth_type IN ('password_email', 'password_phone')"
                 )
                 .bind(user_id)
-                .fetch_all(&self.pool)
+                .fetch_all(&mut *tx)
                 .await
                 .context("获取认证信息失败")?;
 
@@ -279,7 +318,7 @@ impl AuthService for ServiceProvider<Postgres> {
 
                 let mut verified = false;
                 for (_, credential) in &auths {
-                    if verify(&old_password, credential).unwrap_or(false) {
+                    if verify_password(old_password.clone(), credential.clone()).await? {
                         verified = true;
                         break;
                     }
@@ -290,8 +329,7 @@ impl AuthService for ServiceProvider<Postgres> {
                 }
 
                 // 2. Hash new password
-                let new_password_hash =
-                    hash(&new_password, DEFAULT_COST).context("密码加密失败")?;
+                let new_password_hash = hash_password(new_password).await?;
 
                 // 3. Update all password_email and password_phone for this user
                 sqlx::query(
@@ -299,9 +337,15 @@ impl AuthService for ServiceProvider<Postgres> {
                 )
                 .bind(&new_password_hash)
                 .bind(user_id)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .context("修改密码失败")?;
+                sqlx::query("DELETE FROM user_session WHERE user_id = $1 AND id <> $2")
+                    .bind(user_id)
+                    .bind(session_id)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
             }
             UpdateAuthInfo::AddAuth(userauth) => {
                 let (auth_type, provider_id) = match userauth {
@@ -312,8 +356,8 @@ impl AuthService for ServiceProvider<Postgres> {
                         };
                         (auth_type, provider_id)
                     }
-                    UserAuth::OAuth(_) => unimplemented!("OAuth 添加尚未实现"),
-                    UserAuth::Passkey() => unimplemented!("Passkey 添加尚未实现"),
+                    UserAuth::OAuth(_) => return Err(anyhow!("OAuth 添加尚未实现")),
+                    UserAuth::Passkey() => return Err(anyhow!("Passkey 添加尚未实现")),
                 };
 
                 let existing: Option<(Uuid,)> = sqlx::query_as(
@@ -358,10 +402,15 @@ impl AuthService for ServiceProvider<Postgres> {
                     AuthID::Phone(phone) => ("password_phone", phone.to_string()),
                 };
 
+                let mut tx = self.pool.begin().await?;
+                sqlx::query(r#"SELECT id FROM "user" WHERE id = $1 FOR UPDATE"#)
+                    .bind(user_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
                 let count: (i64,) =
                     sqlx::query_as("SELECT COUNT(*) FROM user_auth WHERE user_id = $1")
                         .bind(user_id)
-                        .fetch_one(&self.pool)
+                        .fetch_one(&mut *tx)
                         .await?;
 
                 if count.0 <= 1 {
@@ -374,9 +423,10 @@ impl AuthService for ServiceProvider<Postgres> {
                 .bind(user_id)
                 .bind(auth_type)
                 .bind(&provider_id)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .context("解绑认证信息失败")?;
+                tx.commit().await?;
             }
             UpdateAuthInfo::ChangePassAuth(auth_id) => {
                 let (auth_type, provider_id) = match auth_id {
