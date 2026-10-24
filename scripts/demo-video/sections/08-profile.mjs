@@ -1,0 +1,32 @@
+export default async function(a) {
+  const p = a.page;
+  await a.nav('/profile');
+  await a.caption('⑦ 个人主页：我的作品与创作者资料');
+  await a.scroll(300);
+  await p.getByText('耳朵演示 · 第一段声音', { exact: true }).waitFor();
+  await a.shot('08-works');
+  await a.click(p.locator('header button').first());
+  await a.click(p.locator('a[href="/settings"]').first());
+  await a.sleep(3300);
+  await a.caption('⑦ 个人设置：更新头像、昵称与简介并保存');
+  await p.locator('input[type=file]').setInputFiles('/home/ming/projects/eardo/public/logo.png');
+  await a.sleep(1400);
+  await a.type(p.getByPlaceholder('设置昵称'), '耳朵体验官');
+  await a.type(p.getByPlaceholder('介绍一下你自己...'), '用声音记录灵感，分享温暖。这里是我的耳朵创作空间。');
+  await a.click(p.locator('button').filter({ hasText: '保存设置' }));
+  await a.sleep(2200);
+  await a.shot('08-settings-saved');
+  await a.nav('/settings');
+  await a.caption('⑦ 登录设置：账号绑定与密码管理入口');
+  await a.click(p.locator('button').filter({ hasText: /^登录设置$/ }));
+  await a.sleep(1400);
+  await a.shot('08-security');
+  await a.click(p.locator('button').filter({ hasText: /^修改密码$/ }));
+  await a.sleep(1400);
+  await a.click(p.locator('button').filter({ hasText: /^取消$/ }));
+  await a.nav('/profile');
+  await a.caption('⑦ 保存生效：头像、昵称、简介与公开作品');
+  await p.getByText('耳朵体验官', { exact: true }).waitFor();
+  await a.shot('08-profile-updated');
+  await a.sleep(1800);
+}
