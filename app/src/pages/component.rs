@@ -620,6 +620,13 @@ impl SpectrumVisualizer {
 
             let buffer_length = analyser.frequency_bin_count();
             let mut data_array = vec![0u8; buffer_length as usize];
+            // 语音能量几乎都在 ~8 kHz 以下，而频谱覆盖到采样率的一半（48 kHz 时为 24 kHz），
+            // 直接把全部频点铺满一圈会导致后半圈永远没有柱子。
+            // 只取有效频段，并左右镜像铺满整圈。
+            let nyquist = (ctx.sample_rate() as f64 / 2.0).max(1.0);
+            let useful_bins = ((8000.0 / nyquist) * buffer_length as f64).ceil() as u32;
+            let useful_bins = useful_bins.clamp(8, buffer_length.max(8)).min(buffer_length);
+            let bar_count = useful_bins * 2;
             let canvas_width = width as f64;
             let canvas_height = height as f64;
             let center_x = canvas_width / 2.0;
@@ -649,10 +656,11 @@ impl SpectrumVisualizer {
                 ctx_2d.stroke();
 
                 ctx_2d.set_fill_style_str("#FBBF24");
-                for i in 0..buffer_length {
-                    let value = data_array[i as usize] as f64;
+                for i in 0..bar_count {
+                    let bin = if i < useful_bins { i } else { bar_count - 1 - i };
+                    let value = data_array[bin as usize] as f64;
                     let bar_height = (value / 255.0) * 80.0;
-                    let rad = (i as f64 / buffer_length as f64) * 2.0 * std::f64::consts::PI;
+                    let rad = (i as f64 / bar_count as f64) * 2.0 * std::f64::consts::PI;
                     ctx_2d.save();
                     let _ = ctx_2d.translate(center_x, center_y);
                     let _ = ctx_2d.rotate(rad);
