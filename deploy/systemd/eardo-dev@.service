@@ -1,0 +1,34 @@
+# EarDo staging slot (%i = a | b), runs as the `develop` account against the
+# isolated eardo_dev database. Installed by deploy/bootstrap/setup-vm.sh.
+[Unit]
+Description=EarDo staging slot %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=develop
+Group=develop
+EnvironmentFile=/etc/eardo/dev.env
+EnvironmentFile=/etc/eardo/dev-slot-%i.env
+Environment=LEPTOS_ENV=PROD
+Environment=LEPTOS_SITE_ROOT=/opt/eardo-dev/slots/%i/site
+Environment=RUST_LOG=info
+WorkingDirectory=/opt/eardo-dev/slots/%i
+ExecStart=/opt/eardo-dev/slots/%i/server
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=35
+MemoryMax=256M
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

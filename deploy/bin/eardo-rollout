@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# eardo-rollout — blue/green release manager for EarDo (runs as root).
+# Installed to /usr/local/sbin/eardo-rollout by deploy/bootstrap/setup-vm.sh.
+#
+# Usage: eardo-rollout <prod|dev> <command> [release-id]
+#   install  <id>   unpack <base>/incoming/<id>.tar.gz into <base>/releases/<id>
+#   activate <id>   run DB migrations, start idle slot, wait for /healthz,
+#                   stop the old slot (zero-downtime switch)
+#   deploy   <id>   install + activate
+#   promote  <id>   (prod only) copy the staging release <id> and activate it
+#   rollback        activate the previously active release
+#   status          show slots, releases and health
+#   logs            last 200 journal lines of both slots
+#   restart         restart the active slot in place (short gap; config reload)
+#   cleanup         purge expired sessions (daily via eardo-cleanup.timer)
+#
+# Exit codes: 0 ok, 1 usage, 2 bad input, 3 health check failed (old slot kept).
+set -euo pipefail
+umask 022
+
+ENV_NAME=${1:-}
+CMD=${2:-}
+ID=${3:-}
+KEEP_RELEASES=${KEEP_RELEASES:-5}
+HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-90}
+MAX_UPLOAD_BYTES=$((400 * 1024 * 1024))
+
+die() { echo "eardo-rollout: $1" >&2; exit "${2:-1}"; }
+log() { echo "[$(date -u +%H:%M:%S)] $*"; }
+
+case "$ENV_NAME" in
+  prod) BASE=/opt/eardo;     UNIT=eardo-prod; SVC_USER=eardo;   PORT_a=3000; PORT_b=3001 ;;
+  dev)  BASE=/opt/eardo-dev; UNIT=eardo-dev;  SVC_USER=develop; PORT_a=3100; PORT_b=3101 ;;
+  *) die "usage: eardo-rollout <prod|dev> <install|activate|deploy|promote|rollback|status> [id]" ;;
+esac
+ENV_FILE=/etc/eardo/${ENV_NAME}.env
+STATE=$BASE/state
+[[ $EUID -eq 0 ]] || die "must run as root (use sudo)"
+
+valid_id() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; }
+need_id() { [[ -n $ID ]] && valid_id "$ID" || die "invalid release id '$ID'" 2; }
+port_of() { local v="PORT_$1"; echo "${!v}"; }
+other() { [[ $1 == a ]] && echo b || echo a; }
+active_slot() { cat "$STATE/active_slot" 2>/dev/null || echo none; }
+slot_release() { local l; l=$(readlink "$BASE/slots/$1" 2>/dev/null) || { echo none; return; }; basename "$l"; }
+
+# Serialize all rollouts of one environment.
+mkdir -p "$STATE"
+exec 9>"$STATE/lock"
+flock -w 600 9 || die "another rollout is still running" 1
+
+healthy() { curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$1/healthz"; }
+
+db_url() {
+  sed -n 's/^PG_DATABASE_URL=//p' "$ENV_FILE" | tail -n1 | sed -e 's/^"//' -e 's/"$//'
+}
+
+run_migrations() {
+  local rel=$BASE/releases/$1 url f sum applied
+  [[ -d $rel/migrations ]] || { log "no migrations in release"; return 0; }
+  url=$(db_url); [[ -n $url ]] || die "PG_DATABASE_URL missing in $ENV_FILE"
+  psql "$url" -v ON_ERROR_STOP=1 -qAt -c "CREATE TABLE IF NOT EXISTS _eardo_migrations (
+      filename text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())" >/dev/null
+  for f in $(find "$rel/migrations" -maxdepth 1 -name '*.sql' -printf '%f\n' | sort); do
+    [[ $f =~ ^[A-Za-z0-9_.-]+\.sql$ ]] || die "bad migration filename $f" 2
+    sum=$(sha256sum "$rel/migrations/$f" | cut -d' ' -f1)
+    applied=$(psql "$url" -qAt -v ON_ERROR_STOP=1 -v fn="$f" <<<"SELECT sha256 FROM _eardo_migrations WHERE filename = :'fn';")
+    if [[ -n $applied ]]; then
+      [[ $applied == "$sum" ]] || log "WARNING: migration $f changed after it was applied (ignored)"
+      continue
+    fi
+    log "applying migration $f"
+    { cat "$rel/migrations/$f"; printf '\nINSERT INTO _eardo_migrations(filename, sha256) VALUES (%s, %s);\n' \
+        "'$f'" "'$sum'"; } | psql "$url" -v ON_ERROR_STOP=1 -q --single-transaction -f - >/dev/null
+  done
+}
+
+install_release() {
+  local tgz=$BASE/incoming/$ID.tar.gz dst=$BASE/releases/$ID tmp
+  if [[ -x $dst/server ]]; then log "release $ID already installed"; rm -f "$tgz"; return 0; fi
+  [[ -f $tgz ]] || die "missing upload $tgz" 2
+  (( $(stat -c %s "$tgz") <= MAX_UPLOAD_BYTES )) || die "upload too large" 2
+  tmp=$(mktemp -d "$BASE/releases/.tmp.XXXXXX")
+  trap 'rm -rf "$tmp"' RETURN
+  # Archive must contain ./server, ./site/ and optionally ./migrations/, nothing absolute.
+  if tar -tzf "$tgz" | grep -qE '(^/|(^|/)\.\.(/|$))'; then die "unsafe paths in archive" 2; fi
+  tar -xzf "$tgz" -C "$tmp" --no-same-owner --no-same-permissions
+  [[ -f $tmp/server && -d $tmp/site ]] || die "archive must contain server and site/" 2
+  [[ $(od -An -tx1 -j18 -N2 "$tmp/server" | tr -d ' \n') == b700 ]] || die "server is not an aarch64 ELF binary" 2
+  chmod 0755 "$tmp/server"; chmod -R a+rX "$tmp"; chown -R root:root "$tmp"
+  echo "$ID" >"$tmp/RELEASE"
+  mv "$tmp" "$dst"; trap - RETURN
+  rm -f "$tgz"
+  log "installed release $ID"
+}
+
+prune() {
+  local keep_a keep_b n=0
+  keep_a=$(slot_release a); keep_b=$(slot_release b)
+  for d in $(ls -1t "$BASE/releases" 2>/dev/null); do
+    [[ $d == .tmp.* ]] && continue
+    n=$((n + 1))
+    if (( n > KEEP_RELEASES )) && [[ $d != "$keep_a" && $d != "$keep_b" ]]; then
+      rm -rf "${BASE:?}/releases/$d"; log "pruned release $d"
+    fi
+  done
+}
+
+activate() {
+  local rel=$1 cur new port deadline
+  [[ -x $BASE/releases/$rel/server ]] || die "release $rel is not installed" 2
+  cur=$(active_slot)
+  if [[ $cur != none && $(slot_release "$cur") == "$rel" ]] && systemctl is-active -q "$UNIT@$cur"; then
+    log "release $rel already active on slot $cur"; return 0
+  fi
+  new=$([[ $cur == a ]] && echo b || echo a)
+  port=$(port_of "$new")
+  run_migrations "$rel"
+
+  systemctl stop "$UNIT@$new" 2>/dev/null || true
+  ln -sfn "../releases/$rel" "$BASE/slots/$new"
+  log "starting slot $new ($rel) on :$port"
+  systemctl reset-failed "$UNIT@$new" 2>/dev/null || true
+  systemctl start "$UNIT@$new"
+  deadline=$((SECONDS + HEALTH_TIMEOUT))
+  until healthy "$port"; do
+    if (( SECONDS > deadline )) || ! systemctl is-active -q "$UNIT@$new"; then
+      log "slot $new failed health check; recent logs:"
+      journalctl -u "$UNIT@$new" -n 30 --no-pager || true
+      systemctl stop "$UNIT@$new" || true
+      die "rollout aborted, slot ${cur} still serving" 3
+    fi
+    sleep 1
+  done
+  log "slot $new healthy"
+  # Let Caddy's active health checker (2s interval) notice the new slot before
+  # the old one stops accepting connections.
+  sleep 5
+  if [[ $cur != none ]]; then
+    echo "$(slot_release "$cur")" >"$STATE/previous_release"
+    log "stopping old slot $cur (graceful drain)"
+    systemctl stop "$UNIT@$cur" || true
+    systemctl disable -q "$UNIT@$cur" 2>/dev/null || true
+  fi
+  systemctl enable -q "$UNIT@$new"
+  echo "$new" >"$STATE/active_slot"
+  echo "$rel" >"$STATE/active_release"
+  log "$ENV_NAME now serving $rel from slot $new"
+  prune
+}
+
+status() {
+  local s
+  echo "env: $ENV_NAME  active slot: $(active_slot)  previous: $(cat "$STATE/previous_release" 2>/dev/null || echo none)"
+  for s in a b; do
+    printf '  slot %s :%s  %-10s release=%s health=%s\n' "$s" "$(port_of $s)" \
+      "$(systemctl is-active "$UNIT@$s" 2>/dev/null || true)" "$(slot_release $s)" \
+      "$(healthy "$(port_of $s)" 2>/dev/null && echo ok || echo -)"
+  done
+  echo "  releases: $(ls -1t "$BASE/releases" 2>/dev/null | grep -v '^\.tmp' | tr '\n' ' ')"
+}
+
+case "$CMD" in
+  install)  need_id; install_release ;;
+  activate) need_id; activate "$ID" ;;
+  deploy)   need_id; install_release; activate "$ID" ;;
+  promote)
+    [[ $ENV_NAME == prod ]] || die "promote is only valid for prod" 1
+    need_id
+    src=/opt/eardo-dev/releases/$ID
+    [[ -x $src/server ]] || die "staging release $ID not found" 2
+    if [[ ! -d $BASE/releases/$ID ]]; then
+      cp -a "$src" "$BASE/releases/.tmp.$ID" && mv "$BASE/releases/.tmp.$ID" "$BASE/releases/$ID"
+    fi
+    activate "$ID" ;;
+  rollback)
+    prev=$(cat "$STATE/previous_release" 2>/dev/null || true)
+    [[ -n $prev && -x $BASE/releases/$prev/server ]] || die "no previous release to roll back to" 2
+    activate "$prev" ;;
+  status) status ;;
+  cleanup)
+    # Replaces pg_cron (not enabled on Azure): purge expired sessions daily.
+    psql "$(db_url)" -v ON_ERROR_STOP=1 -qAt -c \
+      "SELECT CASE WHEN to_regprocedure('cleanup_expired_sessions()') IS NOT NULL THEN (SELECT 'cleaned' FROM (SELECT cleanup_expired_sessions()) s) ELSE 'no cleanup function' END" ;;
+  logs)   journalctl -u "$UNIT@a" -u "$UNIT@b" -n 200 --no-pager ;;
+  restart)
+    s=$(active_slot); [[ $s != none ]] || die "nothing active"
+    # Restarting in place causes a short gap; prefer `deploy` of the same id for zero downtime.
+    systemctl restart "$UNIT@$s"; log "restarted slot $s" ;;
+  *) die "unknown command '$CMD'" ;;
+esac

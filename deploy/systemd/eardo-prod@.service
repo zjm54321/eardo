@@ -1,0 +1,34 @@
+# EarDo production slot (%i = a | b). Installed by deploy/bootstrap/setup-vm.sh.
+# Slot directory /opt/eardo/slots/%i is a symlink to a release in /opt/eardo/releases/.
+[Unit]
+Description=EarDo production slot %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eardo
+Group=eardo
+EnvironmentFile=/etc/eardo/prod.env
+EnvironmentFile=/etc/eardo/prod-slot-%i.env
+Environment=LEPTOS_ENV=PROD
+Environment=LEPTOS_SITE_ROOT=/opt/eardo/slots/%i/site
+Environment=RUST_LOG=info
+WorkingDirectory=/opt/eardo/slots/%i
+ExecStart=/opt/eardo/slots/%i/server
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=35
+MemoryMax=320M
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=EarDo expired-session cleanup (prod + staging)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/eardo-rollout prod cleanup
+ExecStart=/usr/local/sbin/eardo-rollout dev cleanup

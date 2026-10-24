@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily EarDo expired-session cleanup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

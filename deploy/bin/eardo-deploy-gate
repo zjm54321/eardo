@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# eardo-deploy-gate — forced SSH command for the CI deploy keys.
+# Installed to /usr/local/bin/eardo-deploy-gate. authorized_keys entry:
+#   command="/usr/local/bin/eardo-deploy-gate dev",restrict ssh-ed25519 AAAA... github-ci-dev
+#
+# The client chooses one action through SSH_ORIGINAL_COMMAND:
+#   upload <id>    (tarball on stdin)  -> <base>/incoming/<id>.tar.gz
+#   deploy <id> | promote <id> | rollback | status
+set -euo pipefail
+ENV_NAME=${1:?env}
+case "$ENV_NAME" in
+  prod) BASE=/opt/eardo ;;
+  dev)  BASE=/opt/eardo-dev ;;
+  *) echo "bad gate env" >&2; exit 1 ;;
+esac
+MAX_UPLOAD_BYTES=$((400 * 1024 * 1024))
+
+read -r -a ARGS <<<"${SSH_ORIGINAL_COMMAND:-status}"
+ACTION=${ARGS[0]:-status}
+ID=${ARGS[1]:-}
+[[ ${#ARGS[@]} -le 2 ]] || { echo "too many arguments" >&2; exit 1; }
+if [[ -n $ID && ! $ID =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; then
+  echo "invalid release id" >&2; exit 2
+fi
+
+case "$ACTION" in
+  upload)
+    [[ -n $ID ]] || { echo "upload needs an id" >&2; exit 2; }
+    tmp=$(mktemp "$BASE/incoming/.up.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+    head -c $((MAX_UPLOAD_BYTES + 1)) >"$tmp"
+    size=$(stat -c %s "$tmp")
+    (( size <= MAX_UPLOAD_BYTES )) || { echo "upload too large" >&2; exit 2; }
+    gzip -t "$tmp" || { echo "upload is not a gzip archive" >&2; exit 2; }
+    mv "$tmp" "$BASE/incoming/$ID.tar.gz"; trap - EXIT
+    echo "uploaded $ID ($size bytes)" ;;
+  deploy|promote)
+    [[ -n $ID ]] || { echo "$ACTION needs an id" >&2; exit 2; }
+    exec sudo -n /usr/local/sbin/eardo-rollout "$ENV_NAME" "$ACTION" "$ID" ;;
+  rollback|status)
+    exec sudo -n /usr/local/sbin/eardo-rollout "$ENV_NAME" "$ACTION" ;;
+  *) echo "unknown action '$ACTION'" >&2; exit 1 ;;
+esac

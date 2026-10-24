@@ -1,0 +1,46 @@
+# EarDo reverse proxy (Caddy 2.6+, Ubuntu package).
+# Cloudflare (orange cloud, SSL "Full (strict)") -> this Caddy on [IPv6]:443
+# with a Cloudflare Origin CA certificate -> app slots on 127.0.0.1.
+#
+# Each environment has two slots (a/b). Normally only one runs; a deploy starts
+# the idle slot with the new release, waits for /healthz, then stops the old
+# one. lb_policy "first" + active health checks + retries make the switch
+# seamless. The app itself reads the CF-Connecting-IP header for client IPs.
+{
+	# Certificates are provided explicitly; Caddy must never try ACME.
+	auto_https off
+}
+
+(eardo_lb) {
+	lb_policy first
+	lb_try_duration 15s
+	lb_try_interval 250ms
+	health_uri /healthz
+	health_interval 2s
+	health_timeout 2s
+	health_status 200
+	fail_duration 5s
+}
+
+(eardo_site) {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+	encode zstd gzip
+	request_body {
+		max_size 8MB
+	}
+	header -Server
+}
+
+https://eardoai.com, https://www.eardoai.com {
+	import eardo_site
+	reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
+		import eardo_lb
+	}
+}
+
+https://dev.eardoai.com {
+	import eardo_site
+	reverse_proxy 127.0.0.1:3100 127.0.0.1:3101 {
+		import eardo_lb
+	}
+}

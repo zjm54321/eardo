@@ -1,0 +1,215 @@
+# Build an aarch64 release on GitHub's native ARM runner and roll it out to the
+# EarDo VM (blue/green, zero downtime) through the Cloudflare tunnel.
+#
+#   push to dev   -> build -> deploy to STAGING  (https://dev.eardoai.com, user develop, DB eardo_dev)
+#   push to main  -> build -> PRODUCTION         (https://eardoai.com,     user eardo,   DB eardo)
+#                    (promotes the identical staging release when the commit was already
+#                     deployed to staging; otherwise uploads the freshly built one)
+#   pull request  -> build only
+#   manual        -> promote / rollback / deploy any ref (workflow_dispatch)
+#
+# Required GitHub configuration (see docs/handover.md):
+#   environments "staging" and "production", each with secret DEPLOY_SSH_KEY
+#   repository secret SSH_KNOWN_HOSTS (line for [manage.eardoai.com]:2222)
+#   optional secrets CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET (Cloudflare Access service token)
+name: Build & Deploy
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy = build this ref and deploy; promote/rollback act on the server only"
+        type: choice
+        options: [deploy, promote, rollback]
+        default: deploy
+      target:
+        description: "Environment"
+        type: choice
+        options: [staging, production]
+        default: staging
+      release_id:
+        description: "Release id for promote (e.g. g1a2b3c4d5e6f)"
+        required: false
+
+env:
+  CARGO_TERM_COLOR: always
+  LEPTOS_OUTPUT_NAME: eardo
+  LEPTOS_TAILWIND_VERSION: v4.3.3
+  RUST_TOOLCHAIN: nightly-2026-10-20
+  CARGO_LEPTOS_VERSION: 0.3.11
+  DEPLOY_HOST: manage.eardoai.com
+  DEPLOY_PORT: "2222"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'deploy'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    outputs:
+      release_id: ${{ steps.meta.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        run: echo "release_id=g$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: arm-release
+          cache-on-failure: true
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install cargo-leptos
+        run: cargo binstall -y --locked cargo-leptos@${CARGO_LEPTOS_VERSION}
+
+      - name: Build
+        run: cargo leptos build --release
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          id='${{ steps.meta.outputs.release_id }}'
+          mkdir -p dist/pkg
+          cp target/release/server dist/pkg/server
+          cp -r target/site dist/pkg/site
+          if [ -d sql/migrations ]; then cp -r sql/migrations dist/pkg/migrations; fi
+          git rev-parse HEAD > dist/pkg/COMMIT
+          file dist/pkg/server
+          ldd dist/pkg/server || true
+          tar -C dist/pkg -czf "dist/$id.tar.gz" .
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    environment:
+      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.target) || (github.ref_name == 'main' && 'production') || 'staging' }}
+      url: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target) || (github.ref_name == 'main' && 'production') || 'staging') == 'production' && 'https://eardoai.com' || 'https://dev.eardoai.com' }}
+    concurrency:
+      group: deploy-${{ (github.event_name == 'workflow_dispatch' && inputs.target) || (github.ref_name == 'main' && 'production') || 'staging' }}
+      cancel-in-progress: false
+    env:
+      TARGET: ${{ (github.event_name == 'workflow_dispatch' && inputs.target) || (github.ref_name == 'main' && 'production') || 'staging' }}
+      RELEASE_ID: ${{ needs.build.outputs.release_id }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+
+      - name: Set up SSH via Cloudflare tunnel
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: &ssh_setup |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/cloudflared" \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64
+          sudo install -m 0755 "$RUNNER_TEMP/cloudflared" /usr/local/bin/cloudflared
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          proxy="/usr/local/bin/cloudflared access ssh --hostname %h"
+          if [ -n "${CF_ACCESS_CLIENT_ID:-}" ]; then
+            proxy="$proxy --id $CF_ACCESS_CLIENT_ID --secret $CF_ACCESS_CLIENT_SECRET"
+          fi
+          if [ "$TARGET" = production ]; then user=eardo; else user=develop; fi
+          cat > ~/.ssh/config <<EOF
+          Host eardo
+            HostName $DEPLOY_HOST
+            Port $DEPLOY_PORT
+            User $user
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ProxyCommand $proxy
+            ServerAliveInterval 15
+          EOF
+
+      - name: Roll out
+        run: |
+          set -euo pipefail
+          rc=2
+          if [ "$TARGET" = production ]; then
+            # Reuse the exact artifact that already passed staging (fast-forward merges keep the sha).
+            ssh eardo "promote $RELEASE_ID" && rc=0 || rc=$?
+          fi
+          if [ "$rc" -eq 0 ]; then
+            echo "promoted staging release $RELEASE_ID"
+          elif [ "$rc" -eq 2 ]; then
+            # exit 2 = release not known on the server -> ship the freshly built one
+            ssh eardo "upload $RELEASE_ID" < "dist/$RELEASE_ID.tar.gz"
+            ssh eardo "deploy $RELEASE_ID"
+          else
+            echo "promote failed with exit $rc (health check / lock); old slot still serving" >&2
+            exit "$rc"
+          fi
+          ssh eardo status
+
+      - name: Smoke test through Cloudflare
+        run: |
+          if [ "$TARGET" = production ]; then url=https://eardoai.com; else url=https://dev.eardoai.com; fi
+          for i in $(seq 1 10); do
+            curl -fsS -m 10 "$url/healthz" && exit 0
+            sleep 3
+          done
+          echo "health check through Cloudflare failed" >&2; exit 1
+
+  manage:
+    if: github.event_name == 'workflow_dispatch' && inputs.action != 'deploy'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    environment: ${{ inputs.target }}
+    concurrency:
+      group: deploy-${{ inputs.target }}
+      cancel-in-progress: false
+    env:
+      TARGET: ${{ inputs.target }}
+    steps:
+      - name: Set up SSH via Cloudflare tunnel
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: *ssh_setup
+
+      - name: Run ${{ inputs.action }}
+        env:
+          ACTION: ${{ inputs.action }}
+          RELEASE_ID: ${{ inputs.release_id }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTION" = promote ]; then
+            [ "$TARGET" = production ] || { echo "promote targets production" >&2; exit 1; }
+            ssh eardo "promote $RELEASE_ID"
+          else
+            ssh eardo rollback
+          fi
+          ssh eardo status
