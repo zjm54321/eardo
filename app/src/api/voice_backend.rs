@@ -292,8 +292,19 @@ async fn qwen_generate(
     }
     let audio = &parsed["output"]["audio"];
     let bytes = if let Some(url) = audio["url"].as_str() {
-        let response = client.get(url).send().await
-            .map_err(|_| anyhow!("TTS audio download failed"))?;
+        // DashScope result buckets (`<bucket>.oss-<region>.aliyuncs.com`) are IPv4-only.
+        // The production VM is IPv6-only, so try OSS's dual-stack host first
+        // (`<bucket>.<region>.oss.aliyuncs.com`, same signature) and fall back to the original.
+        let mut response = None;
+        if let Some(dual_stack) = oss_dual_stack_url(url) {
+            response = client.get(&dual_stack).send().await.ok()
+                .filter(|r| r.status().is_success());
+        }
+        let response = match response {
+            Some(r) => r,
+            None => client.get(url).send().await
+                .map_err(|_| anyhow!("TTS audio download failed"))?,
+        };
         if !response.status().is_success() {
             return Err(anyhow!("TTS audio download returned HTTP {}", response.status().as_u16()));
         }
@@ -312,4 +323,28 @@ async fn qwen_generate(
         return Err(anyhow!("TTS returned no audio"));
     }
     Ok(bytes)
+}
+
+/// `http(s)://<bucket>.oss-<region>.aliyuncs.com/<path>` → `https://<bucket>.<region>.oss.aliyuncs.com/<path>`
+fn oss_dual_stack_url(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let (host, path) = rest.split_once('/')?;
+    let host = host.strip_suffix(".aliyuncs.com")?;
+    let (bucket, region) = host.split_once(".oss-")?;
+    if bucket.is_empty() || region.is_empty() || region.contains('.') {
+        return None;
+    }
+    Some(format!("https://{bucket}.{region}.oss.aliyuncs.com/{path}"))
+}
+
+#[cfg(test)]
+mod oss_tests {
+    #[test]
+    fn rewrites_dashscope_result_url() {
+        assert_eq!(
+            super::oss_dual_stack_url("http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/prod/a.wav?Expires=1&Signature=x").as_deref(),
+            Some("https://dashscope-result-bj.cn-beijing.oss.aliyuncs.com/prod/a.wav?Expires=1&Signature=x")
+        );
+        assert_eq!(super::oss_dual_stack_url("https://example.com/a.wav"), None);
+    }
 }

@@ -146,7 +146,7 @@ pub fn HomePage() -> impl IntoView {
                 Ok(id) => id,
                 Err(e) => {
                     debug_error!("生成语音元数据失败: {}", e);
-                    return Err(ServerFnError::new("生成语音元数据失败"));
+                    return Err(e);
                 }
             };
 
