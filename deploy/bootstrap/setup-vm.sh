@@ -82,4 +82,4 @@ if [[ -f /etc/caddy/certs/origin.pem ]]; then
   caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile >/dev/null
   systemctl reload caddy || systemctl restart caddy
 fi
-echo "done. Next: fill /etc/eardo/*.env, add CI keys (see docs/handover.md), deploy a release."
+echo "done. Next: fill /etc/eardo/*.env, add CI keys (see the ops handover package), deploy a release."

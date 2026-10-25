@@ -3,7 +3,7 @@ export default async function(a) {
   await a.nav('/profile');
   await a.caption('⑦ 个人主页：我的作品与创作者资料');
   await a.scroll(300);
-  await p.getByText('耳朵演示 · 第一段声音', { exact: true }).waitFor();
+  await p.getByText(a.account.workTitle, { exact: true }).waitFor();
   await a.shot('08-works');
   await a.click(p.locator('header button').first());
   await a.click(p.locator('a[href="/settings"]').first());

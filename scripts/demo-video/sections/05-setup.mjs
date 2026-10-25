@@ -2,7 +2,9 @@ export default async function(a) {
   const p = a.page;
   await a.nav('/setup');
   await a.caption('④ 渐进式配置：四步完成一次声音创作');
-  await a.click(p.getByRole('heading', { name: '龙安洋', exact: true }));
+  const voice = p.getByRole('heading', { name: '龙安洋', exact: true }).locator('xpath=ancestor::div[contains(@class,"items-stretch")][1]');
+  await a.click(voice);
+  await p.waitForFunction(()=>[...document.querySelectorAll('h4')].find(h=>h.textContent==='龙安洋')?.closest('.items-stretch')?.classList.contains('border-primary'));
   await a.click(p.locator('button').filter({ hasText: '下一步' }));
   await a.sleep(1000);
   const traditional = p.locator('button').filter({ hasText: '传统参数' });
@@ -16,9 +18,7 @@ export default async function(a) {
   await a.click(p.locator('button').filter({ hasText: '生成声音' }));
   await a.audio();
   await a.caption('④ 生成结果：配置回顾、试听与分享入口');
-  const play = p.locator('button').filter({ has: p.locator('i.fa-play') }).last();
-  if (await play.count()) await a.click(play);
-  await a.sleep(2500);
+  await a.playbackDemo('setup');
   await a.shot('05-setup-result');
   await a.sleep(1600);
 }

@@ -20,3 +20,7 @@ playwright/.cache/
 *.sqlite
 # local database exports / production backups
 /db_exports/
+
+# Ops handover package (contains secrets) lives outside the repo; never commit it
+/handover/
+/docs/handover*.md

@@ -3,12 +3,14 @@
 #
 #   push to dev   -> build -> deploy to STAGING  (https://dev.eardoai.com, user develop, DB eardo_dev)
 #   push to main  -> build -> PRODUCTION         (https://eardoai.com,     user eardo,   DB eardo)
-#                    (promotes the identical staging release when the commit was already
-#                     deployed to staging; otherwise uploads the freshly built one)
+#                    main only changes through a PR dev -> main (ruleset + main-guard.yml).
+#                    The merge commit has the same tree as dev's head, so production
+#                    promotes the identical release that already passed staging
+#                    (falls back to uploading the freshly built one).
 #   pull request  -> build only
 #   manual        -> promote / rollback / deploy any ref (workflow_dispatch)
 #
-# Required GitHub configuration (see docs/handover.md):
+# Required GitHub configuration (see the local handover package):
 #   environments "staging" and "production", each with secret DEPLOY_SSH_KEY
 #   repository secret SSH_KNOWN_HOSTS (line for [manage.eardoai.com]:2222)
 #   optional secrets CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET (Cloudflare Access service token)
@@ -54,11 +56,20 @@ jobs:
     timeout-minutes: 60
     outputs:
       release_id: ${{ steps.meta.outputs.release_id }}
+      staging_id: ${{ steps.meta.outputs.staging_id }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - id: meta
-        run: echo "release_id=g$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "release_id=g$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          # Merge commit of a dev -> main PR with an identical tree: its staging release is dev's head.
+          if git rev-parse -q --verify HEAD^2 >/dev/null \
+             && [ "$(git rev-parse HEAD^{tree})" = "$(git rev-parse HEAD^2^{tree})" ]; then
+            echo "staging_id=g$(git rev-parse --short=12 HEAD^2)" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -117,6 +128,7 @@ jobs:
     env:
       TARGET: ${{ (github.event_name == 'workflow_dispatch' && inputs.target) || (github.ref_name == 'main' && 'production') || 'staging' }}
       RELEASE_ID: ${{ needs.build.outputs.release_id }}
+      STAGING_ID: ${{ needs.build.outputs.staging_id }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -159,11 +171,15 @@ jobs:
           set -euo pipefail
           rc=2
           if [ "$TARGET" = production ]; then
-            # Reuse the exact artifact that already passed staging (fast-forward merges keep the sha).
-            ssh eardo "promote $RELEASE_ID" && rc=0 || rc=$?
+            # Reuse the exact artifact that already passed staging: dev's head for a PR merge
+            # commit (same tree), or the same sha for a fast-forward.
+            for id in $STAGING_ID $RELEASE_ID; do
+              ssh eardo "promote $id" && { rc=0; promoted=$id; break; } || rc=$?
+              [ "$rc" -eq 2 ] || break
+            done
           fi
           if [ "$rc" -eq 0 ]; then
-            echo "promoted staging release $RELEASE_ID"
+            echo "promoted staging release $promoted"
           elif [ "$rc" -eq 2 ]; then
             # exit 2 = release not known on the server -> ship the freshly built one
             ssh eardo "upload $RELEASE_ID" < "dist/$RELEASE_ID.tar.gz"
