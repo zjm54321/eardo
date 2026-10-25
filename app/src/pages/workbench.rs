@@ -40,7 +40,7 @@ pub fn WorkbenchHomePage() -> impl IntoView {
                 <div class="grid lg:grid-cols-[1fr_300px] gap-8 items-start">
                     // Main Content - Scenarios
                     <div class="space-y-6">
-                        <div class="relative">
+                        <div class="relative" data-guide="scenes">
                             <div class="absolute -top-3.5 left-6 z-10">
                                 <span class="inline-flex items-center gap-1.5 rounded-full bg-[#FFF8E7] px-3 py-1 text-sm font-semibold text-[#D97706] border border-[#FDE68A] shadow-sm">
                                     <span class="w-5 h-5 rounded-full bg-[#F59E0B] text-white flex items-center justify-center text-xs">"1"</span>

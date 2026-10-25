@@ -51,6 +51,14 @@ web-sys = { version = "0.3", features = [
     "Touch",
     "TouchEvent",
     "TouchList",
+    "DomRect",
+    "Storage",
+    "KeyboardEvent",
+    "ScrollToOptions",
+    "ScrollBehavior",
+    "MediaQueryList",
+    "HtmlElement",
+    "NodeList",
 ] }
 anyhow = "1.0.100"
 async-trait = "0.1.89"

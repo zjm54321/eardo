@@ -74,6 +74,9 @@ pub fn App() -> impl IntoView {
                 </Routes>
             </main>
 
+            // 新手引导（纯客户端叠加层，SSR 不渲染任何内容）
+            <pages::guide::GuideHost />
+
             // 页脚可以保留
             <footer class="mt-auto py-6 px-4 bg-white/70 backdrop-blur-sm border-t border-gray-100 relative z-50">
                 <div class="container mx-auto text-center text-gray-500 text-sm">

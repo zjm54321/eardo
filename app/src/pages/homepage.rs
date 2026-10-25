@@ -825,7 +825,7 @@ pub fn ParameterControlCard(
                             false
                         }
                     }>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2" data-guide="param-mode">
                             <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
                                 <button
                                     class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
@@ -1142,7 +1142,7 @@ pub fn AudioResultCard(
                                 </div>
 
                                 // 播放器控制栏
-                                <div class="w-full p-4 bg-gradient-to-r from-amber-50 to-yellow-50 border-t border-amber-100 rounded-b-xl">
+                                <div class="w-full p-4 bg-gradient-to-r from-amber-50 to-yellow-50 border-t border-amber-100 rounded-b-xl" data-guide-avoid>
                                     <div class="flex items-center justify-between text-xs text-gray-500 mb-3">
                                         <span class="flex items-center">
                                             <i class="fa-solid fa-check-circle text-green-500 mr-1.5"></i>
