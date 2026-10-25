@@ -1,0 +1,27 @@
+# main only accepts pull requests whose source is this repository's dev branch.
+# The ruleset "protect-main" requires this job ("only-dev-to-main") to pass before merging.
+name: Main guard
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  only-dev-to-main:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Source branch must be dev
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REF" != "dev" ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::main can only be merged from $BASE_REPO:dev (got $HEAD_REPO:$HEAD_REF)"
+            exit 1
+          fi
+          echo "ok: $HEAD_REPO:$HEAD_REF -> main"
