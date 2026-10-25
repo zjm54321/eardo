@@ -6,9 +6,8 @@ export default async function(a) {
   if (await next.count()) await a.click(next);
   await a.scroll(430);
   await a.type(p.getByPlaceholder('搜索标题、作者或描述'), '耳朵演示');
-  const card = p.locator('div.bg-white.rounded-xl.p-6').filter({ hasText: '耳朵演示 · 第一段声音' }).first();
-  await a.click(card.locator('button').filter({ has: p.locator('i.fa-play') }));
-  await a.sleep(1800);
+  const card = p.locator('div.bg-white.rounded-xl.p-6').filter({ hasText: a.account.workTitle }).first();
+  await a.playbackDemo('square', card);
   const heart = card.locator('button').filter({ has: p.locator('i.fa-heart') });
   await a.click(heart); await a.click(heart);
   await a.click(card.locator('button').filter({ has: p.locator('i.fa-comment') }));

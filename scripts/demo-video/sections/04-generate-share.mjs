@@ -5,16 +5,14 @@ export default async function(a) {
   await a.audio();
   await p.locator('canvas').evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   await a.sleep(1500);
-  const play = p.locator('button').filter({ has: p.locator('i.fa-play') }).last();
-  if (await play.count()) await a.click(play);
-  await a.sleep(4500);
+  await a.playbackDemo('generate');
   await a.shot('04-playing');
   const pause = p.locator('button').filter({ has: p.locator('i.fa-pause') }).last();
   if (await pause.count()) await a.click(pause);
   await a.click(p.locator('button').filter({ hasText: '下载' }));
   await a.caption('③ 分享配置：发布滤镜并复制一键应用链接');
   await a.click(p.getByTitle('分享当前声音配置'));
-  await a.type(p.getByPlaceholder('给你的声音配置起个名字...'), '耳朵演示 · 温暖讲述');
+  await a.type(p.getByPlaceholder('给你的声音配置起个名字...'), a.account.filterTitle);
   await a.type(p.getByPlaceholder('简要描述这组声音配置的特点...'), '自然亲切的讲述声线，适合知识分享与日常口播。');
   await a.click(p.locator('button').filter({ hasText: /^分享$/ }).last());
   await p.getByText('分享成功！', { exact: true }).waitFor({ timeout: 30000 });
@@ -24,7 +22,7 @@ export default async function(a) {
   await a.click(p.getByRole('button', { name: '完成', exact: true }));
   await a.caption('③ 发布作品：把生成的声音分享到广场');
   await a.click(p.locator('button').filter({ hasText: '分享这段声音' }));
-  await a.type(p.getByPlaceholder('给这段声音起个名字...'), '耳朵演示 · 第一段声音');
+  await a.type(p.getByPlaceholder('给这段声音起个名字...'), a.account.workTitle);
   await a.type(p.getByPlaceholder('描述一下这段声音...'), '从文字到声音，记录第一次温暖的声音创作。');
   await a.click(p.locator('button').filter({ hasText: /^分享$/ }).last());
   await p.getByText('分享成功！', { exact: true }).waitFor({ timeout: 30000 });

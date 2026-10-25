@@ -4,7 +4,7 @@ export default async function(a) {
   await a.caption('⑥ 声音滤镜：发现、搜索、收藏与一键应用');
   await a.sleep(1500); await a.scroll(350);
   await a.type(p.getByPlaceholder('搜索滤镜（名称、作者、标签、描述）'), '耳朵演示');
-  const card = p.locator('div.bg-white.rounded-xl.p-6').filter({ hasText: '耳朵演示 · 温暖讲述' }).first();
+  const card = p.locator('div.bg-white.rounded-xl.p-6').filter({ hasText: a.account.filterTitle }).first();
   await a.click(card.locator('button').filter({ has: p.locator('i.fa-heart') }));
   await a.click(card.locator('button').filter({ has: p.locator('i.fa-comment') }));
   await a.type(p.getByPlaceholder('添加评论...'), '已收藏，准备应用到下一段作品。');
@@ -21,8 +21,6 @@ export default async function(a) {
   await a.audio();
   await p.locator('canvas').evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   await a.sleep(1800);
-  const play = p.locator('button').filter({ has: p.locator('i.fa-play') }).last();
-  if (await play.count()) await a.click(play);
-  await a.sleep(2000);
+  await a.playbackDemo('filter-applied');
   await a.shot('07-applied');
 }
