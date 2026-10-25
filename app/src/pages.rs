@@ -3,6 +3,7 @@ use leptos_router::components::A;
 
 pub mod auth;
 pub mod component;
+pub mod guide; // 新手引导
 pub mod help; // 帮助中心
 pub mod homepage;
 pub mod playground;
@@ -123,6 +124,7 @@ pub fn Header() -> impl IntoView {
                     <A
                         href="/generate"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                        attr:data-guide="nav-generate"
                     >
                         <i class="fa-solid fa-wave-square text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
@@ -134,6 +136,7 @@ pub fn Header() -> impl IntoView {
                     <A
                         href="/voice"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                        attr:data-guide="nav-voice"
                     >
                         <i class="fa-solid fa-music text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
@@ -145,6 +148,7 @@ pub fn Header() -> impl IntoView {
                     <A
                         href="/filters"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                        attr:data-guide="nav-filters"
                     >
                         <i class="fa-solid fa-sliders text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
@@ -156,6 +160,7 @@ pub fn Header() -> impl IntoView {
                     <A
                         href="/help"
                         attr:class="flex items-center space-x-2 px-4 py-2 rounded-full hover:bg-primary/10 transition-colors duration-300 group"
+                        attr:data-guide="nav-help"
                     >
                         <i class="fa-solid fa-circle-question text-gray-400 group-hover:text-primary transition-colors"></i>
                         <span class="text-gray-600 font-medium group-hover:text-primary transition-colors">
@@ -165,7 +170,7 @@ pub fn Header() -> impl IntoView {
                 </nav>
 
                 // --- 右侧：头像框 ---
-                <div class="relative group">
+                <div class="relative group" data-guide="account">
                     <Transition fallback=move || {
                         view! {
                             <div class="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div>

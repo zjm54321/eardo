@@ -120,6 +120,9 @@ pub fn HelpPage() -> impl IntoView {
                         .collect::<Vec<_>>()}
                 </div>
 
+                // 重新查看新手引导
+                <crate::pages::guide::GuideReplayCard />
+
                 // 底部提示
                 <div class="mt-12 bg-gradient-to-r from-primary/5 to-secondary/5 rounded-lg border border-primary/20 p-8 text-center">
                     <h3 class="text-xl font-semibold text-gray-800 mb-3">
